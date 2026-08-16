@@ -556,6 +556,14 @@ def _emit_material_spec(out_root, mh_manifest):
                     "alpha_clip": True,
                     "alpha_channel": "r",
                     "alpha_stem": stem,
+                    # TELEGAMEZ: declare the strand-tangent atlas explicitly.
+                    # It drives anisotropic specular, and without a declaration
+                    # stage 03 never forwards it and stage 04 never deploys it —
+                    # so a PUBLISHED avatar silently loses the strand highlight
+                    # while a local bake keeps it. Naming is a strict convention
+                    # (_CardsAtlas_Attribute / _CardsAtlas_Tangent).
+                    **({"tangent_stem": stem.replace("_Attribute", "_Tangent")}
+                       if stem.endswith("_Attribute") else {}),
                     "roughness": 0.55,
                     "ignore_gltf_map": True,
                 },
@@ -587,7 +595,11 @@ def _emit_material_spec(out_root, mh_manifest):
 
     out_path = os.path.join(out_root, "mh_materials.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"character": "ada",  # caller can overwrite if needed
+        # TELEGAMEZ: was hardcoded "ada" for every character, including the
+        # shipped demos. Harmless to the renderer, which keys off
+        # material_name, but a sidecar that misidentifies its own character is
+        # a trap for anything that ever trusts the field.
+        json.dump({"character": os.path.basename(os.path.dirname(out_root.rstrip("/\\"))) or "unknown",
                    "saved_at": _iso_now(),
                    "materials": materials}, f, indent=2)
     return materials

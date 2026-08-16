@@ -347,6 +347,13 @@ def _emit_sidecar_for_viewer(char_dir, out_dir):
         t = m.get("textures") or {}
         if p.get("alpha_stem"):
             needed.add(p["alpha_stem"])
+        # TELEGAMEZ: the strand-tangent atlas. Declared by stage 02; also
+        # derived here by convention so a sidecar written before that change
+        # still forwards it rather than silently dropping anisotropy.
+        if p.get("tangent_stem"):
+            needed.add(p["tangent_stem"])
+        elif isinstance(p.get("alpha_stem"), str) and p["alpha_stem"].endswith("_Attribute"):
+            needed.add(p["alpha_stem"].replace("_Attribute", "_Tangent"))
         for ref in t.values():
             if isinstance(ref, str) and "/" in ref:
                 # "textures/foo.png" -> "foo"

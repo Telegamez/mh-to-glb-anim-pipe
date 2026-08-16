@@ -1752,6 +1752,215 @@ def _remove_gltf_placeholder_empties():
     return removed
 
 
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform morph contract — convenience shapes (07 §4 group 3)
+# ---------------------------------------------------------------------------
+#
+# `audit_models.py` requires six convenience shapes that ARKit does not
+# provide. Five are deterministic symmetric merges of shapes the bake already
+# captured, so they are composed here rather than authored:
+#
+#   mouthSmile / eyesClosed / eyesLookUp / eyesLookDown  — left+right merges
+#   mouthOpen                                            — alias of jawOpen
+#
+# `eyesClosed` is the load-bearing one: it is what BlinkScheduler prefers and
+# what the compositor names in BLINK_COMBINED_MORPH.
+#
+# The sixth, `mouthClose`, is NOT here. MetaHuman's ARKit mapping PoseAsset
+# does not supply the ARKit `mouthClose` pose — our export is 51 of ARKit-52
+# and that is the one missing — so it cannot be merged from captured shapes
+# and must be synthesised from mouthPress*/mouthRoll*. That needs a visual
+# pass, so it is deliberately left outstanding and logged rather than guessed.
+CONVENIENCE_RECIPES = (
+    ("mouthSmile",   (("mouthSmileLeft", 1.0), ("mouthSmileRight", 1.0))),
+    ("eyesClosed",   (("eyeBlinkLeft", 1.0), ("eyeBlinkRight", 1.0))),
+    ("eyesLookUp",   (("eyeLookUpLeft", 1.0), ("eyeLookUpRight", 1.0))),
+    ("eyesLookDown", (("eyeLookDownLeft", 1.0), ("eyeLookDownRight", 1.0))),
+    ("mouthOpen",    (("jawOpen", 1.0),)),
+)
+
+
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform morph contract — visemes (07 §4 group 1)
+# ---------------------------------------------------------------------------
+#
+# The 15 canonical viseme names come from VISEME_MAP in @telegamez/lipsync.
+# ARKit does not provide them, so they are composed from the captured ARKit
+# shapes. There is no closed-form recipe — these weights are a FIRST PASS,
+# calibrated against measurements taken on Telly and a visual session in
+# Blender, and they are expected to be refined by watching lipsync run.
+#
+# Measured on this rig (max vertex displacement): jawOpen 32.7mm,
+# tongueOut 29.2mm, mouthSmileLeft 18.5mm, mouthStretchLeft 15.3mm,
+# mouthPucker 13.9mm, mouthFunnel 12.0mm, mouthShrugLower 12.0mm,
+# mouthRollLower 7.4mm, mouthRollUpper 5.7mm. jawOpen matching the
+# documented ~33mm confirms the bake produces true-magnitude deformation.
+#
+# Three things learned in the visual pass that these weights encode, and that
+# contradict what the shape NAMES suggest:
+#
+#   1. At rest the lips are CLOSED and no teeth show. viseme_sil is therefore
+#      a zero-delta shape, not a pose.
+#   2. `mouthFunnel` FLARES and parts the lip opening rather than protruding
+#      it. It is not the rounding control its name implies; used heavily it
+#      exposes teeth. Rounding comes from `mouthPucker`.
+#   3. `jawOpen` reveals teeth by about 0.05. Closed-mouth consonants must
+#      keep it at or near zero.
+#
+# KNOWN CEILING: the tongue-dependent visemes (TH, DD, nn, kk) are
+# approximations. ARKit exposes `tongueOut` and nothing else — no tongue tip,
+# no back-of-tongue — so these are built from jaw and lip cues that merely
+# correlate with the real articulation. The raw RigLogic rig has genuine
+# tongue controls among its 858 shapes, so this is a ceiling Phase 2's live
+# evaluator could lift; it is not liftable here.
+VISEME_RECIPES = (
+    # silence / rest — deliberately zero-delta; rest already reads as closed
+    ("viseme_sil", ()),
+    # bilabial plosive (p, b, m) — lips sealed and pressed
+    ("viseme_PP", (("mouthPressLeft", 0.70), ("mouthPressRight", 0.70),
+                   ("mouthRollLower", 0.25), ("mouthRollUpper", 0.25))),
+    # labiodental (f, v) — lower lip tucked to upper teeth
+    ("viseme_FF", (("mouthRollLower", 0.55), ("mouthUpperUpLeft", 0.25),
+                   ("mouthUpperUpRight", 0.25), ("jawOpen", 0.05))),
+    # dental (th) — tongue between the teeth
+    ("viseme_TH", (("jawOpen", 0.16), ("tongueOut", 0.30))),
+    # alveolar (d, t) — tongue to the ridge, jaw slightly open
+    ("viseme_DD", (("jawOpen", 0.20), ("mouthShrugUpper", 0.18))),
+    # velar (k, g) — back of tongue; almost no visible lip signature
+    ("viseme_kk", (("jawOpen", 0.18), ("mouthShrugLower", 0.12))),
+    # postalveolar (ch, j, sh) — lips protruded and slightly rounded
+    ("viseme_CH", (("mouthPucker", 0.45), ("mouthFunnel", 0.25),
+                   ("jawOpen", 0.10))),
+    # sibilant (s, z) — teeth close together, lips spread
+    ("viseme_SS", (("mouthStretchLeft", 0.35), ("mouthStretchRight", 0.35),
+                   ("jawOpen", 0.05))),
+    # nasal (n, ng, l) — tongue up, small aperture
+    ("viseme_nn", (("jawOpen", 0.13), ("tongueOut", 0.12))),
+    # rhotic (r) — slight rounding
+    ("viseme_RR", (("mouthPucker", 0.30), ("mouthFunnel", 0.18),
+                   ("jawOpen", 0.10))),
+    # open vowel (father)
+    ("viseme_aa", (("jawOpen", 0.70),)),
+    # mid-front vowel (bed)
+    ("viseme_E", (("jawOpen", 0.32), ("mouthStretchLeft", 0.22),
+                  ("mouthStretchRight", 0.22))),
+    # close-front vowel (bee) — spread, nearly closed
+    ("viseme_I", (("jawOpen", 0.10), ("mouthStretchLeft", 0.40),
+                  ("mouthStretchRight", 0.40))),
+    # mid-back rounded (go)
+    ("viseme_O", (("mouthPucker", 0.40), ("mouthFunnel", 0.45),
+                  ("jawOpen", 0.28))),
+    # close-back rounded (boot) — the tightest rounding; funnel kept low
+    ("viseme_U", (("mouthPucker", 0.85), ("mouthFunnel", 0.12))),
+)
+
+# The sixth convenience shape. MetaHuman's ARKit mapping omits ARKit's own
+# `mouthClose`, so it is synthesised as a gentle lip seal — pressing beyond
+# the resting closure rather than merely closing, since rest is already shut.
+MOUTHCLOSE_RECIPE = (("mouthPressLeft", 0.45), ("mouthPressRight", 0.45),
+                     ("mouthRollLower", 0.20), ("mouthRollUpper", 0.20))
+
+
+def _compose_shape_key(obj, name, recipe):
+    """Create shape key `name` as a weighted sum of existing keys' deltas.
+
+    Composed by direct vertex math rather than `shape_key_add(from_mix=True)`.
+    from_mix depends on the current value of every active key and on modifier
+    state, so it is only correct if the whole stack is zeroed first — an
+    invariant that is easy to break silently later. Summing deltas explicitly
+    is deterministic and matches how the ARKit transfer above builds keys.
+
+    Returns (created, missing_sources).
+    """
+    keys = obj.data.shape_keys
+    if keys is None:
+        return False, [s for s, _ in recipe]
+    basis = keys.key_blocks[0]
+
+    missing = [s for s, _ in recipe if keys.key_blocks.get(s) is None]
+    if missing:
+        return False, missing
+
+    existing = keys.key_blocks.get(name)
+    if existing is not None:
+        obj.shape_key_remove(existing)
+    new_kb = obj.shape_key_add(name=name, from_mix=False)
+
+    sources = [(keys.key_blocks[s], w) for s, w in recipe]
+    for i in range(len(basis.data)):
+        base_co = basis.data[i].co
+        x = y = z = 0.0
+        for kb, w in sources:
+            d = kb.data[i].co - base_co
+            x += d.x * w
+            y += d.y * w
+            z += d.z * w
+        new_kb.data[i].co = (base_co.x + x, base_co.y + y, base_co.z + z)
+    new_kb.value = 0.0
+    return True, []
+
+
+def _compose_convenience_shapes(face_obj):
+    """Add the contract's convenience shapes to the GLB face mesh."""
+    created, skipped = [], []
+    for name, recipe in CONVENIENCE_RECIPES:
+        ok, missing = _compose_shape_key(face_obj, name, recipe)
+        if ok:
+            created.append(name)
+        else:
+            skipped.append(f"{name} (missing {','.join(missing)})")
+
+    if created:
+        _log(f"  convenience: composed {len(created)} -> {created}")
+    for s in skipped:
+        _log(f"  convenience: SKIPPED {s}")
+
+    # State the remaining contract gap explicitly. A silent partial result
+    # here surfaces much later as a runtime morph lookup that quietly does
+    # nothing, which is the failure mode this pipeline keeps producing.
+    # mouthClose: ARKit's own is absent from MetaHuman's mapping, so synthesise.
+    ok, missing = _compose_shape_key(face_obj, "mouthClose", MOUTHCLOSE_RECIPE)
+    if ok:
+        created.append("mouthClose")
+        _log("  convenience: synthesised mouthClose (ARKit mapping omits it)")
+    else:
+        _log(f"  convenience: mouthClose FAILED - missing {','.join(missing)}")
+
+    if face_obj.data.shape_keys is not None:
+        have = set(face_obj.data.shape_keys.key_blocks.keys())
+        gap = [c for c in ("mouthOpen", "mouthClose", "mouthSmile",
+                           "eyesClosed", "eyesLookUp", "eyesLookDown")
+               if c not in have]
+        if gap:
+            _log(f"  convenience: CONTRACT GAP remains -> {gap}")
+    return len(created)
+
+
+def _compose_visemes(face_obj):
+    """Add the 15 contract visemes to the GLB face mesh."""
+    created, skipped = [], []
+    for name, recipe in VISEME_RECIPES:
+        ok, missing = _compose_shape_key(face_obj, name, recipe)
+        if ok:
+            created.append(name)
+        else:
+            skipped.append(f"{name} (missing {','.join(missing)})")
+
+    _log(f"  visemes: composed {len(created)}/15")
+    for s in skipped:
+        _log(f"  visemes: SKIPPED {s}")
+
+    if face_obj.data.shape_keys is not None:
+        have = set(face_obj.data.shape_keys.key_blocks.keys())
+        gap = [f"viseme_{v}" for v in
+               ("sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS",
+                "nn", "RR", "aa", "E", "I", "O", "U")
+               if f"viseme_{v}" not in have]
+        if gap:
+            _log(f"  visemes: CONTRACT GAP remains -> {gap}")
+    return len(created)
+
+
 def main():
     args = _parse()
     ws = os.path.abspath(args.workspace)
@@ -1803,6 +2012,17 @@ def main():
             groom_keys = _apply_arkit_to_grooms(glb_face)
             _log(f"propagated ARKit shape keys onto groom card meshes "
                  f"({groom_keys} total keys created)")
+
+            # TELEGAMEZ: contract convenience shapes, composed AFTER groom
+            # propagation on purpose — the grooms keep the 46 ARKit-derived
+            # keys they were verified with, and only the face gains the
+            # merged ones. The eye-region slots the lid-morph rule cares
+            # about (eyeshell, lashes, lacrimal) are primitives of this same
+            # face mesh, so they share its shape keys.
+            n_conv = _compose_convenience_shapes(glb_face)
+            _log(f"composed {n_conv} convenience shape(s) onto the GLB face mesh")
+            n_vis = _compose_visemes(glb_face)
+            _log(f"composed {n_vis} viseme shape(s) onto the GLB face mesh")
     else:
         _log("no ARKit shape keys baked - LSE FBX missing or capture failed")
 

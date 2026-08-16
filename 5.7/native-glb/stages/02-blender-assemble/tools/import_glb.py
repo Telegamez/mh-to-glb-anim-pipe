@@ -1979,6 +1979,153 @@ CONTRACT_BONE_RENAMES = (
 )
 
 
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform mesh contract — split the face by material (07 §1)
+# ---------------------------------------------------------------------------
+#
+# `audit_models.py` requires six exactly-named meshes. A MetaHuman export
+# ships ONE face mesh carrying eight material slots, so this is a split, not a
+# rename — the hardest single item in the asset contract.
+#
+# It matters beyond passing an audit. The lid-morph rule requires eyesClosed /
+# eyeBlink* to be present on EVERY eye-region mesh independently, which is
+# only meaningful once those regions are separate objects. Blender's
+# separate-by-material carries the full shape-key set onto each piece, and
+# because the ARKit shapes were captured on the whole face, the lash and
+# eye-shell vertices genuinely move under a blink — so the coverage is real
+# rather than nominal zero-delta padding.
+#
+# Slots with no contract home (M_Hide, LacrimalFluid) are kept as their own
+# objects rather than merged into Head_Mesh. They are deliberately invisible,
+# and folding transparent geometry into the skin mesh would put an alpha-zero
+# material on the face's own slot list.
+CONTRACT_MESH_BY_MATERIAL = (
+    ("eyeshell", "EyeAO_Mesh"),      # before "eye" — the occlusion shell
+    ("lacrimal", "Lacrimal_Mesh"),
+    ("eyelash", "Eyelash_Mesh"),
+    ("lashmat", "Eyelash_Mesh"),
+    ("eyel_", "Eye_Mesh"),
+    ("eyer_", "Eye_Mesh"),
+    ("_eyel", "Eye_Mesh"),
+    ("_eyer", "Eye_Mesh"),
+    ("teeth", "Teeth_Mesh"),
+    ("saliva", "Teeth_Mesh"),
+    ("hide", "Hide_Mesh"),
+    ("skin", "Head_Mesh"),           # last: broadest match
+)
+
+
+def _contract_mesh_for_material(mat_name):
+    low = (mat_name or "").lower()
+    for needle, target in CONTRACT_MESH_BY_MATERIAL:
+        if needle in low:
+            return target
+    return None
+
+
+def _split_face_by_contract(face_obj):
+    """Split the single MetaHuman face mesh into the contract's named meshes."""
+    mats = [ms.material.name if ms.material else "" for ms in face_obj.material_slots]
+    plan = {m: _contract_mesh_for_material(m) for m in mats}
+    unmapped = [m for m, t in plan.items() if t is None]
+    _log(f"  split: {len(mats)} material slot(s) -> "
+         f"{sorted({t for t in plan.values() if t})}")
+    if unmapped:
+        _log(f"  split: UNMAPPED materials (left as-is): {unmapped}")
+
+    before = {o.name for o in bpy.data.objects if o.type == "MESH"}
+
+    bpy.ops.object.select_all(action="DESELECT")
+    face_obj.select_set(True)
+    bpy.context.view_layer.objects.active = face_obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    try:
+        bpy.ops.mesh.separate(type="MATERIAL")
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    pieces = [o for o in bpy.data.objects
+              if o.type == "MESH" and (o.name not in before or o is face_obj)]
+
+    # Group the resulting single-material pieces by contract target.
+    groups = {}
+    for o in pieces:
+        mat = o.material_slots[0].material.name if o.material_slots and o.material_slots[0].material else ""
+        target = _contract_mesh_for_material(mat)
+        if target is None:
+            continue
+        groups.setdefault(target, []).append(o)
+
+    made = []
+    for target, objs in groups.items():
+        keep = objs[0]
+        if len(objs) > 1:
+            # Eye_Mesh is L+R; Teeth_Mesh may pick up saliva.
+            bpy.ops.object.select_all(action="DESELECT")
+            for o in objs:
+                o.select_set(True)
+            bpy.context.view_layer.objects.active = keep
+            bpy.ops.object.join()
+        # Free the name if some leftover already holds it.
+        clash = bpy.data.objects.get(target)
+        if clash is not None and clash is not keep:
+            clash.name = f"{target}_unused"
+        keep.name = target
+        keep.data.name = target
+        made.append(target)
+
+    _log(f"  split: produced {sorted(made)}")
+    return made
+
+
+def _apply_mesh_contract():
+    """Name the six contract meshes. Face is split; body is a rename."""
+    face = None
+    for o in bpy.data.objects:
+        if (o.type == "MESH" and "facemesh" in o.name.lower()
+                and "cardsmesh" not in o.name.lower()):
+            if face is None or len(o.data.vertices) > len(face.data.vertices):
+                face = o
+    made = _split_face_by_contract(face) if face is not None else []
+
+    for o in bpy.data.objects:
+        if o.type == "MESH" and "bodymesh" in o.name.lower():
+            o.name = "Body_Mesh"
+            o.data.name = "Body_Mesh"
+            made.append("Body_Mesh")
+            break
+
+    required = ("Head_Mesh", "Eye_Mesh", "EyeAO_Mesh",
+                "Eyelash_Mesh", "Teeth_Mesh", "Body_Mesh")
+    present = {o.name for o in bpy.data.objects if o.type == "MESH"}
+    gap = [r for r in required if r not in present]
+
+    # The lid-morph rule (07 §1) wants blink coverage on every eye-region mesh.
+    # Report it rather than assume the split delivered it.
+    for m in ("Head_Mesh", "EyeAO_Mesh", "Eyelash_Mesh"):
+        o = bpy.data.objects.get(m)
+        if o is None or o.data.shape_keys is None:
+            _log(f"  lids: {m} has NO shape keys")
+            continue
+        keys = o.data.shape_keys.key_blocks
+        have = [k for k in ("eyesClosed", "eyeBlinkLeft", "eyeBlinkRight")
+                if k in keys]
+        moved = 0
+        kb = keys.get("eyeBlinkLeft")
+        if kb is not None:
+            basis = keys[0]
+            moved = sum(1 for i in range(0, len(basis.data), 7)
+                        if (kb.data[i].co - basis.data[i].co).length > 1e-5)
+        _log(f"  lids: {m} has {have} (eyeBlinkLeft moves ~{moved * 7} verts)")
+
+    if gap:
+        _log(f"  mesh contract: GAP remains -> {gap}")
+    else:
+        _log("  mesh contract: all six meshes present")
+    return gap
+
+
 def _rename_contract_bones():
     """Rename MetaHuman bones to the platform's Mixamo-family contract names."""
     armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
@@ -2187,9 +2334,24 @@ def main():
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")
+    # TELEGAMEZ: mesh contract. Runs after every step that looks the face up
+    # by its MetaHuman name (ARKit transfer, groom propagation, scalp
+    # darkening) — splitting earlier would leave those searching for a mesh
+    # that no longer exists.
+    mesh_gap = _apply_mesh_contract()
+    _log("applied the platform mesh contract"
+         + (f" - GAP: {mesh_gap}" if mesh_gap else " (all six present)"))
+
     # TELEGAMEZ: rig contract bone names. Last thing before saving, so every
     # earlier stage still sees the MetaHuman names it was written against
     # (the groom parenting looks up "head", for one).
+    #
+    # NOTE FOR THE ANIMATION BAKE: MetaHuman-native state loops are authored
+    # against metahuman_base_skel, so the clip bake MUST apply this exact same
+    # mapping to its channels. Rename the model without renaming the clips and
+    # every one of these 16 joints goes unanimated — the body would move only
+    # on the intermediates and twist bones, which reads as a subtle stiffness
+    # rather than an obvious break.
     n_bones, bone_gap = _rename_contract_bones()
     _log(f"renamed {n_bones} bone(s) to the platform rig contract"
          + (f" - GAP: {bone_gap}" if bone_gap else ""))

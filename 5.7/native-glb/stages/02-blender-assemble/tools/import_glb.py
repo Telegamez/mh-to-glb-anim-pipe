@@ -1936,6 +1936,92 @@ def _compose_convenience_shapes(face_obj):
     return len(created)
 
 
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform rig contract — bone names (07 §1)
+# ---------------------------------------------------------------------------
+#
+# `audit_models.py` requires 16 Mixamo-family bone names. A MetaHuman export
+# has NONE of them — not thirteen of sixteen, zero: even `head` fails against
+# `Head`, and the eyes are `FACIAL_L_Eye`/`FACIAL_R_Eye`.
+#
+# This is a RENAME, not a hierarchy collapse. The contract checks names, not
+# structure, and the 31 shared clips bind by name too. The MetaHuman spine is
+# five joints where Mixamo has three:
+#
+#   pelvis -> spine_01 -> spine_02 -> spine_03 -> spine_04 -> spine_05
+#
+# so `spine_01/03/05` take the three contract names and `spine_02/04` stay as
+# unnamed intermediates. Clips animating Spine/Spine1/Spine2 apply at those
+# three joints and the intermediates ride along at rest. The pose is valid;
+# whether it reads as well as a native three-joint spine is a question for
+# Stage A's capture, not for the contract. Same for `neck_01` taking `Neck`
+# while `neck_02` remains.
+#
+# Nothing is deleted. Removing joints would be irreversible here and buys
+# nothing the contract asks for.
+CONTRACT_BONE_RENAMES = (
+    ("pelvis", "Hips"),
+    ("spine_01", "Spine"),
+    ("spine_03", "Spine1"),
+    ("spine_05", "Spine2"),
+    ("neck_01", "Neck"),
+    ("head", "Head"),
+    ("clavicle_l", "LeftShoulder"),
+    ("upperarm_l", "LeftArm"),
+    ("lowerarm_l", "LeftForeArm"),
+    ("hand_l", "LeftHand"),
+    ("clavicle_r", "RightShoulder"),
+    ("upperarm_r", "RightArm"),
+    ("lowerarm_r", "RightForeArm"),
+    ("hand_r", "RightHand"),
+    ("FACIAL_L_Eye", "LeftEye"),
+    ("FACIAL_R_Eye", "RightEye"),
+)
+
+
+def _rename_contract_bones():
+    """Rename MetaHuman bones to the platform's Mixamo-family contract names."""
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+    renamed, already = 0, 0
+
+    for arm in armatures:
+        bones = arm.data.bones
+        skinned = [m for m in meshes
+                   if any(md.type == "ARMATURE" and md.object is arm
+                          for md in m.modifiers)]
+        for src, dst in CONTRACT_BONE_RENAMES:
+            if bones.get(dst) is not None:
+                already += 1
+                continue
+            b = bones.get(src)
+            if b is None:
+                continue
+            b.name = dst
+            renamed += 1
+            # Blender generally keeps vertex groups in step with a bone
+            # rename, but do it explicitly: a group left on the old name is a
+            # silently unweighted bone, which looks like a broken skin weeks
+            # later rather than a failed rename now.
+            for m in skinned:
+                vg = m.vertex_groups.get(src)
+                if vg is not None:
+                    vg.name = dst
+
+    present = set()
+    for arm in armatures:
+        present |= {b.name for b in arm.data.bones}
+    want = [dst for _, dst in CONTRACT_BONE_RENAMES]
+    missing = [w for w in want if w not in present]
+
+    _log(f"  bones: renamed {renamed} (already correct: {already})")
+    if missing:
+        _log(f"  bones: CONTRACT GAP remains -> {missing}")
+    else:
+        _log(f"  bones: all {len(want)} contract names present")
+    return renamed, missing
+
+
 def _compose_visemes(face_obj):
     """Add the 15 contract visemes to the GLB face mesh."""
     created, skipped = [], []
@@ -2101,6 +2187,13 @@ def main():
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")
+    # TELEGAMEZ: rig contract bone names. Last thing before saving, so every
+    # earlier stage still sees the MetaHuman names it was written against
+    # (the groom parenting looks up "head", for one).
+    n_bones, bone_gap = _rename_contract_bones()
+    _log(f"renamed {n_bones} bone(s) to the platform rig contract"
+         + (f" - GAP: {bone_gap}" if bone_gap else ""))
+
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
     _log(f"wrote {blend_path}")
 

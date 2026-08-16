@@ -1,0 +1,113 @@
+# Telegamez fork — what diverges from upstream, and why
+
+Fork of [smorchj/metahuman-to-glb](https://github.com/smorchj/metahuman-to-glb).
+Branch: **`ue58-compat`**. Upstream `main` is unmodified.
+
+Purpose: bake MetaHuman characters into GLBs that satisfy the **Telegamez companion asset
+contract** so they can be driven by the existing naturalMotion / naturalLipsync stack.
+Contract: `_docs/Architecture/Companions/NaturalMotion/07-Asset-Pipeline-And-Contracts.md` in
+the `telegamez` monorepo, enforced by `scripts/motion/audit_models.py`.
+
+Everything here lives in `5.7/native-glb/stages/`. The `5.6/cinematic` and `5.7/cinematic`
+trees are untouched.
+
+---
+
+## The two categories, and why the distinction matters
+
+Changes fall into two groups that must not be confused. Mixing them up means either offering
+upstream a patch that breaks their tool, or dropping a fix that everyone would benefit from.
+
+### A. General fixes — candidates to upstream
+
+Nothing Telegamez-specific. These are bugs, version drift, or environmental hazards that would
+affect anyone running the pipeline.
+
+| Fix | Why it is general |
+|---|---|
+| `MetaHumanDefaultPipelineType` built by `hasattr` | 5.7 exposes `CINEMATIC/OPTIMIZED/DCC`, 5.8 drops `DCC` and adds `UEFN`. The dict literal dereferenced all three eagerly, so a *cinematic* build died on 5.8 with "no attribute 'DCC'" without reaching the lookup. Version-agnostic now. |
+| Stage 00 saves via `save_dirty_packages` | Saving was hardcoded to `/Game/<Name>/`; 5.8 builds into `/Game/Unpacked/<Name>/`, so the save missed and the exception was swallowed as a warning — the stage reported `DONE` having persisted nothing. **See the re-bake note below.** |
+| A failed save is fatal | A stage that cannot persist its own output must not report success. |
+| Stage 01 resolves the built-asset folder | Same 5.7-vs-5.8 path assumption, second location. |
+| `scan_paths_synchronous` before the ARKit lookup | UE's AssetRegistry lazy-loads plugin content, so in a fresh commandlet `load_asset` returns `None` for assets that exist. The stage then skipped the **entire ARKit bake** while writing a manifest with "0 warnings". `_list_under` already documents this exact hazard — the guard was simply never applied here. |
+| `--factory-startup` on both Blender launchers | `read_factory_settings()` tears down whatever is registered, and a third-party addon that unregisters badly takes Blender with it. Observed: `cc_blender_tools` raised in `unregister()` and Blender died with `EXCEPTION_ACCESS_VIOLATION` before the stage ran a line of its own. A reproducible bake must not depend on an operator's installed addons. |
+| Publish the `_Tangent` atlas | It drives anisotropic strand specular and was never deployed — stage 02 did not declare it, so stage 03 did not forward it and stage 04 did not copy it. The file was in `01-glb/textures/` the whole time. A published avatar silently lost the strand highlight while a local bake kept it. |
+| `"character"` derived, not hardcoded `"ada"` | The sidecar named every character "ada", demos included. |
+
+### B. Telegamez platform contract — do NOT upstream
+
+These exist to satisfy our asset contract. They would be wrong for a general-purpose
+MetaHuman→GLB tool, and upstream should not carry them.
+
+| Addition | What it does |
+|---|---|
+| **15 visemes + 6 convenience shapes** | Composed in stage 02 from captured ARKit deltas as weighted sums of existing shape keys. ARKit does not provide them; `@telegamez/lipsync`'s `VISEME_MAP` requires them. Takes the face from 51 to 72 morph targets. |
+| **Bone renames** | 16 MetaHuman joints renamed to Mixamo-family contract names (`pelvis`→`Hips`, `spine_01/03/05`→`Spine/Spine1/Spine2`, `FACIAL_L_Eye`→`LeftEye`, …). A rename, not a hierarchy collapse — nothing is deleted, and `spine_02/04` stay as intermediates. |
+| **Mesh split** | The single 8-slot face mesh is split by material into `Head_Mesh`, `Eye_Mesh`, `EyeAO_Mesh`, `Eyelash_Mesh`, `Teeth_Mesh`; the body becomes `Body_Mesh`. Required because our lid-morph rule asserts blink coverage on each eye-region mesh independently. |
+
+---
+
+## Running on UE 5.8 and Blender 4.4
+
+Upstream targets UE 5.7 and states Blender 5.x. This fork is verified on **UE 5.8.1** and
+**Blender 4.4.1**.
+
+- `ue_version` in `_config/pipeline.yaml` selects both the path block **and the pipeline
+  directory**, and there is no `5.8/` tree. Leave it at `"5.7"` and point that block at the 5.8
+  install. Mislabelled but functional.
+- `editor_cmd` must be the **`-Cmd`** binary. `run_assemble.ps1` rewrites it to
+  `UnrealEditor.exe` itself for stage 00, which needs the GUI editor's tick loop for async
+  cloud texture downloads. Putting `UnrealEditor.exe` there breaks stage 01.
+- Blender has no version gate anywhere in the stage scripts, and 4.4.1 was verified directly:
+  `io_scene_gltf2` enabled, all 13 export params accepted, FBX importer present,
+  `extern_draco.dll` present. Stage 03 sets `CYCLES` explicitly before baking, so the
+  EEVEE-Next change in 4.2 does not bite.
+
+UE 5.8's MetaHuman Python API was diffed against upstream's committed 5.7.4 probe baseline: 13
+UCLASS checks identical, subsystem methods purely additive (24 added, 0 removed, 0 renamed),
+property names identical. Only the enum above actually broke.
+
+---
+
+## The re-bake trap
+
+**Read this before changing anything in stage 00's save path.**
+
+`new_assets` is a set-difference of SkeletalMeshes before vs after the build. It is **empty on a
+re-bake** — the assets already exist, so nothing is "new". Any save logic keyed off that list
+does nothing at all on the second and every subsequent bake.
+
+That is not hypothetical. The first fix here derived its save folders from `new_assets`; it
+worked perfectly on a first bake, and when a character was edited in MetaHuman Creator and
+re-baked, it rebuilt in memory, saved nothing, and still reported `DONE` — the same silent
+success as the bug it replaced, reached by a different route.
+
+**Every character edit after the first is a re-bake.** The broken path was the common one.
+`save_dirty_packages` does not care where the build wrote or whether the assets already
+existed, which is why it is the right mechanism.
+
+---
+
+## Things that look like bugs and are not
+
+- **`can_build_meta_human: False` at rest** is expected. Stage 00's lifecycle is
+  `request_texture_sources` (async, Epic cloud) → wait for the flag → `build_meta_human`.
+- **Missing eyelashes** usually means the character asset has `eyelashes: { type: None }` — no
+  style assigned in MetaHuman Creator, so no coverage texture, so nothing to draw. Set a type
+  and re-bake; every downstream link then works untouched.
+- **`preview.png` showing a bald character.** Stage 04's headless render validation reports
+  `OK` while producing a preview with no hair, reproducibly. The asset is fine. Serve `docs/`
+  over http and look in a browser; `file://` fails on CORS and looks worse still.
+- **`extract_thumbnail.py` not found.** Referenced by `run_assemble.ps1`, absent from upstream.
+  Non-fatal; the thumbnail step just fails.
+
+---
+
+## Re-syncing with upstream
+
+Category A changes may conflict if upstream fixes the same things independently — take theirs
+where equivalent. Category B changes are additive and should survive a merge, but they live in
+the same functions as upstream's stage-02 logic, so expect conflicts in `import_glb.py`.
+
+Every Telegamez change is marked with a `TELEGAMEZ` comment at the site, with the reasoning
+inline. Search for it before merging.

@@ -30,7 +30,10 @@ Write-Host "[run_export] workspace = $Workspace"
 Write-Host "[run_export] char      = $Char"
 Write-Host "[run_export] blend     = $Blend"
 
-& $BlenderExe --background $Blend --python $PyScript -- --char $Char --workspace $Workspace
+# TELEGAMEZ PATCH: --factory-startup, same reason as stage 02's launcher —
+# user addons must not participate in a reproducible bake, and a badly
+# behaved one can crash Blender outright.
+& $BlenderExe --factory-startup --background $Blend --python $PyScript -- --char $Char --workspace $Workspace
 $code = $LASTEXITCODE
 Write-Host "[run_export] exit code: $code"
 

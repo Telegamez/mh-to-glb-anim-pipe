@@ -40,7 +40,17 @@ Write-Host "[run_assemble] workspace = $Workspace"
 Write-Host "[run_assemble] char      = $Char"
 Write-Host "[run_assemble] in_root   = $InRoot"
 
-& $BlenderExe --background --python $PyScript -- --char $Char --workspace $Workspace
+# TELEGAMEZ PATCH: --factory-startup so the bake never loads the operator's
+# user addons or preferences. import_glb.py calls read_factory_settings(),
+# which tears down whatever is registered — and a third-party addon that
+# unregisters badly takes Blender down with it. Seen on this box:
+# cc_blender_tools-2_2_5 raised in unregister() and Blender died with
+# EXCEPTION_ACCESS_VIOLATION before the stage ran a single line of its own.
+#
+# A reproducible bake must not depend on what happens to be installed in
+# someone's Blender profile. The bundled glTF and FBX IO addons are enabled
+# in factory defaults, which is all this stage needs.
+& $BlenderExe --factory-startup --background --python $PyScript -- --char $Char --workspace $Workspace
 $code = $LASTEXITCODE
 Write-Host "[run_assemble] exit code: $code"
 

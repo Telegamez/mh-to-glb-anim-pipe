@@ -189,6 +189,26 @@ def _export_arkit_shape_sources(face_skm, out_dir):
     pa_path = "/MetaHumanCharacter/Face/ARKit/PA_MetaHuman_ARKit_Mapping"
     as_path = "/MetaHumanCharacter/Face/ARKit/AS_MetaHuman_ARKit_Mapping"
 
+    # TELEGAMEZ PATCH: force-scan the plugin content root before loading.
+    # UE's AssetRegistry lazy-loads sub-paths, and in a fresh commandlet the
+    # MetaHumanCharacter plugin root is NOT scanned — so `load_asset` returns
+    # None for assets that are demonstrably present on disk, and this stage
+    # skips the ARKit bake entirely while still writing a manifest and
+    # reporting "0 warnings". A GLB with no ARKit shapes is the single most
+    # poisonous output this pipeline can produce, because it looks fine until
+    # something tries to drive a viseme.
+    #
+    # This is the same hazard `_list_under` already documents ("without an
+    # explicit scan ... can silently return 0 hits even though the uassets
+    # exist on disk") — the guard simply was never applied here. Verified on
+    # 5.8: before the scan both loads return None; after it, the PoseAsset
+    # reports its expected 66 poses.
+    try:
+        unreal.AssetRegistryHelpers.get_asset_registry().scan_paths_synchronous(
+            ["/MetaHumanCharacter/Face/ARKit"], force_rescan=True)
+    except Exception as e:
+        _log(f"  scan_paths_synchronous(ARKit) raised: {e}")
+
     pa = unreal.EditorAssetLibrary.load_asset(pa_path)
     a_seq = unreal.EditorAssetLibrary.load_asset(as_path)
     if pa is None or a_seq is None:
@@ -594,6 +614,36 @@ def main():
     char_root = os.path.join(workspace, "characters", args.char)
     char_manifest = json.load(open(os.path.join(char_root, "manifest.json"), encoding="utf-8"))
     mh_folder = char_manifest["mh_folder"]
+
+    # TELEGAMEZ PATCH (UE 5.8): `mh_folder` is where bootstrap found the
+    # SOURCE MetaHumanCharacter (e.g. /Game/Telly). On 5.7, build_meta_human
+    # wrote its output into that same folder, so one field served both roles.
+    # 5.8 builds into /Game/Unpacked/<Name>/ instead, and every use below
+    # wants the BUILT assets — so resolve once here rather than repointing the
+    # manifest field, which stage 00 still needs to locate the source asset.
+    #
+    # Fail-loud behaviour is preserved: if no candidate holds both a face and
+    # a body mesh, mh_folder is left alone and the existing check below raises
+    # with the folder it tried.
+    def _holds_both(folder):
+        names = [a.get_name() for a in _list_under(folder, "SkeletalMesh")]
+        return (any("FaceMesh" in n for n in names)
+                and any("BodyMesh" in n for n in names))
+
+    _leaf = mh_folder.rstrip("/").rsplit("/", 1)[-1]
+    _tried = []
+    for _cand in (mh_folder, f"/Game/Unpacked/{_leaf}"):
+        if _cand in _tried:
+            continue
+        _tried.append(_cand)
+        if _holds_both(_cand):
+            if _cand != mh_folder:
+                _log(f"  built assets not under {mh_folder}; "
+                     f"using {_cand} (UE 5.8 layout)")
+                mh_folder = _cand
+            break
+    else:
+        _log(f"  no candidate folder held both face+body meshes; tried {_tried}")
 
     out_dir = _ensure_dir(os.path.join(char_root, "01-glb"))
     textures_dir = _ensure_dir(os.path.join(out_dir, "textures"))

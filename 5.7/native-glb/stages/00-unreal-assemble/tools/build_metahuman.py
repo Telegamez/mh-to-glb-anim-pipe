@@ -548,6 +548,27 @@ def on_tick(dt: float) -> None:
                     head, _, tail = entry.rpartition("/")
                     return f"{head}/{tail.split('.', 1)[0]}" if head else entry
 
+                # FIRST, and regardless of what `new_assets` holds: flush every
+                # dirty content package.
+                #
+                # `new_assets` is a set-difference of SkeletalMeshes before vs
+                # after the build, so it is EMPTY on a re-bake — the assets
+                # already exist, nothing is "new", and any save logic keyed off
+                # that list does nothing at all. That is not hypothetical: the
+                # first fix here derived the save folders from `new_assets`, so
+                # re-baking Telly with eyelashes enabled rebuilt in memory,
+                # saved nothing, and still reported DONE. Same silent success
+                # as the bug it replaced, reached by a different route.
+                #
+                # Saving dirty packages does not care where the build wrote or
+                # whether the assets already existed.
+                try:
+                    dirty = unreal.EditorLoadingAndSavingUtils.save_dirty_packages(
+                        save_map_packages=False, save_content_packages=True)
+                    log(f"  save_dirty_packages -> {dirty}")
+                except Exception as e:
+                    log(f"  save_dirty_packages failed: {e}")
+
                 saved_ok = True
                 for entry in new_assets:
                     pkg = _package_of(entry)

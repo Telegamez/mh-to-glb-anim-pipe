@@ -50,7 +50,17 @@ Write-Host "[run_assemble] in_root   = $InRoot"
 # A reproducible bake must not depend on what happens to be installed in
 # someone's Blender profile. The bundled glTF and FBX IO addons are enabled
 # in factory defaults, which is all this stage needs.
+# TELEGAMEZ: this file sets $ErrorActionPreference = "Stop", and PowerShell
+# converts a native command's stderr into an ErrorRecord whenever the CALLER
+# captures output. Benign chatter - OpenXR version warnings, Blender startup
+# noise - then terminates the launcher before the $LASTEXITCODE check below
+# ever runs. The stage works by hand and dies under a batch runner or CI.
+# Drop to "Continue" across the call so the exit code decides success, which
+# is what the check was written to do. See TELEGAMEZ.md.
+$PrevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $BlenderExe --factory-startup --background --python $PyScript -- --char $Char --workspace $Workspace
+$ErrorActionPreference = $PrevEap
 $code = $LASTEXITCODE
 Write-Host "[run_assemble] exit code: $code"
 

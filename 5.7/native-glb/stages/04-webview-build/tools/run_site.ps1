@@ -36,7 +36,17 @@ Write-Host "[run_site] python    = $Py"
 Write-Host "[run_site] workspace = $Workspace"
 Write-Host "[run_site] char      = $Char"
 
+# TELEGAMEZ: this file sets $ErrorActionPreference = "Stop", and PowerShell
+# converts a native command's stderr into an ErrorRecord whenever the CALLER
+# captures output. Benign chatter - OpenXR version warnings, Blender startup
+# noise - then terminates the launcher before the $LASTEXITCODE check below
+# ever runs. The stage works by hand and dies under a batch runner or CI.
+# Drop to "Continue" across the call so the exit code decides success, which
+# is what the check was written to do. See TELEGAMEZ.md.
+$PrevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $Py $PyScript --char $Char --workspace $Workspace
+$ErrorActionPreference = $PrevEap
 $code = $LASTEXITCODE
 Write-Host "[run_site] exit code: $code"
 

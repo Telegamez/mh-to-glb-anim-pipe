@@ -129,10 +129,31 @@ $UassetPath = Join-Path $ContentDir "$MhRelative.uasset"
 $ThumbOut = Join-Path $Workspace "characters\$Char\source\thumbnail.jpg"
 $ThumbScript = Join-Path $ToolsDir "extract_thumbnail.py"
 
-if (Test-Path $UassetPath) {
+# TELEGAMEZ: this step is meant to be non-fatal - it checks $LASTEXITCODE and
+# carries on. That guard only holds when the script's output goes straight to a
+# console. As soon as a caller CAPTURES output (a batch runner, CI, any
+# redirection), PowerShell turns the child's stderr into an ErrorRecord, and
+# with $ErrorActionPreference = "Stop" set at the top of this file that
+# terminates the run before the guard is ever reached. So stage 00 aborted
+# instantly for four characters on a documented-benign missing script, while
+# working fine when run by hand. Fixed two ways: skip the call outright when
+# the script is absent (it is not in upstream), and neutralise stderr when it
+# is present so "non-fatal" means non-fatal under automation too.
+if (-not (Test-Path $ThumbScript)) {
+    Write-Host "[stage00] no extract_thumbnail.py at $ThumbScript - skipping thumbnail"
+} elseif (Test-Path $UassetPath) {
     Write-Host "[stage00] extracting thumbnail from $UassetPath"
-    & python $ThumbScript --uasset $UassetPath --out $ThumbOut
-    if ($LASTEXITCODE -eq 0) {
+    $PrevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & python $ThumbScript --uasset $UassetPath --out $ThumbOut 2>$null
+        $ThumbCode = $LASTEXITCODE
+    } catch {
+        $ThumbCode = 1
+    } finally {
+        $ErrorActionPreference = $PrevEap
+    }
+    if ($ThumbCode -eq 0 -and (Test-Path $ThumbOut)) {
         $kb = [math]::Round((Get-Item $ThumbOut).Length / 1KB)
         Write-Host "[stage00] thumbnail ready: $ThumbOut (${kb} KB)"
     } else {

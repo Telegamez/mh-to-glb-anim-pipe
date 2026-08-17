@@ -835,6 +835,15 @@ def main():
     plugin_beards    = "/MetaHumanCharacter/Optional/Grooms/GroomAssets/Beards"
     plugin_mustaches = "/MetaHumanCharacter/Optional/Grooms/GroomAssets/Mustaches"
     plugin_lashes_textures = "/MetaHumanCharacter/Textures/Eyelashes"
+    # TELEGAMEZ: scan before listing. The last get_assets_by_path in this file
+    # without an explicit scan, and stage 00 has just DELETED and rebuilt this
+    # folder, so the registry is at its most stale exactly here. Observed:
+    # Hair_M_TwistedBraids and its cards present on disk but absent from the
+    # returned styles, so the character published no hair.
+    try:
+        ar.scan_paths_synchronous([mh_folder + "/Grooms"], force_rescan=True)
+    except Exception as e:
+        _log(f"  scan({mh_folder}/Grooms) raised: {e}")
     try:
         groom_root_assets = ar.get_assets_by_path(
             mh_folder + "/Grooms", recursive=False,

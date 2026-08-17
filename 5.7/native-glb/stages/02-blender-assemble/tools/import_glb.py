@@ -1734,8 +1734,8 @@ _DARK_SKIP_TOKENS = ("eyebrow", "eyebrows", "brows", "eyelash", "eyelashes", "la
 # off the scalp, so occlusion reaches; a beard sits directly against skin, and
 # a radius sized for a hairline throws a 30 mm shadow across the whole jaw and
 # well down the neck.
-_SCALP_DARK_RADIUS  = 0.018  # 18 mm — head hair
-_FACIAL_DARK_RADIUS = 0.010  # 10 mm — beard / moustache / goatee / stubble
+_SCALP_DARK_RADIUS  = 0.014  # 14 mm — head hair
+_FACIAL_DARK_RADIUS = 0.008  #  8 mm — beard / moustache / goatee / stubble
 
 # Darkest multiplier (0 = black, 1 = no change).
 #
@@ -1744,20 +1744,24 @@ _FACIAL_DARK_RADIUS = 0.010  # 10 mm — beard / moustache / goatee / stubble
 # a GLB — the first time anyone saw it applied it read as bruising rather than
 # shadow.
 #
-# THESE ARE sRGB VALUES, NOT LINEAR MULTIPLIERS. The layer written below is a
-# BYTE_COLOR attribute, which Blender treats as sRGB-encoded and the glTF
-# exporter converts to linear on the way out. So what the renderer multiplies
-# by is srgb_to_linear(factor), which is a lot darker than the number here:
+# This is a LINEAR multiplier — what the renderer actually multiplies skin by
+# at the contact point. `_write_vertex_colour` below encodes it on the way into
+# the BYTE_COLOR layer so that stays true.
 #
-#     written   0.12   0.40   0.54   0.65   0.75   0.87   0.95   1.00
-#     shipped   0.014  0.133  0.249  0.387  0.529  0.727  0.882  1.00
+# It has to be encoded, because the layer is sRGB-backed and the glTF exporter
+# converts to linear on the way out. Writing the number raw ships something far
+# darker than it reads:
 #
-# That is why the old 0.12 measured 0.014 in the GLB. The curve is left
-# authored in sRGB deliberately — the resulting ramp (dark at the hairline,
-# recovered by ~12 mm) is the one that was reviewed — but anyone retuning
-# needs the table above, or they will set 0.5 expecting half brightness and
-# get 0.21.
-_SCALP_DARK_MIN = 0.40
+#     written raw   0.12   0.40   0.55   0.65   0.75   0.87   1.00
+#     shipped       0.014  0.133  0.264  0.387  0.529  0.727  1.00
+#
+# That is the whole explanation for the original 0.12 measuring 0.014 in the
+# GLB — one number in two colour spaces, not two bugs. It was first documented
+# here and left uncorrected, and the result was a contact shadow still sitting
+# at 0.138 while the constant claimed 0.40, which read as a dirty patch on the
+# forehead rather than shade. Documenting a trap is not the same as removing
+# one.
+_SCALP_DARK_MIN = 0.55
 
 # Falloff exponent, applied as `1 - (1 - t)^n`.
 #
@@ -1767,6 +1771,44 @@ _SCALP_DARK_MIN = 0.40
 # already ~47% recovered toward unshadowed, and past half the radius it is
 # visually gone.
 _SCALP_DARK_FALLOFF = 2.2
+
+# How far off the skin's own normal a card can sit and still shadow it.
+#
+# Distance alone is the wrong question. It asks "is there hair near this skin",
+# when what matters is "is there hair OVER this skin". Those differ most
+# exactly where it shows: a goatee's cards hang down beside the neck, so neck
+# skin is a few millimetres from hair that never passes between it and the
+# light, and the shadow spilled well past the beard's silhouette onto bare
+# throat. The same effect smears a hairline sideways onto the temples.
+#
+# So each candidate card is weighted by `dot(normalize(card - vert), normal)`:
+# a card out along the skin's normal is covering it and shadows fully, a card
+# off to the side or behind contributes nothing. Below the cutoff a card is
+# beside the skin, not above it.
+_SCALP_DARK_NDOT_MIN = 0.30
+
+# Cards considered per vertex. The nearest card is not necessarily the
+# occluding one — under a jaw the closest card is often a tangential strand
+# while the one actually overhead is slightly further — so take the strongest
+# occluder among the nearest few rather than trusting rank 1.
+_SCALP_DARK_SAMPLES = 8
+
+
+def _linear_to_srgb(c):
+    """Encode a linear multiplier for storage in a BYTE_COLOR attribute.
+
+    Blender's byte colour attributes are sRGB-backed, and assigning through
+    `.color` stores the value as given while everything downstream — reading
+    it back, and the glTF exporter — treats it as sRGB and decodes to linear.
+    So a raw 0.40 arrives at the renderer as 0.133.
+
+    Encoding here means the constants above are linear multipliers and mean
+    what they say, which is the only way the ramp can be reasoned about
+    against a render.
+    """
+    if c <= 0.0031308:
+        return max(0.0, c * 12.92)
+    return min(1.0, 1.055 * (c ** (1.0 / 2.4)) - 0.055)
 
 
 def _bake_scalp_darkening():
@@ -1859,31 +1901,52 @@ def _bake_scalp_darkening():
     darkened = 0
     vert_factors = {}
 
-    def _factor(tree, radius, wp):
+    # Normals need the inverse-transpose, not the world matrix, or any
+    # non-uniform scale on the face object skews every direction test.
+    nrm_mat = fw.to_3x3().inverted_safe().transposed()
+
+    def _occlusion(tree, radius, wp, nrm):
+        """Strongest occlusion from this tree, in 0..1. 0 = nothing over it."""
         if tree is None:
-            return 1.0
-        _co, _idx, dist = tree.find(wp)
-        if dist >= radius:
-            return 1.0
-        # Concave falloff: heavy at contact, gone well before the radius.
-        t = dist / radius
-        eased = 1.0 - (1.0 - t) ** _SCALP_DARK_FALLOFF
-        return _SCALP_DARK_MIN + (1.0 - _SCALP_DARK_MIN) * eased
+            return 0.0
+        best = 0.0
+        for co, _idx, dist in tree.find_n(wp, _SCALP_DARK_SAMPLES):
+            if dist >= radius:
+                break                      # find_n returns nearest-first
+            d = co - wp
+            if d.length < 1e-9:
+                ndot = 1.0
+            else:
+                ndot = (d / d.length).dot(nrm)
+            if ndot <= _SCALP_DARK_NDOT_MIN:
+                continue                   # beside the skin, not over it
+            # Distance term: 1 at contact, 0 at the radius.
+            t = dist / radius
+            by_dist = (1.0 - t) ** _SCALP_DARK_FALLOFF
+            # Direction term: ramp in from the cutoff so the boundary is not
+            # a hard edge across the skin.
+            by_dir = (ndot - _SCALP_DARK_NDOT_MIN) / (1.0 - _SCALP_DARK_NDOT_MIN)
+            occ = by_dist * by_dir
+            if occ > best:
+                best = occ
+        return best
 
     for v in mesh.vertices:
         wp = fw @ v.co
-        factor = min(_factor(head_tree, _SCALP_DARK_RADIUS, wp),
-                     _factor(facial_tree, _FACIAL_DARK_RADIUS, wp))
-        if factor < 1.0:
-            vert_factors[v.index] = factor
+        nrm = (nrm_mat @ v.normal).normalized()
+        occ = max(_occlusion(head_tree, _SCALP_DARK_RADIUS, wp, nrm),
+                  _occlusion(facial_tree, _FACIAL_DARK_RADIUS, wp, nrm))
+        if occ > 0.0:
+            vert_factors[v.index] = 1.0 - (1.0 - _SCALP_DARK_MIN) * occ
             darkened += 1
 
-    # Write per-loop vertex colors (each polygon corner references a vert)
+    # Write per-loop vertex colors (each polygon corner references a vert),
+    # sRGB-encoded so the linear constants above survive the round trip.
     for poly in mesh.polygons:
         for li in range(poly.loop_start, poly.loop_start + poly.loop_total):
             vi = mesh.loops[li].vertex_index
             if vi in vert_factors:
-                f = vert_factors[vi]
+                f = _linear_to_srgb(vert_factors[vi])
                 color_layer.data[li].color = (f, f, f, 1.0)
 
     # Wire vertex colors into skin materials so the glTF exporter
@@ -1943,7 +2006,8 @@ def _bake_scalp_darkening():
     _log(f"  scalp-dark: darkened {darkened}/{len(mesh.vertices)} face verts "
          f"(head={_SCALP_DARK_RADIUS*1000:.0f}mm, "
          f"facial={_FACIAL_DARK_RADIUS*1000:.0f}mm, "
-         f"min={_SCALP_DARK_MIN}, falloff={_SCALP_DARK_FALLOFF})")
+         f"min={_SCALP_DARK_MIN} linear, falloff={_SCALP_DARK_FALLOFF}, "
+         f"ndot>={_SCALP_DARK_NDOT_MIN})")
     return darkened
 
 

@@ -1,0 +1,58 @@
+{
+  "character_id": "tele",
+  "source": "engine_mhc",
+  "ue_version": "5.7",
+  "mh_folder": "/Game/Tele",
+  "output_name": "Tele",
+  "stages": {
+    "00_unreal_assemble": {
+      "status": "done",
+      "started_at": "2026-08-17T00:37:53Z",
+      "completed_at": "2026-08-17T16:25:07Z",
+      "output_dir": null,
+      "errors": []
+    },
+    "01_unreal_glb_export": {
+      "status": "done",
+      "started_at": "2026-08-17T01:05:20Z",
+      "completed_at": "2026-08-17T16:26:56Z",
+      "output_dir": "01-glb/",
+      "errors": []
+    },
+    "02_blender_assemble": {
+      "status": "done",
+      "started_at": "2026-08-17T17:13:18Z",
+      "completed_at": "2026-08-17T17:13:19Z",
+      "output_dir": "02-blend/",
+      "errors": []
+    },
+    "03_glb_export": {
+      "status": "done",
+      "started_at": "2026-08-17T01:21:21Z",
+      "completed_at": "2026-08-17T17:13:37Z",
+      "output_dir": "03-glb/",
+      "errors": []
+    },
+    "04_webview_build": {
+      "status": "done",
+      "started_at": "2026-08-17T01:21:49Z",
+      "completed_at": "2026-08-17T17:14:11Z",
+      "output_dir": "../../docs/characters/",
+      "errors": []
+    }
+  },
+  "wardrobe_overrides": {
+    "Desert_Boots": {
+      "vectors": {
+        "Color1": [
+          0.6038269996643066,
+          0.40724000334739685,
+          0.2195259928703308
+        ]
+      }
+    }
+  },
+  "exclude_meshes": [
+    "Tele_Outfits_2"
+  ]
+}

@@ -90,11 +90,19 @@ def _hide_excluded_meshes(char_root):
     Stage 03 deletes hidden meshes, so hiding is enough to keep it out of the
     GLB; that is the same route `_hide_non_lod0` takes.
 
-    Matching is exact on the object name. A substring match here would be a
-    prefix whitelist wearing a different hat, and `Tele_Outfits` is a prefix of
-    `Tele_Outfits_2` — the loose version would delete the outfit it meant to
-    keep.
+    Matching is exact, after stripping Blender's `.001` disambiguation suffix.
+    The glTF importer renames on datablock collision, so the object holding the
+    mesh the GLB calls `Tele_Outfits_2` is `Tele_Outfits_2.001` in the scene —
+    a manifest written against the published mesh names matches nothing
+    otherwise, which is exactly what happened on the first run.
+
+    Exact-after-strip, never a prefix test: `Tele_Outfits` is a prefix of
+    `Tele_Outfits_2`, so the loose version would delete the outfit it was meant
+    to keep. That is the §6.3 trap with the operands reversed.
     """
+    def _base(n):
+        return re.sub(r"\.\d{3}$", "", n)
+
     names = []
     try:
         with open(os.path.join(char_root, "manifest.json"), encoding="utf-8") as f:
@@ -105,19 +113,22 @@ def _hide_excluded_meshes(char_root):
     if not names:
         return 0
 
-    present = {o.name for o in bpy.data.objects if o.type == "MESH"}
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
     hidden = 0
     for n in names:
-        obj = bpy.data.objects.get(n)
-        if obj is None or obj.type != "MESH":
+        want = _base(n)
+        matches = [o for o in meshes if _base(o.name) == want]
+        if not matches:
             # Loudly. An exclusion that matches nothing is either a typo or a
             # mesh that got renamed, and both look like success in silence.
-            _log(f"  exclude: '{n}' NOT FOUND (meshes: {sorted(present)})")
+            _log(f"  exclude: '{n}' NOT FOUND "
+                 f"(meshes: {sorted(o.name for o in meshes)})")
             continue
-        obj.hide_viewport = True
-        obj.hide_render = True
-        _log(f"  exclude: hiding {n}")
-        hidden += 1
+        for obj in matches:
+            obj.hide_viewport = True
+            obj.hide_render = True
+            _log(f"  exclude: hiding {obj.name}")
+            hidden += 1
     return hidden
 
 
@@ -672,10 +683,39 @@ def _emit_material_spec(out_root, mh_manifest):
     # editor therefore exports dressed entirely in white, with nothing
     # reporting a problem. Carry Color1 through so the runtime can apply it.
     cloth_mis = mh_manifest.get("clothing_materials") or {}
+
+    # Only declare clothing that is actually on a mesh that will be exported.
+    #
+    # This list comes from stage 01's scan of the UE clothing folder, not from
+    # the Blender scene, so it happily declares materials for geometry that is
+    # not here. `tele` and `tele1` carried a duplicate outfit mesh; once
+    # `exclude_meshes` dropped it, the sidecar still declared six clothing
+    # materials for three meshes, and the three orphans came out the other end
+    # as `unmatched` at runtime.
+    #
+    # That matters more than it looks. `unmatched` exists to make a silently
+    # unstyled material visible — it is the alarm for the whole class of bug
+    # this pipeline keeps hitting. Three permanent false entries in it teach
+    # whoever reads the console to ignore the alarm, which is worse than not
+    # having one.
+    #
+    # Hidden meshes are excluded too, since stage 03 deletes them.
+    live_mats = set()
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or obj.hide_render:
+            continue
+        for slot in obj.material_slots:
+            if slot.material:
+                live_mats.add(re.sub(r"\.\d{3}$", "", slot.material.name))
+
     for mi_name, rec in sorted(cloth_mis.items()):
         vectors = rec.get("vectors") or {}
         col = vectors.get("Color1")
         if not col:
+            continue
+        if live_mats and mi_name not in live_mats:
+            _log(f"  clothing: {mi_name} declared by stage 01 but on no "
+                 f"exported mesh - skipping")
             continue
         scalars = rec.get("scalars") or {}
 

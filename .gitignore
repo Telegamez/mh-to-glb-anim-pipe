@@ -14,11 +14,36 @@ characters/*/01-glb/
 # Contributors running the pipeline on their own MetaHumans: ignore any
 # character folder that isn't one of the demo characters shipped in this repo.
 # Add your own id to the allowlist locally if you want to track it in a fork.
+#
+# TELEGAMEZ: the six companions are allowlisted below. This is the fork, they
+# are the product, and their manifest.json is not a build artifact — it is the
+# only home of two settings that cannot be recovered by re-running anything:
+#
+#   wardrobe_overrides  Desert Boots ship from Fab as Color1 (1,1,1). Without
+#                       the override every companion bakes in WHITE BOOTS, and
+#                       recolouring the MI in UE does not survive because stage
+#                       00 regenerates that folder on every re-bake.
+#   exclude_meshes      Drops the duplicate second outfit mesh on tele/tele1.
+#
+# Losing the directory silently un-fixes both on the next bake, with nothing
+# reporting a problem — the same failure shape as everything in §6.1 of the
+# handoff doc. The stage-status timestamps in the same file do churn on every
+# bake; that noise is the price of not losing the config, and splitting status
+# out into its own file is the real fix whenever someone touches the stages.
+#
+# The stage-output ignores above still apply inside these folders — that is how
+# ada already works: its manifest.json is tracked, its 03-glb/ is not.
 characters/*
 !characters/_shared/
 !characters/_template/
 !characters/ada/
 !characters/taro/
+!characters/telly/
+!characters/tele/
+!characters/telie/
+!characters/telee/
+!characters/tele1/
+!characters/tele2/
 
 # Same allowlist for versioned roots.
 */*/characters/*
@@ -26,6 +51,12 @@ characters/*
 !*/*/characters/_template/
 !*/*/characters/ada/
 !*/*/characters/taro/
+!*/*/characters/telly/
+!*/*/characters/tele/
+!*/*/characters/telie/
+!*/*/characters/telee/
+!*/*/characters/tele1/
+!*/*/characters/tele2/
 
 # Stage 04 gallery output — same allowlist. A contributor's local viewer
 # still builds and renders fine; it just stays out of git.

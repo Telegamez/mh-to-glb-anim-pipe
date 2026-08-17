@@ -1,0 +1,55 @@
+{
+  "character_id": "telee",
+  "source": "engine_mhc",
+  "ue_version": "5.7",
+  "mh_folder": "/Game/Telee",
+  "output_name": "Telee",
+  "stages": {
+    "00_unreal_assemble": {
+      "status": "done",
+      "started_at": "2026-08-17T00:53:35Z",
+      "completed_at": "2026-08-17T16:43:38Z",
+      "output_dir": null,
+      "errors": []
+    },
+    "01_unreal_glb_export": {
+      "status": "done",
+      "started_at": "2026-08-17T00:55:26Z",
+      "completed_at": "2026-08-17T16:45:13Z",
+      "output_dir": "01-glb/",
+      "errors": []
+    },
+    "02_blender_assemble": {
+      "status": "done",
+      "started_at": "2026-08-17T17:16:00Z",
+      "completed_at": "2026-08-17T17:16:00Z",
+      "output_dir": "02-blend/",
+      "errors": []
+    },
+    "03_glb_export": {
+      "status": "done",
+      "started_at": "2026-08-17T00:56:03Z",
+      "completed_at": "2026-08-17T17:16:18Z",
+      "output_dir": "03-glb/",
+      "errors": []
+    },
+    "04_webview_build": {
+      "status": "done",
+      "started_at": "2026-08-17T00:56:36Z",
+      "completed_at": "2026-08-17T17:16:56Z",
+      "output_dir": "../../docs/characters/",
+      "errors": []
+    }
+  },
+  "wardrobe_overrides": {
+    "Desert_Boots": {
+      "vectors": {
+        "Color1": [
+          0.6038269996643066,
+          0.40724000334739685,
+          0.2195259928703308
+        ]
+      }
+    }
+  }
+}

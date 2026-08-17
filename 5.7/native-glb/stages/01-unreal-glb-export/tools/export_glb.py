@@ -564,6 +564,85 @@ def _read_mi_params(mi):
     return out
 
 
+def _resolve_mi_params(mi):
+    """Like `_read_mi_params`, but returns the EFFECTIVE parameter values
+    rather than only the instance's own overrides.
+
+    TELEGAMEZ. `_read_mi_params` reads `vector_parameter_values`, which is
+    the override array on that one instance. Groom MIs override
+    `hairMelanin`/`hairRedness` directly, so it works there. Outfit MIs do
+    not: `Color1` is inherited from the parent chain, the leaf's override
+    array is empty, and the caller's `if not (vectors or scalars): continue`
+    then drops the material without a word. That is why a navy shirt and
+    khaki chinos exported as white with nothing reporting a problem.
+
+    `MaterialEditingLibrary.get_material_instance_*_parameter_value`
+    resolves through the chain to the base material's default, which is
+    what we actually want to write into the sidecar. Parameter names come
+    from the base material, reached by walking `parent` up.
+    """
+    out = {"vectors": {}, "scalars": {}, "textures": {}}
+
+    base = mi
+    for _ in range(16):  # guard against a cyclic/deep parent chain
+        parent = None
+        try:
+            parent = base.get_editor_property("parent")
+        except Exception:
+            parent = None
+        if parent is None:
+            break
+        base = parent
+    if base is None:
+        return out
+
+    mel = unreal.MaterialEditingLibrary
+    try:
+        vec_names = mel.get_vector_parameter_names(base) or []
+    except Exception:
+        vec_names = []
+    try:
+        scl_names = mel.get_scalar_parameter_names(base) or []
+    except Exception:
+        scl_names = []
+
+    for name in vec_names:
+        try:
+            pv = mel.get_material_instance_vector_parameter_value(mi, str(name))
+            out["vectors"][str(name)] = [float(pv.r), float(pv.g),
+                                         float(pv.b), float(pv.a)]
+        except Exception:
+            continue
+    for name in scl_names:
+        try:
+            out["scalars"][str(name)] = float(
+                mel.get_material_instance_scalar_parameter_value(mi, str(name)))
+        except Exception:
+            continue
+
+    # Texture params, as asset paths. Colour alone is not a material: the
+    # outfit's base material is M_HS_ORM_Colorable, i.e. a fabric BaseColor
+    # meant to be TINTED by Color1, plus a normal map and a packed ORM. Carry
+    # the tint without the maps and the garment renders as a flat swatch.
+    try:
+        tex_names = mel.get_texture_parameter_names(base) or []
+    except Exception:
+        tex_names = []
+    for name in tex_names:
+        try:
+            t = mel.get_material_instance_texture_parameter_value(mi, str(name))
+        except Exception:
+            continue
+        if t is None:
+            continue
+        try:
+            out["textures"][str(name)] = t.get_path_name()
+        except Exception:
+            continue
+
+    return out
+
+
 def _export_sidecar_textures(asset, textures_dir, seen_tex):
     """Walk every material slot on `asset`, export every texture
     parameter (and used-texture) as a PNG into `textures_dir`. Returns
@@ -788,21 +867,49 @@ def main():
 
     plugin_atlas_paths = []
     for style in groom_styles:
-        matched = False
-        for prefix, plugin_dir in style_to_plugin:
-            if style.startswith(prefix):
-                for atlas_kind in ("Attribute", "Tangent"):
-                    plugin_atlas_paths.append(
-                        f"{plugin_dir}/{style}/{style}_CardsAtlas_{atlas_kind}"
-                        f".{style}_CardsAtlas_{atlas_kind}")
-                matched = True
-                break
-        if matched:
-            continue
         if style.startswith("Eyelashes_"):
             plugin_atlas_paths.append(
                 f"{plugin_lashes_textures}/T_{style}_Coverage"
                 f".T_{style}_Coverage")
+            continue
+
+        # TELEGAMEZ: the prefix table only mapped styles literally starting
+        # with "Beard_" into the Beards folder — but that folder holds the
+        # whole beard family, and a goatee is named `Goatee_L_Wavy`. So its
+        # atlas was never looked up, the strand texture never exported, and
+        # the cards rendered untextured while the mesh sat right there in the
+        # scene. Nothing logged; it was found by looking at a face.
+        #
+        # Guessing prefixes is what failed, so don't guess: try the mapped
+        # folder first (cheap, right almost always) and fall back to every
+        # groom folder. Unresolved styles are reported below rather than
+        # dropped, because "no atlas" and "not looked for" looked identical.
+        ordered = [d for p, d in style_to_plugin if style.startswith(p)]
+        for _p, d in style_to_plugin:
+            if d not in ordered:
+                ordered.append(d)
+
+        found_dir = None
+        for plugin_dir in ordered:
+            probe = (f"{plugin_dir}/{style}/{style}_CardsAtlas_Attribute"
+                     f".{style}_CardsAtlas_Attribute")
+            try:
+                if unreal.EditorAssetLibrary.does_asset_exist(probe):
+                    found_dir = plugin_dir
+                    break
+            except Exception:
+                continue
+        if found_dir is None:
+            # Peachfuzz legitimately has no cards atlas, so this is not always
+            # a fault - but say it either way. Silence here is what let a
+            # missing goatee texture ship.
+            _log(f"    sidecar: no CardsAtlas found for groom style "
+                 f"'{style}' in any groom folder")
+            continue
+        for atlas_kind in ("Attribute", "Tangent"):
+            plugin_atlas_paths.append(
+                f"{found_dir}/{style}/{style}_CardsAtlas_{atlas_kind}"
+                f".{style}_CardsAtlas_{atlas_kind}")
     for p in plugin_atlas_paths:
         try:
             tex = unreal.EditorAssetLibrary.load_asset(p)
@@ -833,6 +940,14 @@ def main():
     # (hairMelanin, hairRedness, hairDye). Walk every MaterialInstance
     # under /Game/<char>/Grooms/ and record its params keyed by name.
     grooms_path = mh_folder + "/Grooms"
+    # TELEGAMEZ: scan before listing. UE's AssetRegistry lazy-loads sub-paths,
+    # so get_assets_by_path returns NOTHING on a cold path and the MI params
+    # are silently dropped — the same hazard _list_under documents. Observed:
+    # a run where neither groom nor clothing MIs were dumped, with no error.
+    try:
+        ar.scan_paths_synchronous([grooms_path], force_rescan=True)
+    except Exception as e:
+        _log(f"    scan({grooms_path}) raised: {e}")
     try:
         groom_mi_assets = ar.get_assets_by_path(
             grooms_path, recursive=True, include_only_on_disk_assets=False)
@@ -860,6 +975,181 @@ def main():
         }
         _log(f"    groom mi[{mi_name}]: vectors={list(params['vectors'])} "
              f"scalars={list(params['scalars'])}")
+
+    # TELEGAMEZ: the same treatment for CLOTHING.
+    #
+    # Outfit materials carry their colour in a `Color1` vector param, and UE's
+    # GLTFExporter drops it — the exported material has neither a
+    # baseColorTexture nor a baseColorFactor, and glTF defaults absent base
+    # colour to WHITE. So a character whose shirt is navy and whose chinos are
+    # khaki in the editor exports as an all-white outfit, with nothing
+    # reporting a problem.
+    #
+    # Recorded here exactly like the groom MIs so stage 02 can write it into
+    # the sidecar and the runtime can apply it.
+    clothing_path = mh_folder + "/Clothing"
+    try:
+        ar.scan_paths_synchronous([clothing_path], force_rescan=True)
+    except Exception as e:
+        _log(f"    scan({clothing_path}) raised: {e}")
+    try:
+        cloth_mi_assets = ar.get_assets_by_path(
+            clothing_path, recursive=True, include_only_on_disk_assets=False)
+    except Exception:
+        cloth_mi_assets = []
+    # TELEGAMEZ: also take outfit materials from the MESH SLOTS, not just the
+    # character's Clothing folder.
+    #
+    # A character whose outfit was customised in MHC gets per-character
+    # "wardrobe instance" materials (MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt)
+    # written into /Game/Unpacked/<Char>/Clothing, which the folder scan above
+    # finds. A character whose outfit was left at defaults does NOT: its mesh
+    # points straight at the shared Fab source materials (MI_HS_Polo_Shirt_62)
+    # and its Clothing folder holds only the mesh. The folder scan found
+    # nothing, no colour or maps were recorded, and that character alone
+    # published a white outfit while the other five were correct.
+    #
+    # The mesh slots are the authoritative list either way — they are exactly
+    # the material names that end up in the GLB, which is what the runtime
+    # keys on. Merged with the folder scan rather than replacing it, so a
+    # wardrobe instance that is not referenced by a slot is still recorded.
+    slot_mis = {}
+    for mesh_asset in skm:
+        try:
+            mesh_name = mesh_asset.get_name()
+        except Exception:
+            continue
+        if "outfit" not in mesh_name.lower():
+            continue
+        try:
+            slots = mesh_asset.get_editor_property("materials") or []
+        except Exception as e:
+            _log(f"    clothing: reading slots of {mesh_name} raised: {e}")
+            continue
+        for slot in slots:
+            try:
+                iface = slot.get_editor_property("material_interface")
+            except Exception:
+                iface = None
+            if iface is None:
+                continue
+            try:
+                slot_mis[iface.get_name()] = iface
+            except Exception:
+                continue
+    if slot_mis:
+        _log(f"    clothing: {len(slot_mis)} material slot(s) on outfit mesh(es): "
+             f"{sorted(slot_mis)}")
+
+    clothing_materials = {}
+
+    # TELEGAMEZ: wardrobe overrides.
+    #
+    # Some stock garments ship white — every one of these characters wears
+    # HS Casual Outfit 64, whose Desert Boots are (1,1,1). Recolouring the MI
+    # under /Game/Unpacked/<Name>/Clothing does NOT hold: stage 00 regenerates
+    # that folder, so the edit is silently lost on the next bake, and every
+    # character edit after the first is a re-bake. Overriding here instead
+    # survives re-bakes, needs no mutation of the user's UE project, and is
+    # visible in characters/<id>/manifest.json rather than buried in a uasset.
+    #
+    # Keys are matched as case-insensitive substrings of the MI name so one
+    # entry covers every character wearing the same outfit.
+    overrides = {}
+    try:
+        _cm = json.load(open(os.path.join(
+            os.path.abspath(args.workspace), "characters", args.char,
+            "manifest.json"), encoding="utf-8"))
+        overrides = _cm.get("wardrobe_overrides") or {}
+    except Exception as e:
+        _log(f"    wardrobe: could not read overrides: {e}")
+
+    def _override_for(mi_name):
+        low = mi_name.lower()
+        for key, val in overrides.items():
+            if str(key).lower() in low:
+                return key, val
+        return None, None
+
+    # Merge the two sources, folder scan first so a wardrobe instance wins
+    # over a shared source material of the same name.
+    cloth_sources = {}
+    for a in cloth_mi_assets or []:
+        cls = str(getattr(a, "asset_class_path", a).asset_name)
+        mi_name = str(a.asset_name)
+        if "Material" not in cls:
+            continue
+        try:
+            mi = a.get_asset()
+        except Exception as e:
+            _log(f"    clothing mi[{mi_name}]: load raised: {e}")
+            continue
+        if mi is None:
+            _log(f"    clothing mi[{mi_name}]: load returned None")
+            continue
+        cloth_sources[mi_name] = mi
+    for mi_name, mi in slot_mis.items():
+        cloth_sources.setdefault(mi_name, mi)
+
+    _log(f"    clothing: {len(cloth_mi_assets or [])} asset(s) under "
+         f"{clothing_path}, {len(slot_mis)} from mesh slots -> "
+         f"{len(cloth_sources)} material(s); "
+         f"{len(overrides)} wardrobe override(s)")
+
+    for mi_name, mi in sorted(cloth_sources.items()):
+        cls = type(mi).__name__
+        params = _resolve_mi_params(mi)
+
+        ov_key, ov = _override_for(mi_name)
+        if ov:
+            was = params["vectors"].get("Color1")
+            for pname, pval in (ov.get("vectors") or {}).items():
+                params["vectors"][pname] = [float(x) for x in pval]
+            for pname, pval in (ov.get("scalars") or {}).items():
+                params["scalars"][pname] = float(pval)
+            _log(f"    wardrobe override '{ov_key}' on {mi_name}: "
+                 f"Color1 {was} -> {params['vectors'].get('Color1')}")
+
+        # Log unconditionally, including the empty case. An outfit that
+        # exports white because nothing was read must say so.
+        _log(f"    clothing mi[{mi_name}] ({cls}): vectors={params['vectors']} "
+             f"scalars={list(params['scalars'])}")
+        if not (params["vectors"] or params["scalars"] or params["textures"]):
+            continue
+
+        # Export each texture param to PNG, same as the groom sidecar does.
+        cloth_tex = {}
+        for pname, tpath in sorted(params["textures"].items()):
+            try:
+                tex = unreal.EditorAssetLibrary.load_asset(tpath)
+            except Exception as e:
+                _log(f"    clothing tex load {tpath} raised: {e}")
+                continue
+            if tex is None:
+                _log(f"    clothing tex load {tpath} returned None")
+                continue
+            tex_name = tex.get_name()
+            rel = f"textures/{tex_name}.png"
+            abs_path = os.path.join(textures_dir, f"{tex_name}.png")
+            if not os.path.exists(abs_path):
+                try:
+                    _export_texture_png(tex, abs_path)
+                except Exception as e:
+                    _log(f"    clothing PNG fail {tex_name}: {e}")
+                    continue
+            sz = os.path.getsize(abs_path) if os.path.exists(abs_path) else 0
+            if sz <= 0:
+                _log(f"    clothing tex {tex_name}: wrote 0 bytes - dropping")
+                continue
+            cloth_tex[pname] = rel
+            _log(f"    + clothing tex[{pname}]: {rel} ({sz/1024:.0f} KB)")
+
+        clothing_materials[mi_name] = {
+            "asset_path": str(mi.get_path_name()),
+            "vectors": params["vectors"],
+            "scalars": params["scalars"],
+            "textures": cloth_tex,
+        }
 
     for a in tex_assets:
         try:
@@ -909,6 +1199,7 @@ def main():
         "assets": manifest_records,
         "sidecar_textures": sidecar_records,
         "groom_materials": groom_materials,
+        "clothing_materials": clothing_materials,
         "arkit_sources": arkit_sources,
         "warnings": warnings,
     }

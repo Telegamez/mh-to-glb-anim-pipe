@@ -26,6 +26,7 @@ import argparse
 import datetime as _dt
 import json
 import os
+import re
 import sys
 
 import bpy
@@ -306,7 +307,17 @@ def _wire_card_materials(in_root, mh_manifest):
             elif name_low.startswith("mustache_") or name_low.startswith("moustache_"):
                 attr_name, attr_path = _find(["Mustache_"])
             else:
-                continue
+                # TELEGAMEZ: third and last prefix whitelist in this chain
+                # (stage 01's atlas lookup and this file's spec emitter were
+                # the other two). A goatee is `Goatee_L_Wavy`, matches none of
+                # the branches above, and fell through to `continue` — so no
+                # _CardMat was ever wired, which is why the spec emitter never
+                # saw it either. Derive the style from the mesh name instead
+                # of adding "Goatee_" and leaving the next style to fail.
+                style = re.split(r"_cards?mesh_", name_low)[0]
+                if not style or style == name_low:
+                    continue
+                attr_name, attr_path = _find([f"{style}_"])
             if not attr_path:
                 _log(f"  wire {obj.name}: no Attribute atlas found")
                 continue
@@ -545,7 +556,23 @@ def _emit_material_spec(out_root, mh_manifest):
                 stem = _find_stem(["Mustache_"])
                 color = _hair_color_for("mi_wi_mustache_") or [0.18, 0.10, 0.05, 1.0]
             else:
-                continue
+                # TELEGAMEZ: this chain is a prefix whitelist, and the beard
+                # family does not all start with "Beard_" — a goatee is named
+                # Goatee_L_Wavy. It matched nothing and fell through to
+                # `continue`, so the material got no spec, stage 03 forwarded
+                # no atlas, and the cards rendered untextured even though
+                # stage 01 had exported the atlas correctly. Extending the
+                # list would just move the same trap one style along, so
+                # derive the style from the material's own name.
+                style = re.split(r"_cards?mesh_", ml)[0]
+                if not style or style == ml:
+                    continue
+                stem = _find_stem([f"{style}_"])
+                color = (_hair_color_for(f"mi_wi_{style}_")
+                         or [0.18, 0.10, 0.05, 1.0])
+                if stem is None:
+                    _log(f"  groom: no atlas stem for derived style "
+                         f"'{style}' (material {mn}) - not declared")
             if stem is None:
                 continue
             materials.append({
@@ -589,6 +616,52 @@ def _emit_material_spec(out_root, mh_manifest):
                 },
                 "textures": {"alpha": f"textures/{stem}.png"},
             })
+
+    # TELEGAMEZ: clothing colour.
+    #
+    # Outfit materials keep their colour in a `Color1` vector param and UE's
+    # GLTFExporter drops it — the exported glTF material has neither a
+    # baseColorTexture nor a baseColorFactor, and glTF defaults absent base
+    # colour to WHITE. A character whose shirt is navy and chinos khaki in the
+    # editor therefore exports dressed entirely in white, with nothing
+    # reporting a problem. Carry Color1 through so the runtime can apply it.
+    cloth_mis = mh_manifest.get("clothing_materials") or {}
+    for mi_name, rec in sorted(cloth_mis.items()):
+        vectors = rec.get("vectors") or {}
+        col = vectors.get("Color1")
+        if not col:
+            continue
+        scalars = rec.get("scalars") or {}
+
+        # Classify the exported maps into canonical slots. The MI parameter
+        # names vary by base material, but the texture ASSET names carry a
+        # reliable suffix: _BC (fabric base colour, greyscale-ish, meant to be
+        # tinted by Color1), _N (normal), _ORM (occlusion/roughness/metallic
+        # packed R/G/B — already three.js' convention). Anything unrecognised
+        # is kept under its parameter name rather than dropped.
+        tex = {}
+        for pname, relpath in sorted((rec.get("textures") or {}).items()):
+            stem = os.path.splitext(os.path.basename(relpath))[0].upper()
+            if stem.endswith("_BC"):
+                tex["base_color"] = relpath
+            elif stem.endswith("_N"):
+                tex["normal"] = relpath
+            elif stem.endswith("_ORM"):
+                tex["orm"] = relpath
+            else:
+                tex.setdefault(pname, relpath)
+
+        materials.append({
+            "material_name": mi_name,
+            "kind": "clothing",
+            "params": {
+                "base_color": [float(col[0]), float(col[1]), float(col[2])],
+                "roughness": float(scalars.get("Roughness", 1.0)),
+            },
+            "textures": tex,
+        })
+        _log(f"  clothing: {mi_name} base_color="
+             f"({col[0]:.3f},{col[1]:.3f},{col[2]:.3f}) maps={sorted(tex)}")
 
     if not materials:
         return []

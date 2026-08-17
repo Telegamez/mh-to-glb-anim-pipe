@@ -711,14 +711,20 @@ def main():
 
     _leaf = mh_folder.rstrip("/").rsplit("/", 1)[-1]
     _tried = []
-    for _cand in (mh_folder, f"/Game/Unpacked/{_leaf}"):
+    # TELEGAMEZ: prefer the 5.8 Unpacked layout when BOTH exist.
+    # Trying mh_folder first meant a leftover 5.7-layout build at
+    # /Game/<Name> won over the folder stage 00 had just rebuilt, so the
+    # export read grooms from a stale tree: Tele published Eyelashes_S_Fine
+    # and no hair while /Game/Unpacked/Tele held Sparse + the new hair.
+    # Stage 00 writes Unpacked, so Unpacked is authoritative.
+    for _cand in (f"/Game/Unpacked/{_leaf}", mh_folder):
         if _cand in _tried:
             continue
         _tried.append(_cand)
         if _holds_both(_cand):
             if _cand != mh_folder:
-                _log(f"  built assets not under {mh_folder}; "
-                     f"using {_cand} (UE 5.8 layout)")
+                _log(f"  using {_cand} instead of {mh_folder} "
+                     f"(UE 5.8 Unpacked layout takes precedence)")
                 mh_folder = _cand
             break
     else:
@@ -840,7 +846,12 @@ def main():
         cls = str(getattr(a, "asset_class_path", a).asset_name)
         if cls == "GroomAsset":
             groom_styles.append(str(a.asset_name))
-    _log(f"  sidecar: groom styles in /Game/{args.char}/Grooms: {groom_styles}")
+    # TELEGAMEZ: log the path actually scanned. This line used to print
+    # "/Game/<char>/Grooms" while the scan above reads mh_folder, which on
+    # 5.8 is /Game/Unpacked/<Name>. Stale 5.7-layout folders still exist for
+    # some characters, so the wrong label sent two separate investigations
+    # after a path bug that was not there.
+    _log(f"  sidecar: groom styles in {mh_folder}/Grooms: {groom_styles}")
 
     # Force-index the plugin content roots that hold the card atlases.
     # They aren't auto-indexed at editor startup (the MetaHuman plugin

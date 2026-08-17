@@ -26,6 +26,7 @@ import argparse
 import datetime as _dt
 import json
 import os
+import re
 import sys
 import traceback
 
@@ -855,6 +856,25 @@ def main():
         cls = str(getattr(a, "asset_class_path", a).asset_name)
         if cls == "GroomAsset":
             groom_styles.append(str(a.asset_name))
+
+    # TELEGAMEZ: also derive styles from the CARDS MESHES.
+    #
+    # The atlas lookup keys off the GroomAsset's name, which assumes the groom
+    # and its cards share a stem. Marketplace grooms break that: Tele1's groom
+    # asset is literally named "GroomAsset_0" while its cards are
+    # Hair_M_TwistedBraids_CardsMesh_Group0_LOD0, so the lookup searched for
+    # GroomAsset_0_CardsAtlas_Attribute, found nothing, and the braids rendered
+    # as untextured grey cards.
+    #
+    # The cards are what actually get exported, so their stem is the more
+    # reliable key. Added alongside the GroomAsset names rather than replacing
+    # them, since a groom with no cards still needs its entry (eyelashes are
+    # coverage-only).
+    for m in hair_cards:
+        stem = re.sub(r"_Cards?Mesh_Group\d+_LOD\d+$", "", m.get_name())
+        if stem and stem not in groom_styles:
+            groom_styles.append(stem)
+            _log(f"  sidecar: style '{stem}' derived from its cards mesh")
     # TELEGAMEZ: log the path actually scanned. This line used to print
     # "/Game/<char>/Grooms" while the scan above reads mh_folder, which on
     # 5.8 is /Game/Unpacked/<Name>. Stale 5.7-layout folders still exist for

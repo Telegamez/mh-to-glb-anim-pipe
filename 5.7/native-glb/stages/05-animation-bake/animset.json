@@ -1,0 +1,17 @@
+{
+  "_comment": "Clip name -> UE AnimSequence asset path (e.g. /Game/Fab/SomePack/AS_Idle_Loop). Names are the runtime's state-map keys - do not rename them. Empty string = not yet sourced; the runner refuses to run while any required clip is empty. Fill these once the D7 Fab pack is installed.",
+  "required": {
+    "Idle": "",
+    "Listening": "",
+    "Thinking": "",
+    "Focused": "",
+    "Speaking": ""
+  },
+  "gestures": {
+    "Nod": "",
+    "HeadShake": "",
+    "Shrug": "",
+    "Dismiss": ""
+  },
+  "output": "mh-animations.glb"
+}

@@ -1717,12 +1717,56 @@ def _fix_hair_face_clearance():
     return total_fixed
 
 
-_SCALP_DARK_PREFIXES = (
-    "Hair_", "Mustache_", "Moustache_", "Beard_",
-    "Goatee_", "Stubble_", "Sideburns_", "Fuzz_",
-)
-_SCALP_DARK_RADIUS = 0.030   # 30 mm — verts within this distance get darkened
-_SCALP_DARK_MIN    = 0.12    # darkest multiplier (0 = black, 1 = no change)
+# Card meshes are found by the "CardsMesh"/"CardMesh" marker in their own name
+# rather than a prefix whitelist. A whitelist has already been wrong at three
+# separate sites in this pipeline (see the goatee case in stage 01/02) and this
+# was a fourth waiting to happen: it listed `Beard_` and `Goatee_` but a Fab
+# groom under any other name would have contributed no occlusion at all, and
+# the character would simply have had a brighter jaw with nothing logged.
+_DARK_FACIAL_TOKENS = ("mustache", "moustache", "beard", "goatee",
+                       "stubble", "sideburns", "fuzz", "peachfuzz")
+# Brows and lashes are face accessories, not volume hair. They sit flat on the
+# skin and carry their own shading; darkening a radius around them just smudges
+# the lids and brow ridge.
+_DARK_SKIP_TOKENS = ("eyebrow", "eyebrows", "brows", "eyelash", "eyelashes", "lash")
+
+# Radii differ by class because the geometry does. Head hair is a volume held
+# off the scalp, so occlusion reaches; a beard sits directly against skin, and
+# a radius sized for a hairline throws a 30 mm shadow across the whole jaw and
+# well down the neck.
+_SCALP_DARK_RADIUS  = 0.018  # 18 mm — head hair
+_FACIAL_DARK_RADIUS = 0.010  # 10 mm — beard / moustache / goatee / stubble
+
+# Darkest multiplier (0 = black, 1 = no change).
+#
+# Was 0.12, which is very nearly black. That value was never reviewed against a
+# render, because stage 03 was discarding the whole attribute before it reached
+# a GLB — the first time anyone saw it applied it read as bruising rather than
+# shadow.
+#
+# THESE ARE sRGB VALUES, NOT LINEAR MULTIPLIERS. The layer written below is a
+# BYTE_COLOR attribute, which Blender treats as sRGB-encoded and the glTF
+# exporter converts to linear on the way out. So what the renderer multiplies
+# by is srgb_to_linear(factor), which is a lot darker than the number here:
+#
+#     written   0.12   0.40   0.54   0.65   0.75   0.87   0.95   1.00
+#     shipped   0.014  0.133  0.249  0.387  0.529  0.727  0.882  1.00
+#
+# That is why the old 0.12 measured 0.014 in the GLB. The curve is left
+# authored in sRGB deliberately — the resulting ramp (dark at the hairline,
+# recovered by ~12 mm) is the one that was reviewed — but anyone retuning
+# needs the table above, or they will set 0.5 expecting half brightness and
+# get 0.21.
+_SCALP_DARK_MIN = 0.40
+
+# Falloff exponent, applied as `1 - (1 - t)^n`.
+#
+# The original ramp was linear in distance, which spreads a wide even grey halo
+# over the full radius. Real contact occlusion is concentrated at the contact
+# and falls away quickly. n > 1 does that: at a quarter of the radius this is
+# already ~47% recovered toward unshadowed, and past half the radius it is
+# visually gone.
+_SCALP_DARK_FALLOFF = 2.2
 
 
 def _bake_scalp_darkening():
@@ -1755,25 +1799,47 @@ def _bake_scalp_darkening():
         _log("  scalp-dark: no face mesh found, skipping")
         return 0
 
-    # Collect all hair card verts in world space
-    cards = [o for o in bpy.data.objects
-             if o.type == "MESH"
-             and any(o.name.startswith(p) for p in _SCALP_DARK_PREFIXES)]
-    if not cards:
-        _log("  scalp-dark: no hair card meshes found")
+    # Split the card meshes by class. Head hair and facial hair get their own
+    # tree so each can use the radius its geometry actually warrants.
+    head_cards, facial_cards, skipped = [], [], []
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        nl = o.name.lower()
+        if "cardsmesh" not in nl and "cardmesh" not in nl:
+            continue
+        token = nl.split("_")[0]
+        if any(k in nl for k in _DARK_SKIP_TOKENS):
+            skipped.append(o.name)
+        elif token in _DARK_FACIAL_TOKENS:
+            facial_cards.append(o)
+        else:
+            head_cards.append(o)
+
+    _log(f"  scalp-dark: {len(head_cards)} head, {len(facial_cards)} facial, "
+         f"{len(skipped)} skipped (brows/lashes)")
+    if not head_cards and not facial_cards:
+        # Log the empty case: a character with no groom and a classifier that
+        # matched nothing look identical in silence, and that is how the
+        # prefix-whitelist bugs in this pipeline kept surviving.
+        _log("  scalp-dark: no hair card meshes found - no darkening baked")
         return 0
 
-    # Build KD-tree from all hair card vertices (world space)
-    total_card_verts = sum(len(o.data.vertices) for o in cards)
-    tree = KDTree(total_card_verts)
-    idx = 0
-    for card_obj in cards:
-        cw = card_obj.matrix_world
-        for v in card_obj.data.vertices:
-            wp = cw @ v.co
-            tree.insert(wp, idx)
-            idx += 1
-    tree.balance()
+    def _build(objs):
+        if not objs:
+            return None
+        tree = KDTree(sum(len(o.data.vertices) for o in objs))
+        idx = 0
+        for card_obj in objs:
+            cw = card_obj.matrix_world
+            for v in card_obj.data.vertices:
+                tree.insert(cw @ v.co, idx)
+                idx += 1
+        tree.balance()
+        return tree
+
+    head_tree = _build(head_cards)
+    facial_tree = _build(facial_cards)
 
     # Ensure face mesh has a vertex color layer
     mesh = face_obj.data
@@ -1785,17 +1851,30 @@ def _bake_scalp_darkening():
     for loop_color in color_layer.data:
         loop_color.color = (1.0, 1.0, 1.0, 1.0)
 
-    # Compute per-vertex darkening factor based on nearest hair card
+    # Compute per-vertex darkening from the nearest card of each class, taking
+    # whichever is darker. A vertex under a jaw-length beard is also within
+    # reach of head hair on some characters, and it should get the stronger of
+    # the two occlusions, not whichever tree happened to be queried last.
     fw = face_obj.matrix_world
     darkened = 0
     vert_factors = {}
+
+    def _factor(tree, radius, wp):
+        if tree is None:
+            return 1.0
+        _co, _idx, dist = tree.find(wp)
+        if dist >= radius:
+            return 1.0
+        # Concave falloff: heavy at contact, gone well before the radius.
+        t = dist / radius
+        eased = 1.0 - (1.0 - t) ** _SCALP_DARK_FALLOFF
+        return _SCALP_DARK_MIN + (1.0 - _SCALP_DARK_MIN) * eased
+
     for v in mesh.vertices:
         wp = fw @ v.co
-        _co, _idx, dist = tree.find(wp)
-        if dist < _SCALP_DARK_RADIUS:
-            # Smooth falloff: closer = darker
-            t = dist / _SCALP_DARK_RADIUS
-            factor = _SCALP_DARK_MIN + (1.0 - _SCALP_DARK_MIN) * t
+        factor = min(_factor(head_tree, _SCALP_DARK_RADIUS, wp),
+                     _factor(facial_tree, _FACIAL_DARK_RADIUS, wp))
+        if factor < 1.0:
             vert_factors[v.index] = factor
             darkened += 1
 
@@ -1862,7 +1941,9 @@ def _bake_scalp_darkening():
         _log(f"  scalp-dark: wired vertex colors into {wired} skin material(s)")
 
     _log(f"  scalp-dark: darkened {darkened}/{len(mesh.vertices)} face verts "
-         f"(radius={_SCALP_DARK_RADIUS*1000:.0f}mm, min={_SCALP_DARK_MIN})")
+         f"(head={_SCALP_DARK_RADIUS*1000:.0f}mm, "
+         f"facial={_FACIAL_DARK_RADIUS*1000:.0f}mm, "
+         f"min={_SCALP_DARK_MIN}, falloff={_SCALP_DARK_FALLOFF})")
     return darkened
 
 

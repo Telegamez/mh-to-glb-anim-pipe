@@ -73,3 +73,6 @@ Thumbs.db
 # (_scratch/bake_arkit_reference.py) around locally — its output
 # skills/reference/arkit52_deltas.npz is the committed artifact.
 _scratch/
+
+# Batch bake logs (tools/bake_batch.ps1)
+5.7/native-glb/_logs/

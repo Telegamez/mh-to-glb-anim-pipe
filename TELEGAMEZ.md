@@ -33,6 +33,9 @@ affect anyone running the pipeline.
 | `--factory-startup` on both Blender launchers | `read_factory_settings()` tears down whatever is registered, and a third-party addon that unregisters badly takes Blender with it. Observed: `cc_blender_tools` raised in `unregister()` and Blender died with `EXCEPTION_ACCESS_VIOLATION` before the stage ran a line of its own. A reproducible bake must not depend on an operator's installed addons. |
 | Publish the `_Tangent` atlas | It drives anisotropic strand specular and was never deployed — stage 02 did not declare it, so stage 03 did not forward it and stage 04 did not copy it. The file was in `01-glb/textures/` the whole time. A published avatar silently lost the strand highlight while a local bake kept it. |
 | `"character"` derived, not hardcoded `"ada"` | The sidecar named every character "ada", demos included. |
+| Outfit `Color1` carried into the sidecar | UE's GLTFExporter writes outfit materials with neither a `baseColorTexture` nor a `baseColorFactor`, and glTF defaults absent base colour to **white**. A character whose shirt is navy and chinos khaki in the editor exports dressed entirely in white, with nothing reporting a problem. Stage 01 now records the colour and stage 02 writes it into `mh_materials.json`. |
+| `_resolve_mi_params` reads *effective* params | `_read_mi_params` reads `vector_parameter_values`, which is the **override** array on one instance. Groom MIs override `hairMelanin` directly so it worked there; outfit MIs inherit `Color1` from the parent chain, so it came back empty and the caller's `if not (vectors or scalars): continue` dropped them silently. The resolver walks to the base material and asks `MaterialEditingLibrary` for the resolved value. |
+| Thumbnail step is non-fatal *under capture* too | See "non-fatal only when nobody is looking" below. |
 
 ### B. Telegamez platform contract — do NOT upstream
 
@@ -44,6 +47,19 @@ MetaHuman→GLB tool, and upstream should not carry them.
 | **15 visemes + 6 convenience shapes** | Composed in stage 02 from captured ARKit deltas as weighted sums of existing shape keys. ARKit does not provide them; `@telegamez/lipsync`'s `VISEME_MAP` requires them. Takes the face from 51 to 72 morph targets. |
 | **Bone renames** | 16 MetaHuman joints renamed to Mixamo-family contract names (`pelvis`→`Hips`, `spine_01/03/05`→`Spine/Spine1/Spine2`, `FACIAL_L_Eye`→`LeftEye`, …). A rename, not a hierarchy collapse — nothing is deleted, and `spine_02/04` stay as intermediates. |
 | **Mesh split** | The single 8-slot face mesh is split by material into `Head_Mesh`, `Eye_Mesh`, `EyeAO_Mesh`, `Eyelash_Mesh`, `Teeth_Mesh`; the body becomes `Body_Mesh`. Required because our lid-morph rule asserts blink coverage on each eye-region mesh independently. |
+| **`wardrobe_overrides`** | An optional block in `characters/<id>/manifest.json` that overrides outfit material params in stage 01. Keys match as case-insensitive substrings of the MI name, so one entry covers every character wearing the same outfit. See below for why it is not done in UE. |
+
+### Why wardrobe colour is overridden in the pipeline, not in UE
+
+Some stock garments ship white: every current companion wears *HS Casual Outfit 64*, whose
+Desert Boots are `(1,1,1)`. The obvious fix is to recolour the MI under
+`/Game/Unpacked/<Name>/Clothing` in the editor. **That does not hold** — stage 00 regenerates
+that folder, so the edit is silently lost on the next bake, and per the re-bake trap below,
+every character edit after the first *is* a re-bake.
+
+Overriding in stage 01 instead survives re-bakes, requires no mutation of the operator's UE
+project, and is visible in a manifest rather than buried in a `.uasset`. The override logs
+before→after so the substitution is never invisible.
 
 ---
 
@@ -87,6 +103,24 @@ success as the bug it replaced, reached by a different route.
 existed, which is why it is the right mechanism.
 
 ---
+
+## Non-fatal only when nobody is looking
+
+Stage 00's thumbnail step was written to be non-fatal: it calls `extract_thumbnail.py`, checks
+`$LASTEXITCODE`, and prints "non-fatal, continuing" on failure. The script is absent from
+upstream, so that path ran constantly and harmlessly.
+
+It stops being harmless the moment a caller **captures output**. PowerShell turns a native
+command's stderr into an `ErrorRecord` only when the stream is redirected, and
+`run_assemble.ps1` sets `$ErrorActionPreference = "Stop"` at the top — so under a batch runner
+or CI the script terminates *before* reaching its own guard. Observed: stage 00 aborting in
+under a second for four characters on a missing file it was explicitly written to tolerate,
+having worked fine every time it was run by hand.
+
+The general shape is worth remembering: **a guard that only holds interactively is not a
+guard.** Anything relying on `$LASTEXITCODE` after a native call in a `Stop` script needs the
+call wrapped, or its stderr neutralised, or it will behave differently in automation than in
+the terminal where it was tested.
 
 ## Things that look like bugs and are not
 

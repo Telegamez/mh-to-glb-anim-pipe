@@ -500,6 +500,43 @@ def on_tick(dt: float) -> None:
                            STATE["output_name"])
                     set_if(["export_zip_file"], True)
 
+                # TELEGAMEZ: clear the build folder first.
+                #
+                # build_meta_human ADDS to /Game/Unpacked/<Name>/ — it does
+                # not replace it. Assets from previous bakes therefore
+                # survive, and after a groom change the folder holds BOTH
+                # grooms: change hair from SideSweptFringe to BobLayered and
+                # both are present afterwards. Stage 01 then exports whatever
+                # it finds and can publish the stale one, so an edit made in
+                # MetaHuman Creator appears to have had no effect at all.
+                #
+                # Observed across four characters at once, and it cost a long
+                # investigation because the symptom ("my change did nothing")
+                # points at the editor rather than at the pipeline.
+                #
+                # The folder is wholly generated from the character asset, so
+                # deleting it is safe and makes a re-bake a rebuild. Anything
+                # hand-edited in here was always going to be transient — see
+                # wardrobe_overrides for the supported way to change a
+                # material.
+                # ONLY the Unpacked build output. Deliberately not
+                # /Game/<Name> — that path can hold authored source content
+                # (Tele has /Game/Tele/Clothing), and deleting it would
+                # destroy real data rather than a build artefact.
+                built_root = f"/Game/Unpacked/{STATE['output_name']}"
+                try:
+                    if unreal.EditorAssetLibrary.does_directory_exist(built_root):
+                        ok = unreal.EditorAssetLibrary.delete_directory(built_root)
+                        log(f"  cleared {built_root} before build -> {ok}")
+                    else:
+                        log(f"  {built_root} absent - nothing to clear")
+                except Exception as e:
+                    # Not fatal: a stale asset produces a wrong bake, but
+                    # failing to delete should not block the build. Say so
+                    # loudly, because the resulting bake may be stale.
+                    log(f"  WARNING: could not clear {built_root}: {e} "
+                        f"(bake may contain stale assets)")
+
                 subsystem.build_meta_human(character, params)
             except Exception as e:
                 log(f"build_meta_human error: {e}\n{traceback.format_exc()}")

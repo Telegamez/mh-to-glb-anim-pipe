@@ -440,6 +440,55 @@ def _update_char_manifest(char_dir, status, errors):
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def _vertex_colour_stats():
+    """Summarise the active colour attribute per mesh, before export.
+
+    Recorded so the vertex-colour path can be checked by artifact rather than
+    by trust. Stage 02's scalp darkening reported a healthy count for months
+    while every shipped GLB carried a fake all-white COLOR_0 (see the
+    export_vertex_color note below); the two facts never met, because nothing
+    wrote down what was supposed to come out.
+
+    `darkened` is the fraction below 0.95. A skin mesh reporting 0.0% means the
+    darkening did not happen — that is the number to look at.
+    """
+    out = {}
+    for obj in bpy.data.objects:
+        if obj.type != "MESH":
+            continue
+        ca = getattr(obj.data, "color_attributes", None)
+        if not ca or len(ca) == 0:
+            continue
+        layer = ca.active_color
+        if layer is None or len(layer.data) == 0:
+            continue
+        n = len(layer.data)
+        step = max(1, n // 20000)      # sample: these meshes run to 144k loops
+        lo, tot, dark, cnt = 1.0, 0.0, 0, 0
+        for i in range(0, n, step):
+            c = layer.data[i].color
+            lum = (c[0] + c[1] + c[2]) / 3.0
+            lo = min(lo, lum)
+            tot += lum
+            if lum < 0.95:
+                dark += 1
+            cnt += 1
+        out[obj.name] = {
+            "layer": layer.name,
+            "domain": layer.domain,
+            "min": round(lo, 4),
+            "mean": round(tot / cnt, 4),
+            "darkened_frac": round(dark / cnt, 4),
+        }
+        _log(f"  vcol: {obj.name} '{layer.name}' min={lo:.3f} "
+             f"mean={tot/cnt:.3f} darkened={100.0*dark/cnt:.1f}%")
+    if not out:
+        # Log the empty case. An absent colour attribute and an unchecked one
+        # look identical in silence, and that is how this was missed.
+        _log("  vcol: no mesh carries an active colour attribute")
+    return out
+
+
 def main():
     args = _parse_args()
     workspace = Path(args.workspace)
@@ -471,6 +520,8 @@ def main():
         images = [i.name for i in bpy.data.images
                   if i.users > 0 and i.size[0] > 0]
 
+        vcol_stats = _vertex_colour_stats()
+
         bpy.ops.object.select_all(action="DESELECT")
         for o in bpy.data.objects:
             if o.type in ("MESH", "ARMATURE"):
@@ -492,6 +543,34 @@ def main():
             export_morph_tangent=False,
             export_cameras=False,
             export_lights=False,
+            # TELEGAMEZ: export the real vertex colours, not a fake white set.
+            #
+            # Stage 02 bakes proximity scalp darkening into the face mesh's
+            # `Col` attribute so skin seen through gaps between hair cards
+            # reads as shadow instead of bright forehead. It works: in
+            # telly.blend, Head_Mesh's Col is min 0.014 / mean 0.652 with 42%
+            # of loops darkened, and the stage logs "darkened 12239/34657
+            # face verts".
+            #
+            # None of that reached a single shipped GLB. Every companion's
+            # Head_Mesh COLOR_0 measured pure 1.000 white across all 24,414
+            # verts, because this export relied on the operator defaults —
+            # export_vertex_color='MATERIAL' plus export_all_vertex_colors=True.
+            # In that combination Blender only writes real colours when a
+            # material uses them in a way the glTF material converter
+            # recognises, and otherwise, in its own words, "a fake COLOR_0
+            # will be created, in order to keep material unchanged". The skin
+            # material does read Col, but through a Mix (Legacy) node the
+            # converter does not follow — so the fake white won.
+            #
+            # The failure is the silent-success shape exactly: the bake ran,
+            # the log reported a count, the attribute was present in the GLB,
+            # and the values were meaningless. Assert on the artifact.
+            #
+            # 'ACTIVE' exports the active colour attribute regardless of what
+            # the material converter can trace, which is what this pipeline
+            # wants — stage 02 sets Col active and render on every mesh.
+            export_vertex_color="ACTIVE",
         )
 
         # Forward the viewer sidecar (mh_materials.json + alpha textures)
@@ -523,6 +602,9 @@ def main():
             "downsampled_images": downsampled,
             "flattened_card_materials": flattened,
             "draco": draco,
+            # What the vertex colours looked like going in. Compare against the
+            # GLB if the scalp ever reads bright through the hair again.
+            "vertex_colours": vcol_stats,
         }
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         _log(f"wrote {manifest_path}")

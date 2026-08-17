@@ -75,6 +75,52 @@ def _hide_non_lod0():
     return hidden
 
 
+def _hide_excluded_meshes(char_root):
+    """Hide meshes the character manifest lists under `exclude_meshes`.
+
+    TELEGAMEZ: `tele` and `tele1` carry a second outfit mesh (`Tele_Outfits_2`,
+    `Tele1_Outfits_2`) and so publish six clothing materials rather than three.
+    Two garment sets on one body can interpenetrate once the rig moves.
+
+    **Removing the extra outfit in MetaHuman Creator is the right fix** — this
+    is a stopgap for when a re-authoring pass is not available, and it is
+    opt-in per character so it cannot quietly drop geometry from a character
+    that is fine. Nothing is excluded by default.
+
+    Stage 03 deletes hidden meshes, so hiding is enough to keep it out of the
+    GLB; that is the same route `_hide_non_lod0` takes.
+
+    Matching is exact on the object name. A substring match here would be a
+    prefix whitelist wearing a different hat, and `Tele_Outfits` is a prefix of
+    `Tele_Outfits_2` — the loose version would delete the outfit it meant to
+    keep.
+    """
+    names = []
+    try:
+        with open(os.path.join(char_root, "manifest.json"), encoding="utf-8") as f:
+            names = json.load(f).get("exclude_meshes") or []
+    except Exception as e:
+        _log(f"  exclude: could not read manifest: {e}")
+        return 0
+    if not names:
+        return 0
+
+    present = {o.name for o in bpy.data.objects if o.type == "MESH"}
+    hidden = 0
+    for n in names:
+        obj = bpy.data.objects.get(n)
+        if obj is None or obj.type != "MESH":
+            # Loudly. An exclusion that matches nothing is either a typo or a
+            # mesh that got renamed, and both look like success in silence.
+            _log(f"  exclude: '{n}' NOT FOUND (meshes: {sorted(present)})")
+            continue
+        obj.hide_viewport = True
+        obj.hide_render = True
+        _log(f"  exclude: hiding {n}")
+        hidden += 1
+    return hidden
+
+
 def _parent_hair_to_head_bone(hair_names):
     """Hair cards arrive from UE's glTF exporter already positioned
     correctly — MH bakes hair-card StaticMesh verts in character-world
@@ -2302,6 +2348,9 @@ def main():
 
     hidden = _hide_non_lod0()
     _log(f"hid {hidden} non-LOD0/collision meshes")
+
+    excluded = _hide_excluded_meshes(char_root)
+    _log(f"excluded {excluded} mesh(es) via manifest exclude_meshes")
 
     # ARKit shape-key bake from the Sequencer-baked LSE FBX (stage 01).
     # UE's Sequencer evaluates the AnimSequence through a live

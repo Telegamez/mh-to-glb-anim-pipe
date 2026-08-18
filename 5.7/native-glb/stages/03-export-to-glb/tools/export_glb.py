@@ -30,6 +30,7 @@ import argparse
 import datetime as _dt
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -489,6 +490,488 @@ def _vertex_colour_stats():
     return out
 
 
+# Weight smoothing is applied to every skinned mesh EXCEPT these.
+#
+# The exclusions are the facial group: their shapes come from morph targets, their features are
+# a millimetre or two across, and smoothing across a lid, lip or lash boundary would blur
+# articulation that nothing else restores. Everything else — the garments AND the body — wants
+# smoothing.
+#
+# The body was excluded on the first pass because its MEDIAN edge stretch measured 1.00, which
+# looked healthy. The median was hiding it: ~900 individual triangles were still blowing up to
+# 10-16x, all of them at the elbows, wrists and finger joints. That is exactly where the twist
+# and bulge correctives (`lowerarm_twist_*`, `upperarm_twistCor_*`, `wrist_inner_*`, `*_bulge_*`)
+# used to carry the deformation gradient; folding them into `LeftForeArm`/`LeftArm` collapses a
+# smooth multi-ring falloff into a two-step one, and a two-step gradient shreds the moment the
+# elbow passes ~90 degrees. It showed as torn, faceted forearms during Shrug, and as the arm
+# pushing through the sleeve hem. Never judge this defect by a median.
+NO_SMOOTH_MESH = re.compile(
+    r"head|eye|lash|lacrimal|teeth|tongue|hide|cartilage|saliva|brow|beard|hair|card",
+    re.IGNORECASE,
+)
+# An influence is implausible when its bone is more than this many times farther from the
+# vertex than the nearest influencing bone. 2.5 drops chest-on-arm and waist-on-thigh while
+# keeping sleeve-on-arm and hem-on-hip.
+# Cloth is not attached to the skull. A collar weighted to `Head` is dragged by every head
+# turn, which is what crumpled and flared the polo collar: the collar band measured 11% `Head`
+# plus 17% `neck_02`, and at a 42-degree head turn it blew out to +33% wider than bind. Garment
+# influence on `Head` is remapped to `Neck`, which is where a collar actually rides. Facial
+# bones get the same treatment for the same reason. Body and face meshes are untouched.
+GARMENT_MESH = re.compile(r"outfit|cloth|shirt|chino|trouser|pant|skirt|dress|jacket|boot|shoe",
+                          re.IGNORECASE)
+GARMENT_BONE_REMAP = {"Head": "Neck"}
+GARMENT_FORBIDDEN_BONE = re.compile(r"^(FACIAL_|jaw|tongue|teeth)", re.IGNORECASE)
+
+IMPLAUSIBLE_DISTANCE_RATIO = 2.5
+WEIGHT_SMOOTH_FACTOR = 0.5
+WEIGHT_SMOOTH_REPEAT = 4
+# Smoothing is ADAPTIVE: a vertex is only smoothed in proportion to how much its weight map
+# disagrees with its neighbours. Below D0 it is left completely alone.
+#
+# Uniform smoothing was doing real damage. Linear-blend skinning loses volume whenever a vertex
+# is shared between bones that rotate relative to each other, so spreading every vertex across
+# more bones pinches the wrist (forearm vs hand) and the waist (the spine chain). It showed up
+# as a monotonic slide in compression as passes went up - 428 triangles under half their bind
+# length at 0 passes, 593 at 4, 741 at 10 - while the tearing number kept improving, which is
+# how a one-sided metric talks you into wrecking a silhouette.
+#
+# The fold's damage is localised: hard steps where two neighbouring vertices aliased onto
+# structurally distant bones. Coherent regions - the wrist gradient, the waist - were never
+# broken and must not be touched. Reference disagreement medians: Head_Mesh 0.10 (healthy),
+# Body_Mesh 0.26, outfit 0.44.
+WEIGHT_SMOOTH_ADAPTIVE = False
+WEIGHT_SMOOTH_D0 = 0.12
+WEIGHT_SMOOTH_D1 = 0.40
+
+# MEASURED TRADE-OFF - read this before changing any constant above.
+#
+# Tearing and compression move in OPPOSITE directions and no setting wins both, because the
+# ~1130 corrective and twist joints that Unreal uses to prevent both artifacts are frozen here
+# (6.14). Telly, Listening, peak over the clip; "tears" = triangles stretched over 3x, "squash"
+# = triangles compressed under 0.5:
+#
+#   config                    shirt tears / worst    shirt squash   body tears   body squash
+#   fold only (no smoothing)      4792 / 171x             428          1106          279
+#   uniform x10                   1246 /  99x             741             0            -
+#   uniform x4 + filter  <=       1505 /  49x             593            58           96
+#   adaptive x6 (D0 0.25)         2952 / 150x             407            80          183
+#   adaptive x8 (D0 0.12)         2033 /  87x             519            16          181
+#
+# Uniform x4 is shipped: lowest WORST-case tear (49x, the visible gashes) and lowest body
+# compression (96, the wrist pinch). The adaptive path is kept because it is the better tool
+# once the twist joints are driven - see the note in 6.16 about the real fix.
+
+
+def _read_live_bones(workspace):
+    """Load the bones that must survive the fold. Missing file is fatal, by design."""
+    path = Path(workspace) / "_config" / "live_bones.json"
+    if not path.exists():
+        raise RuntimeError(
+            "live_bones.json not found at {}. Generate it from the animation "
+            "library first:\n"
+            "  python stages/05-animation-bake/tools/derive_live_bones.py "
+            "--animations <mh-animations.glb> --out <workspace>/_config/live_bones.json\n"
+            "Exporting without it ships a character whose clothing tears - see "
+            "_fold_frozen_bones().".format(path)
+        )
+    return set(json.loads(path.read_text(encoding="utf-8"))["live_bones"])
+
+
+def _drop_implausible_influences(obj, per_vertex, bone_span, ratio):
+    """Remove influences from bones that are nowhere near the vertex they drive.
+
+    ## Why a garment ends up bound to the wrong limb
+
+    MetaHuman weights clothing across rig-logic helpers, and a helper hangs off whatever bone it
+    corrects, not the bone it sits on. `upperarm_fwd_l` and `upperarm_bck_l` are children of
+    `LeftArm` but sit on the CHEST; `thigh_bck_*` are children of `thigh_*` but sit on the
+    PELVIS. Unreal drives them so the chest cloth only partly follows the arm. Frozen, they
+    alias to their parent and the chest follows the arm completely.
+
+    Measured on the shipped shirt, splitting the torso centre column (|x| < 0.12) from the
+    sleeves so a short sleeve at chest height is not mistaken for chest cloth:
+
+        collar  49% LeftShoulder/RightShoulder/RightArm     (should be neck and upper spine)
+        chest   29% LeftArm/RightArm                        (should be Spine2/Spine1)
+        waist   25% thigh_l/thigh_r                         (should be spine and hips)
+        hem     62% thigh_l/thigh_r                         (should be hips)
+        sleeve  64% LeftArm/RightArm                        (correct - leave alone)
+
+    That is the collapsed waist, the crumpled collar and the placket being dragged sideways.
+
+    Transferring the weights from the skin underneath is the obvious repair and is not available
+    here: `Body_Mesh` has NO vertices in the chest or collar bands and `Head_Mesh` stops at the
+    collarbone, because MetaHuman deletes the torso skin hidden by clothing. There is no donor
+    for precisely the region that is broken.
+
+    ## The rule
+
+    Geometric plausibility. For each vertex, measure the distance to each influencing bone's
+    BIND segment and keep only influences within `ratio` times the nearest one. A chest-centre
+    vertex is ~20cm from the `LeftArm` segment and ~6cm from `Spine2`, so the arm goes. A sleeve
+    vertex is ~4cm from `LeftArm` and ~20cm from `Spine2`, so the arm stays and the spine goes.
+    The shirt hem at the hip stays partly on `thigh_*`, which is correct - it sits there.
+
+    Only ever removes influences and renormalises, so it cannot invent motion. A vertex whose
+    influences are all equally distant keeps all of them.
+    """
+    world = obj.matrix_world
+    dropped = 0
+    out = []
+    for vert, weights in zip(obj.data.vertices, per_vertex):
+        if len(weights) < 2:
+            out.append(weights)
+            continue
+        co = world @ vert.co
+        distances = {}
+        for name in weights:
+            span = bone_span.get(name)
+            if span is None:
+                distances[name] = 0.0        # unknown bone: never penalise it
+                continue
+            head, tail = span
+            axis = tail - head
+            length_sq = axis.dot(axis)
+            if length_sq < 1e-12:
+                distances[name] = (co - head).length
+            else:
+                t = max(0.0, min(1.0, (co - head).dot(axis) / length_sq))
+                distances[name] = (co - (head + axis * t)).length
+        nearest = min(distances.values())
+        limit = max(nearest, 1e-4) * ratio
+        kept = {n: w for n, w in weights.items() if distances[n] <= limit}
+        if not kept:
+            out.append(weights)
+            continue
+        if len(kept) < len(weights):
+            dropped += 1
+        total = sum(kept.values())
+        out.append({n: w / total for n, w in kept.items()} if total > 0 else weights)
+    return out, dropped
+
+
+def _smooth_weights(obj, per_vertex):
+    """Laplacian-smooth a sparse per-vertex weight map over the mesh's edges.
+
+    The fold is exact, but it cannot repair what rig logic was hiding. MetaHuman spreads a
+    garment across many helper joints that Unreal keeps moving together; frozen, each aliases to
+    whatever real joint it happens to hang from, and structurally distant parents land on
+    adjacent vertices — one vertex 0.98 on `LeftShoulder` (via `clavicle_out_l`) touching one
+    0.90 on `LeftArm` (via `upperarm_fwd_l`). In Unreal those deform almost identically; here
+    they diverge the instant the arm swings, and the triangle between them stretches 35x. That
+    is the shoulder and placket tearing that survives the fold.
+
+    Smoothing restores the continuous field the garment was authored to have. Done in Python
+    rather than through `bpy.ops.object.vertex_group_smooth` because that operator polls for a
+    paint context that a --background export does not have.
+
+    Vertices are welded by position first: a garment is split along its UV and material seams,
+    and smoothing the split copies independently is what would re-open the seam it is meant to
+    close.
+    """
+    mesh = obj.data
+    welded = {}
+    representative = [0] * len(mesh.vertices)
+    for vert in mesh.vertices:
+        key = (round(vert.co.x, 5), round(vert.co.y, 5), round(vert.co.z, 5))
+        representative[vert.index] = welded.setdefault(key, vert.index)
+
+    neighbours = {}
+    for edge in mesh.edges:
+        a, b = representative[edge.vertices[0]], representative[edge.vertices[1]]
+        if a == b:
+            continue
+        neighbours.setdefault(a, set()).add(b)
+        neighbours.setdefault(b, set()).add(a)
+
+    # one map per welded representative, seeded from its own copy
+    def disagreement(a, b):
+        """Half the L1 distance between two weight maps: 0 identical, 1 disjoint."""
+        total = 0.0
+        for name in set(a) | set(b):
+            total += abs(a.get(name, 0.0) - b.get(name, 0.0))
+        return total / 2.0
+
+    current = {r: dict(per_vertex[r]) for r in set(representative)}
+    touched = 0
+    for _ in range(WEIGHT_SMOOTH_REPEAT):
+        nxt = {}
+        for r, weights in current.items():
+            adjacent = neighbours.get(r)
+            if not adjacent:
+                nxt[r] = weights
+                continue
+            # How far out of step is this vertex with its neighbours?
+            if WEIGHT_SMOOTH_ADAPTIVE:
+                step = max(disagreement(weights, current[other]) for other in adjacent)
+                alpha = (step - WEIGHT_SMOOTH_D0) / (WEIGHT_SMOOTH_D1 - WEIGHT_SMOOTH_D0)
+                alpha = max(0.0, min(1.0, alpha)) * WEIGHT_SMOOTH_FACTOR
+            else:
+                alpha = WEIGHT_SMOOTH_FACTOR
+            if alpha <= 0.0:
+                nxt[r] = weights          # coherent already - leave it exactly as it is
+                continue
+            touched += 1
+            averaged = {}
+            for other in adjacent:
+                for name, weight in current[other].items():
+                    averaged[name] = averaged.get(name, 0.0) + weight
+            count = float(len(adjacent))
+            blended = {}
+            for name in set(weights) | set(averaged):
+                blended[name] = (
+                    (1.0 - alpha) * weights.get(name, 0.0)
+                    + alpha * (averaged.get(name, 0.0) / count)
+                )
+            total = sum(blended.values())
+            if total > 0.0:
+                blended = {n: w / total for n, w in blended.items() if w > 1e-6}
+            nxt[r] = blended
+        current = nxt
+
+    _log(f"fold:   adaptive smoothing touched {touched} vertex-passes on {obj.name}")
+    return [current[representative[i]] for i in range(len(mesh.vertices))]
+
+
+def _apply_solved_weights(workspace, char):
+    """Install skinning-decomposition weights, replacing the fold/filter/smooth stack.
+
+    Those three exist to survive the exporter's top-4 truncation by rearranging the weight map
+    around it. This does not need to: `solve_skin.py` finds the four influences that best
+    reproduce the FULL-influence deformation over a range of motion, so the four slots carry the
+    motion rather than merely the four largest numbers. Measured on Telly against the
+    twelve-influence truth, mean per-vertex deviation over 60 sampled frames:
+
+        Body_Mesh        0.582mm -> 0.112mm    worst 22.3mm -> 5.0mm
+        Telly_Outfits    1.956mm -> 0.599mm    worst 34.4mm -> 8.2mm
+        Head_Mesh        0.105mm -> 0.013mm    worst  4.7mm -> 2.4mm
+
+    Returns True when solved weights were applied; the caller falls back to the fold if not, so
+    a character that has not been solved yet still exports.
+    """
+    path = Path(workspace) / "characters" / char / "_solve" / "skin_solved.npz"
+    if not path.exists():
+        _log(f"no solved weights at {path} - falling back to the fold")
+        return False
+
+    import numpy as np  # Blender ships numpy; scipy lives in the external solver
+
+    data = np.load(str(path), allow_pickle=True)
+    bone_names = [str(n) for n in data["bone_names"]]
+    applied = 0
+    for key in [str(m) for m in data["meshes"]]:
+        obj = bpy.data.objects.get(key)
+        if obj is None or obj.type != "MESH":
+            _log(f"solved weights name {key} not in the scene - skipped")
+            continue
+        idx = data[f"mesh::{key}::indices"]
+        wgt = data[f"mesh::{key}::weights"]
+        if len(idx) != len(obj.data.vertices):
+            raise RuntimeError(
+                f"{key}: solved weights cover {len(idx)} verts, mesh has "
+                f"{len(obj.data.vertices)} - the solve is stale, re-run run_weight_solve.ps1"
+            )
+
+        # Non-bone groups (shape masks and the like) are preserved untouched.
+        bone_set = set(bone_names)
+        keep = {}
+        for vg in obj.vertex_groups:
+            if vg.name in bone_set:
+                continue
+            keep[vg.name] = []
+        if keep:
+            for vert in obj.data.vertices:
+                for g in vert.groups:
+                    name = obj.vertex_groups[g.group].name
+                    if name in keep and g.weight > 0.0:
+                        keep[name].append((vert.index, g.weight))
+
+        obj.vertex_groups.clear()
+        groups = {}
+        for v in range(len(idx)):
+            for k in range(idx.shape[1]):
+                w = float(wgt[v, k])
+                if w <= 1e-6:
+                    continue
+                name = bone_names[int(idx[v, k])]
+                vg = groups.get(name)
+                if vg is None:
+                    vg = obj.vertex_groups.new(name=name)
+                    groups[name] = vg
+                vg.add([v], w, "REPLACE")
+        for name, entries in keep.items():
+            vg = obj.vertex_groups.new(name=name)
+            for index, weight in entries:
+                vg.add([index], weight, "REPLACE")
+
+        applied += 1
+        _log(f"solved: {key} -> {len(groups)} bone groups, 4 influences by construction")
+
+    if not applied:
+        return False
+    _log(f"solved weights applied to {applied} mesh(es); fold/filter/smooth skipped")
+    return True
+
+
+def _fold_frozen_bones(workspace):
+    """Fold every frozen bone's skin weight into its nearest LIVE ancestor.
+
+    ## The defect this fixes
+
+    glTF and three.js allow four bone influences per vertex. MetaHuman clothing wants twelve —
+    the stage 01 exports carry JOINTS_0/1/2, and the outfit's median vertex has seven non-zero
+    influences. The glTF exporter silently keeps the largest four and renormalises.
+
+    That truncation was destroying the garments. Measured on Tele's outfit:
+
+        weight discarded by top-4 truncation   median 21.9%   p90 45.4%   max 50.6%
+        vertices losing more than 10%          69.0%
+
+    And it discarded the WRONG ones. ~1130 of this skeleton's ~1185 joints are rig-logic
+    helpers that Unreal drives procedurally and glTF cannot carry, so in the browser they never
+    move. A frozen bone is an exact alias of its parent — jointMatrix(child) == jointMatrix(parent)
+    when the child's local transform equals its bind (the localBind terms cancel against the
+    inverse bind matrix). 73% of outfit vertices were spending two or more of their four slots
+    on aliases of a single bone while genuinely distinct influences fell off the end.
+
+    Folding first collapses the aliases, so the four slots hold four DISTINCT live bones. The
+    median vertex then needs two. Same measurement after this function runs:
+
+        weight discarded by top-4 truncation   median 0.0%   p90 0.0%   max 27.2%
+        vertices losing more than 10%          5.1%
+
+    Because the fold is an identity on the deformation, this is free: it cannot change how any
+    vertex moves, only how efficiently its weights are stored.
+
+    ## Not optional, and not derivable here
+
+    "Live" comes from `_config/live_bones.json`, which is derived from the shipped animation
+    library plus the platform's 16 contract bones. The contract half is load-bearing:
+    `LeftEye`/`RightEye` are posed procedurally by gaze and no clip animates them, so a set
+    derived from the clips alone would fold them into `Head` and kill eye movement with no
+    error anywhere. Re-derive whenever the animation set changes.
+    """
+    live = _read_live_bones(workspace)
+
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    if not armatures:
+        _log("fold: no armature, skipping")
+        return {}
+
+    # bone -> nearest ancestor that is live (itself if it is live)
+    alias = {}
+    for arm in armatures:
+        for bone in arm.data.bones:
+            node = bone
+            while node is not None and node.name not in live:
+                node = node.parent
+            alias[bone.name] = node.name if node is not None else bone.name
+
+    # Bind-space segment of every live bone, for the plausibility filter.
+    bone_span = {}
+    for arm in armatures:
+        for bone in arm.data.bones:
+            bone_span[bone.name] = (
+                arm.matrix_world @ bone.head_local,
+                arm.matrix_world @ bone.tail_local,
+            )
+
+    stats = {}
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or not obj.vertex_groups:
+            continue
+        if not any(m.type == "ARMATURE" for m in obj.modifiers):
+            continue
+
+        is_garment = bool(GARMENT_MESH.search(obj.name))
+        index_to_name = {vg.index: vg.name for vg in obj.vertex_groups}
+        # Groups that are not bones (shape masks and the like) are left exactly as they are.
+        bone_indices = {i for i, n in index_to_name.items() if n in alias}
+        if not bone_indices:
+            continue
+
+        per_vertex = []      # sparse {target group name -> weight} for every vertex
+        untouched = {}       # non-bone group name -> [(vertex index, weight), ...]
+        collapsed_verts = 0
+        for vert in obj.data.vertices:
+            acc = {}
+            distinct_before = 0
+            for g in vert.groups:
+                weight = g.weight
+                if weight <= 0.0:
+                    continue
+                name = index_to_name.get(g.group)
+                if name is None:
+                    continue
+                if g.group in bone_indices:
+                    distinct_before += 1
+                    target = alias[name]
+                    if is_garment:
+                        target = GARMENT_BONE_REMAP.get(target, target)
+                        if GARMENT_FORBIDDEN_BONE.match(target):
+                            target = "Neck"
+                    acc[target] = acc.get(target, 0.0) + weight
+                else:
+                    untouched.setdefault(name, []).append((vert.index, weight))
+            if len(acc) < distinct_before:
+                collapsed_verts += 1
+            per_vertex.append(acc)
+
+        smoothed = 0
+        dropped = 0
+        if not NO_SMOOTH_MESH.search(obj.name):
+            # Order matters: drop the implausible influences FIRST, then smooth. Smoothing a
+            # chest vertex that is still 29% bound to the arm spreads that error into its
+            # neighbours instead of removing it, which is how the waist ended up collapsing
+            # harder at 10 passes than at 0.
+            per_vertex, dropped = _drop_implausible_influences(
+                obj, per_vertex, bone_span, IMPLAUSIBLE_DISTANCE_RATIO,
+            )
+            per_vertex = _smooth_weights(obj, per_vertex)
+            smoothed = WEIGHT_SMOOTH_REPEAT
+
+        folded = {}
+        for index, acc in enumerate(per_vertex):
+            for target, weight in acc.items():
+                if weight > 1e-6:
+                    folded.setdefault(target, []).append((index, weight))
+
+        obj.vertex_groups.clear()
+        for name, entries in list(folded.items()) + list(untouched.items()):
+            vg = obj.vertex_groups.new(name=name)
+            for index, weight in entries:
+                vg.add([index], weight, "REPLACE")
+
+        stats[obj.name] = {
+            "verts": len(obj.data.vertices),
+            "groups_before": len(index_to_name),
+            "groups_after": len(obj.vertex_groups),
+            "verts_with_collapsed_influences": collapsed_verts,
+        }
+        _log(
+            f"fold: {obj.name} groups {len(index_to_name)} -> {len(obj.vertex_groups)}, "
+            f"{collapsed_verts}/{len(obj.data.vertices)} verts had influences merge"
+            + (f", dropped far-bone influences on {dropped}" if dropped else "")
+            + (f", smoothed {smoothed} passes" if smoothed else "")
+        )
+
+    # Weight smoothing (see _smooth_weights) has already run per garment above.
+
+    # Make the four-influence limit explicit here rather than leaving it to the exporter, so
+    # any residual loss is applied and normalised once, where it can be logged.
+    bpy.ops.object.select_all(action="DESELECT")
+    view = bpy.context.view_layer.objects
+    for name in stats:
+        obj = bpy.data.objects[name]
+        obj.select_set(True)
+        view.active = obj
+    if stats:
+        bpy.ops.object.vertex_group_limit_total(limit=4)
+        bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+        _log(f"fold: limited to 4 influences and normalised across {len(stats)} meshes")
+    return stats
+
+
 def main():
     args = _parse_args()
     workspace = Path(args.workspace)
@@ -505,6 +988,10 @@ def main():
     try:
         removed = _delete_hidden_meshes()
         _log(f"removed {len(removed)} hidden meshes")
+
+        # Solved weights first; the fold is the fallback for an unsolved character.
+        if not _apply_solved_weights(workspace, args.char):
+            fold_stats = _fold_frozen_bones(workspace)
 
         flipped = _flip_normal_maps_g()
         _log(f"flipped G on {flipped} normal maps (DX -> GL)")

@@ -520,8 +520,16 @@ NO_SMOOTH_MESH = re.compile(
 GARMENT_MESH = re.compile(r"outfit|cloth|shirt|chino|trouser|pant|skirt|dress|jacket|boot|shoe",
                           re.IGNORECASE)
 GARMENT_BONE_REMAP = {"Head": "Neck"}
-# The skin mesh whose covered faces get removed. Head/face meshes are never touched.
-BODY_MESH = re.compile(r"body", re.IGNORECASE)
+# Skin meshes whose covered faces get removed.
+#
+# Head_Mesh is in here deliberately and it is not obvious: MetaHuman's head mesh does not stop at
+# the jaw, it runs down through the neck into the upper chest and back (Telly's spans y 1.41 to
+# 1.80, where the collar tops out around 1.57). That torso portion sits under the shirt and pokes
+# through it, and because its UVs fall outside the face texture it renders GREY rather than skin
+# — which is what the grey patch on the shoulder blade was. The opening margin is what keeps the
+# visible neck: containment keeps it, because a ray cast outward from the neck above the collar
+# escapes without hitting cloth.
+SKIN_MESH = re.compile(r"^(Body|Head)_Mesh", re.IGNORECASE)
 GARMENT_FORBIDDEN_BONE = re.compile(r"^(FACIAL_|jaw|tongue|teeth)", re.IGNORECASE)
 
 IMPLAUSIBLE_DISTANCE_RATIO = 2.5
@@ -564,18 +572,15 @@ WEIGHT_SMOOTH_D1 = 0.40
 # once the twist joints are driven - see the note in 6.16 about the real fix.
 
 
-# How close to a garment surface a body vertex has to be to count as covered. Generous on
-# purpose: the defect is the body sitting OUTSIDE the cloth, so "near the surface, either side"
-# is the condition, not "inside".
-COVER_DISTANCE = 0.03
-# Keep body geometry this far back from a garment OPENING. Without it the neck inside the
-# collar, the forearm below the sleeve and the ankle below the trouser hem all get deleted and
-# the character loses the skin that is supposed to show.
-OPENING_MARGIN = 0.025
-# Near an opening, faces are NOT deleted - they are tucked. Deleting there cuts back past the
-# cloth edge and opens a visible gap at the sleeve hem; leaving them alone leaves a sliver of
-# skin poking through. Pushing the vertex just inside the garment surface does neither.
-TUCK_DEPTH = 0.002
+# How far to look for cloth along the skin's own normal. Generous: a loose shirt on a heavy
+# build can sit several centimetres off the chest, and anything shorter leaves islands.
+RAY_REACH = 0.25
+# How far BEHIND the skin to look for cloth it has pushed through. Short on purpose - a longer
+# reach starts catching the far side of the garment and tucks skin that should be visible.
+POKE_REACH = 0.04
+# Skin that has pushed through the fabric is moved this far behind it rather than deleted, so
+# the surviving fringe of a partly-covered face is hidden instead of leaving a gap.
+TUCK_DEPTH = 0.004
 # Refuse to proceed if a garment would delete more than this share of the body. A runaway here
 # would silently produce an invisible character.
 MAX_BODY_REMOVAL = 0.85
@@ -600,19 +605,23 @@ def _hide_body_under_clothing():
     Deleting a face that the body was poking THROUGH reveals the garment behind it, which is the
     correct result - the clothing materials are already double-sided.
 
-    Openings need the other treatment. A garment's boundary loops are its collar, cuffs and hems,
-    and skin is meant to be visible there. Deleting near them cuts back past the cloth edge and
-    opens a dark gap at the sleeve; not touching them leaves a sliver of skin poking through. So
-    body vertices near an opening are TUCKED instead - if they sit outside the cloth they are
-    moved just inside it - which removes the poke-through without removing the skin.
+    Coverage is decided by CONTAINMENT, not by distance to the cloth. Distance was the first
+    attempt and it produces visibly arbitrary results: wherever a garment is loose - the armpit,
+    the chest of a heavy build - the body sits beyond any fixed threshold and is left visible in
+    islands. Casting along the skin's own normal does not care about fit. It also handles
+    openings for free: below a sleeve hem the ray escapes and the arm stays visible, with no
+    boundary-loop special case.
+
+    Skin that has pushed THROUGH the fabric is the mirror case - cloth behind it rather than in
+    front - and is tucked just inside instead of deleted. That matters because a face is only
+    removed when all three of its vertices are covered, so the fringe of a partly-covered face
+    survives; tucking hides it without opening a gap.
     """
     import bmesh  # noqa: PLC0415 - Blender-only imports stay local to the function
     from mathutils import Vector  # noqa: PLC0415
     from mathutils.bvhtree import BVHTree  # noqa: PLC0415
-    from mathutils.kdtree import KDTree  # noqa: PLC0415
 
-    bodies = [o for o in bpy.data.objects
-              if o.type == "MESH" and BODY_MESH.search(o.name) and not NO_SMOOTH_MESH.search(o.name)]
+    bodies = [o for o in bpy.data.objects if o.type == "MESH" and SKIN_MESH.search(o.name)]
     garments = [o for o in bpy.data.objects
                 if o.type == "MESH" and GARMENT_MESH.search(o.name)]
     if not bodies or not garments:
@@ -632,45 +641,51 @@ def _hide_body_under_clothing():
                     tris.append((idx[0], idx[k], idx[k + 1]))
             bvh = BVHTree.FromPolygons(verts, tris, all_triangles=True)
 
-            # boundary = edges used by exactly one face; those are the openings
-            edge_use = {}
-            for poly in gm.polygons:
-                idx = list(poly.vertices)
-                for k in range(len(idx)):
-                    a, b = idx[k], idx[(k + 1) % len(idx)]
-                    edge_use[(min(a, b), max(a, b))] = edge_use.get((min(a, b), max(a, b)), 0) + 1
-            boundary = {v for (a, b), n in edge_use.items() if n == 1 for v in (a, b)}
-            kd = KDTree(len(boundary))
-            for i, vi in enumerate(boundary):
-                kd.insert(verts[vi], i)
-            kd.balance()
-
             bmw = body.matrix_world
             inv = bmw.inverted()
+            nrm = bmw.to_3x3().inverted().transposed()
             hits = 0
             tucked = 0
+            pokes = []
             for v in body.data.vertices:
                 co = bmw @ v.co
-                nearest = bvh.find_nearest(co, COVER_DISTANCE)
-                if nearest is None or nearest[3] is None:
+                n = (nrm @ v.normal)
+                if n.length < 1e-9:
                     continue
-                location, normal, _, _ = nearest
-                near_opening = False
-                if boundary:
-                    _, _, bdist = kd.find(co)
-                    near_opening = bdist is not None and bdist < OPENING_MARGIN
-                if near_opening:
-                    # Tuck rather than delete: only if the vertex is actually OUTSIDE the cloth.
-                    if (co - location).dot(normal) > 0:
+                n = n.normalized()
+                # COVERED = cloth lies outside this skin along its own normal.
+                #
+                # Distance to the nearest cloth is the wrong test and it is what made coverage
+                # look arbitrary: wherever a garment is loose - the armpit, the chest of a heavy
+                # build - the body sits further away than any fixed threshold and simply is not
+                # marked, leaving islands of skin. Containment does not care how loose the fit
+                # is. Below a sleeve hem the ray escapes and the arm stays visible, which is the
+                # behaviour the opening margin was approximating.
+                hit = bvh.ray_cast(co + n * 1e-4, n, RAY_REACH)
+                if hit is not None and hit[0] is not None:
+                    if v.index not in covered:
+                        covered.add(v.index)
+                        hits += 1
+                    continue
+                # POKED THROUGH = the cloth is behind this skin instead of in front of it.
+                back = bvh.ray_cast(co - n * 1e-4, -n, POKE_REACH)
+                if back is not None and back[0] is not None:
+                    nearest = bvh.find_nearest(co, POKE_REACH)
+                    if nearest is not None and nearest[3] is not None:
+                        location, normal, _, _ = nearest
+                        pokes.append((co - location).length)
                         v.co = inv @ (location - normal * TUCK_DEPTH)
                         tucked += 1
-                    continue
-                if v.index not in covered:
-                    covered.add(v.index)
-                    hits += 1
+                        if v.index not in covered:
+                            covered.add(v.index)
+                            hits += 1
+            if pokes:
+                pokes.sort()
+                _log(f"hide-body:   poke-through at {garment.name} openings: "
+                     f"med {pokes[len(pokes)//2]*1000:.1f}mm max {pokes[-1]*1000:.1f}mm "
+                     f"(tuck depth {TUCK_DEPTH*1000:.0f}mm)")
             _log(f"hide-body: {garment.name} covers {hits} more {body.name} verts, "
-                 f"tucked {tucked} at its openings "
-                 f"({len(boundary)} boundary verts)")
+                 f"tucked {tucked} that had pushed through it")
 
         if not covered:
             continue

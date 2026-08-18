@@ -112,3 +112,12 @@ docs/animations/
 
 # Batch bake logs (tools/bake_batch.ps1)
 5.7/native-glb/_logs/
+
+# Ground-truth verification workspace (tools/verify_deformation.py,
+# stages/05/tools/export_posed_mesh.py). Regenerable UE output, and
+# MetaHuman-licensed like every other bake artifact.
+5.7/native-glb/_work/
+
+# Skinning-decomposition intermediates (tools/run_weight_solve.ps1).
+# Per-character, regenerable, and large.
+5.7/native-glb/characters/*/_solve/

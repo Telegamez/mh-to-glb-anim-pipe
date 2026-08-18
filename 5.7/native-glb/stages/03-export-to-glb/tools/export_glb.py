@@ -581,9 +581,7 @@ POKE_REACH = 0.04
 # Skin that has pushed through the fabric is moved this far behind it rather than deleted, so
 # the surviving fringe of a partly-covered face is hidden instead of leaving a gap.
 TUCK_DEPTH = 0.004
-# Refuse to proceed if a garment would delete more than this share of the body. A runaway here
-# would silently produce an invisible character.
-MAX_BODY_REMOVAL = 0.85
+
 
 
 def _hide_body_under_clothing():
@@ -597,13 +595,19 @@ def _hide_body_under_clothing():
     body surface simply sits outside the garment surface in those regions, worst on the heaviest
     build (Tele2). Nothing about weights, rig logic or the 4-influence limit touches it.
 
-    Games solve this by not drawing the covered body at all, and MetaHuman ships a hidden-face
-    mask per garment for exactly this purpose. This is the geometric equivalent, so it works
-    whether or not that mask survived the export: a body face whose vertices all sit within
-    `COVER_DISTANCE` of a garment surface is removed.
+    ## Why nothing is deleted
 
-    Deleting a face that the body was poking THROUGH reveals the garment behind it, which is the
-    correct result - the clothing materials are already double-sided.
+    The first version removed covered faces, which is what games normally do, and it produced
+    holes: the underside of the jaw seen from below, transparent slices in the underarm during a
+    Shrug. Both are the same flaw. Coverage is computed at BIND pose, but coverage CHANGES with
+    pose - raise an arm and the armpit that was under the sleeve is suddenly on display. Deleting
+    is only safe for geometry that is never visible in any pose, and one pose cannot establish
+    that.
+
+    So nothing is deleted. Skin that sits outside the fabric is moved just inside it instead. The
+    visible result is the same - no skin through the cloth - but the geometry always exists, so
+    no angle and no pose can open a hole. It costs the overdraw that deleting would have saved,
+    which is the right trade for a defect class that only shows up after shipping.
 
     Coverage is decided by CONTAINMENT, not by distance to the cloth. Distance was the first
     attempt and it produces visibly arbitrary results: wherever a garment is loose - the armpit,
@@ -617,7 +621,6 @@ def _hide_body_under_clothing():
     removed when all three of its vertices are covered, so the fringe of a partly-covered face
     survives; tucking hides it without opening a gap.
     """
-    import bmesh  # noqa: PLC0415 - Blender-only imports stay local to the function
     from mathutils import Vector  # noqa: PLC0415
     from mathutils.bvhtree import BVHTree  # noqa: PLC0415
 
@@ -662,23 +665,28 @@ def _hide_body_under_clothing():
                 # is. Below a sleeve hem the ray escapes and the arm stays visible, which is the
                 # behaviour the opening margin was approximating.
                 hit = bvh.ray_cast(co + n * 1e-4, n, RAY_REACH)
-                if hit is not None and hit[0] is not None:
-                    if v.index not in covered:
-                        covered.add(v.index)
-                        hits += 1
+                covered_here = hit is not None and hit[0] is not None
+                if not covered_here:
+                    # cloth behind the skin instead of in front: it has pushed through
+                    back = bvh.ray_cast(co - n * 1e-4, -n, POKE_REACH)
+                    covered_here = back is not None and back[0] is not None
+                if not covered_here:
                     continue
-                # POKED THROUGH = the cloth is behind this skin instead of in front of it.
-                back = bvh.ray_cast(co - n * 1e-4, -n, POKE_REACH)
-                if back is not None and back[0] is not None:
-                    nearest = bvh.find_nearest(co, POKE_REACH)
-                    if nearest is not None and nearest[3] is not None:
-                        location, normal, _, _ = nearest
-                        pokes.append((co - location).length)
-                        v.co = inv @ (location - normal * TUCK_DEPTH)
-                        tucked += 1
-                        if v.index not in covered:
-                            covered.add(v.index)
-                            hits += 1
+                if v.index not in covered:
+                    covered.add(v.index)
+                    hits += 1
+                # Only skin that is OUTSIDE the fabric moves. Anything already inside is left
+                # exactly where it is - pulling it out to meet the cloth would inflate the body
+                # to fill the garment.
+                nearest = bvh.find_nearest(co, POKE_REACH)
+                if nearest is None or nearest[3] is None:
+                    continue
+                location, normal, _, _ = nearest
+                if (co - location).dot(normal) <= 0:
+                    continue
+                pokes.append((co - location).length)
+                v.co = inv @ (location - normal * TUCK_DEPTH)
+                tucked += 1
             if pokes:
                 pokes.sort()
                 _log(f"hide-body:   poke-through at {garment.name} openings: "
@@ -687,25 +695,8 @@ def _hide_body_under_clothing():
             _log(f"hide-body: {garment.name} covers {hits} more {body.name} verts, "
                  f"tucked {tucked} that had pushed through it")
 
-        if not covered:
-            continue
-        bm = bmesh.new()
-        bm.from_mesh(body.data)
-        bm.verts.ensure_lookup_table()
-        doomed = [f for f in bm.faces if all(v.index in covered for v in f.verts)]
-        share = len(doomed) / max(len(bm.faces), 1)
-        if share > MAX_BODY_REMOVAL:
-            bm.free()
-            raise RuntimeError(
-                f"hide-body: would delete {share:.0%} of {body.name} - refusing. Check "
-                f"COVER_DISTANCE ({COVER_DISTANCE}m) against this character's garment fit.")
-        bmesh.ops.delete(bm, geom=doomed, context="FACES")
-        removed = len(doomed)
-        bm.to_mesh(body.data)
-        bm.free()
-        body.data.update()
-        _log(f"hide-body: removed {removed} faces from {body.name} ({share:.1%}), "
-             f"{len(body.data.polygons)} remain")
+        if covered:
+            _log(f"hide-body: {body.name}: {len(covered)} verts under cloth, geometry intact")
 
 
 def _read_live_bones(workspace):

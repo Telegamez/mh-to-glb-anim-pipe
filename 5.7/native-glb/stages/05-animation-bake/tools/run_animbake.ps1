@@ -68,7 +68,9 @@ Write-Host "[run_animbake] blender = $BlenderExe"
 $FbxDir = Join-Path $StageDir '_work\fbx'
 New-Item -ItemType Directory -Force -Path $FbxDir | Out-Null
 
-& $EditorCmd $Project -run=pythonscript -script="$(Join-Path $ToolsDir 'export_anims.py')" -stdout -unattended -nosplash
+# Same commandlet invocation as stage 01's run_export.ps1 — the proven flag set.
+$ScriptArg = Join-Path $ToolsDir 'export_anims.py'
+& $EditorCmd $Project -run=pythonscript "-script=$ScriptArg" -AllowCommandletRendering -unattended -nosplash
 if ($LASTEXITCODE -ne 0) { Write-Host "[run_animbake] UE export failed ($LASTEXITCODE)"; exit 1 }
 
 # Assert on artifacts: every configured clip must have a real FBX.

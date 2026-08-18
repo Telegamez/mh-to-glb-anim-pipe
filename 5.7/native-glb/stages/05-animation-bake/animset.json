@@ -1,17 +1,19 @@
 {
-  "_comment": "Clip name -> UE AnimSequence asset path (e.g. /Game/Fab/SomePack/AS_Idle_Loop). Names are the runtime's state-map keys - do not rename them. Empty string = not yet sourced; the runner refuses to run while any required clip is empty. Fill these once the D7 Fab pack is installed.",
+  "_comment": "Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Mapping supplied by the owner 2026-08-17. Two on-disk interpretations, both flagged in chat: Thinking's asset is TG-Anim_Deep_Breath_Sad (only Deep_Breath family in the project; TG-Animations copy used); Idle2 is read as IP_Dialogue_Serious_idle_02 - the Serious category is the pack's neutral register (Speaking also comes from it) and no plain 'Dialogue_idle_02' exists. Idle2 has no state-map consumer today; it ships as an available variant.",
   "required": {
-    "Idle": "",
-    "Listening": "",
-    "Thinking": "",
-    "Focused": "",
-    "Speaking": ""
+    "Idle": "/Game/Animations/TG-Anim_Idle_2",
+    "Listening": "/Game/Animations/Listening-Idle",
+    "Thinking": "/Game/TG-Animations/TG-Anim_Deep_Breath_Sad",
+    "Focused": "/Game/Animations/Focused_Anim_Salute",
+    "Speaking": "/Game/Animations/Dialog-IP_Dialogue_Serious_talk_low_04"
   },
   "gestures": {
-    "Nod": "",
-    "HeadShake": "",
-    "Shrug": "",
-    "Dismiss": ""
+    "Nod": "/Game/Animations/No_Anim_No",
+    "HeadShake": "/Game/Animations/Dialog-IP_Dialogue_furious_idle_02",
+    "Shrug": "/Game/Animations/Shrug_Anim_Don_t_Know",
+    "Dismiss": "/Game/Animations/TG-Anim_Go_Away",
+    "Idle2": "/Game/Dialogue_mocap/UE5_Animations/IP/Serious/IP_Dialogue_Serious_idle_02",
+    "Angry": "/Game/Animations/Dialog-IP_Dialogue_furious_idle_03"
   },
   "output": "mh-animations.glb"
 }

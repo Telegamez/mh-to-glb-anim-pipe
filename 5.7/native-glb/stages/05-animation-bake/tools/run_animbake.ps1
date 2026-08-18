@@ -73,7 +73,15 @@ $GlbDir = Join-Path $StageDir '_work\glb'
 New-Item -ItemType Directory -Force -Path $GlbDir | Out-Null
 
 # Same commandlet invocation as stage 01's run_export.ps1 — the proven flag set.
-$ScriptArg = Join-Path $ToolsDir 'export_anims.py'
+#
+# bake_evaluated_anims.py, NOT export_anims.py. The latter exports each AnimSequence directly,
+# which is the INPUT to MetaHuman's deformation machine — the post-process ABPs
+# (ABP_Body_PostProcess, ABP_Clothing_PostProcess) never run, so all ~1130 corrective and twist
+# joints come out with constant transforms. That single fact is the root of the torn clothing,
+# the candy-wrapped wrists and the collapsing waist documented in 00-START-HERE §6.14-6.18.
+# The evaluated bake records the mesh's posed transforms with those ABPs running: 309 bones move
+# instead of 53. export_anims.py is kept only as the v2 reference.
+$ScriptArg = Join-Path $ToolsDir 'bake_evaluated_anims.py'
 & $EditorCmd $Project -run=pythonscript "-script=$ScriptArg" -AllowCommandletRendering -unattended -nosplash
 if ($LASTEXITCODE -ne 0) { Write-Host "[run_animbake] UE export failed ($LASTEXITCODE)"; exit 1 }
 

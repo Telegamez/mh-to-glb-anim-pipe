@@ -532,6 +532,16 @@ GARMENT_BONE_REMAP = {"Head": "Neck"}
 SKIN_MESH = re.compile(r"^(Body|Head)_Mesh", re.IGNORECASE)
 GARMENT_FORBIDDEN_BONE = re.compile(r"^(FACIAL_|jaw|tongue|teeth)", re.IGNORECASE)
 
+# Which weight compensations run. Set MH_WEIGHT_COMP to A/B them:
+#   full  fold + far-bone filter + smoothing   (shipped)
+#   fold  fold only
+#   none  raw MetaHuman weights, top-4 by the exporter
+#
+# All three exist to survive top-4 truncation, which was later measured against Unreal at a
+# median of 0.00mm - so they may be solving a problem that is not there, at the cost of
+# reshaping the garment's weight map (342 groups -> 87, influences dropped on ~11k verts).
+WEIGHT_COMPENSATION = os.environ.get("MH_WEIGHT_COMP", "full").strip().lower()
+
 IMPLAUSIBLE_DISTANCE_RATIO = 2.5
 WEIGHT_SMOOTH_FACTOR = 0.5
 WEIGHT_SMOOTH_REPEAT = 4
@@ -1061,11 +1071,12 @@ def _fold_frozen_bones(workspace):
             # chest vertex that is still 29% bound to the arm spreads that error into its
             # neighbours instead of removing it, which is how the waist ended up collapsing
             # harder at 10 passes than at 0.
-            per_vertex, dropped = _drop_implausible_influences(
-                obj, per_vertex, bone_span, IMPLAUSIBLE_DISTANCE_RATIO,
-            )
-            per_vertex = _smooth_weights(obj, per_vertex)
-            smoothed = WEIGHT_SMOOTH_REPEAT
+            if WEIGHT_COMPENSATION == "full":
+                per_vertex, dropped = _drop_implausible_influences(
+                    obj, per_vertex, bone_span, IMPLAUSIBLE_DISTANCE_RATIO,
+                )
+                per_vertex = _smooth_weights(obj, per_vertex)
+                smoothed = WEIGHT_SMOOTH_REPEAT
 
         folded = {}
         for index, acc in enumerate(per_vertex):
@@ -1130,7 +1141,10 @@ def main():
         _hide_body_under_clothing()
 
         # Solved weights first; the fold is the fallback for an unsolved character.
-        if not _apply_solved_weights(workspace, args.char):
+        _log(f"weight compensation: {WEIGHT_COMPENSATION}")
+        if WEIGHT_COMPENSATION == "none":
+            _log("weight compensation: DISABLED - raw MetaHuman weights, exporter takes top 4")
+        elif not _apply_solved_weights(workspace, args.char):
             fold_stats = _fold_frozen_bones(workspace)
 
         flipped = _flip_normal_maps_g()

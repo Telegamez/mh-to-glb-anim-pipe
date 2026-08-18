@@ -583,6 +583,33 @@ def main():
         # names (it looks per-primitive; Blender writes per-mesh).
         _propagate_mesh_target_names_to_primitives(glb_path)
 
+        # Skeleton-uniqueness gate. The published GLB must carry ONE skeleton:
+        # every skin's joints must resolve into a single shared node set, and
+        # no two joint nodes may share a name. Three skins with 342 duplicated
+        # bone names shipped for the whole life of the project and were only
+        # exposed by the first real body-animation clip — three.js binds
+        # tracks by node name, first match wins, so meshes skinned to the
+        # spare skeletons held bind pose while the body moved. Head, hair and
+        # clothing as unconnected layers.
+        import struct as _struct
+        with open(glb_path, "rb") as _fh:
+            _struct.unpack("<III", _fh.read(12))
+            _clen, _ = _struct.unpack("<II", _fh.read(8))
+            _j = json.loads(_fh.read(_clen).decode("utf-8"))
+        _names = [n.get("name", "") for n in _j.get("nodes", [])]
+        _joint_ids = set()
+        for _s in _j.get("skins", []):
+            _joint_ids |= set(_s.get("joints", []))
+        _jnames = [_names[i] for i in _joint_ids]
+        _dups = sorted({n for n in _jnames if _jnames.count(n) > 1})
+        if _dups:
+            raise RuntimeError(
+                f"skeleton gate: {len(_j.get('skins', []))} skins, "
+                f"{len(_dups)} duplicated joint names (e.g. {_dups[:6]}) — "
+                f"the armature merge did not hold; refusing to publish")
+        _log(f"skeleton gate: {len(_j.get('skins', []))} skin(s), "
+             f"{len(_joint_ids)} joints, all names unique")
+
         tri_count = _count_tris()
         max_img_px = _current_max_image_px()
         file_size = glb_path.stat().st_size

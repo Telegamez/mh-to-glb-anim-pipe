@@ -2395,6 +2395,181 @@ def _split_face_by_contract(face_obj):
     return made
 
 
+def _merge_armatures():
+    """Collapse the per-import skeletons into ONE armature, by joining.
+
+    Stage 01 exports face, body and outfits as separate SKMs, each with its own
+    armature. The published GLB then carried three skins and 342 duplicated
+    bone names - invisible until the first real body clip, because three.js
+    binds tracks by node name (first match wins), so the body followed the
+    clips while meshes skinned to the other skeletons held bind pose. Head,
+    hair, body and clothes as unconnected layers.
+
+    The first fix attempt retargeted modifiers onto the FACIAL armature on the
+    assumption it was a superset. It is not - measured: the face skeleton is
+    the facial rig plus only an upper spine/neck/head chain; hand_l and 300+
+    body bones exist only in the body skeleton. Its subset guard refused,
+    which is why this is now a JOIN:
+
+      keeper = the full-body armature (has hand_l)
+      copies = body-skeleton duplicates (outfits) - modifiers retargeted,
+               subset-guarded, spare deleted
+      facial = JOINed into the keeper; the duplicated connector chain
+               (root/spine_04/spine_05/neck_01/neck_02/head arrives suffixed
+               .001) is deduped by re-parenting its children - the FACIAL_*
+               subtree - onto the keeper's same-named bones. Face-mesh vertex
+               groups reference the base names throughout, so weights land on
+               the keeper's bones untouched.
+    """
+    import re as _re
+
+    arms = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    if len(arms) <= 1:
+        # Log the empty case: a single-armature scene and a merge that never
+        # ran look identical in silence (handoff 6.1).
+        return {"keeper": arms[0].name if arms else "(none)",
+                "retargeted": 0, "joined": 0, "deleted": 0}
+
+    def _has(arm, bone):
+        return arm.data.bones.get(bone) is not None
+
+    body_arms = [a for a in arms if _has(a, "hand_l") or _has(a, "LeftHand")]
+    face_arms = [a for a in arms
+                 if any(b.name.startswith("FACIAL_") for b in a.data.bones)
+                 and a not in body_arms]
+    if not body_arms:
+        _log("  armatures: NO full-body armature found (no hand_l) - cannot merge")
+        return {"keeper": "(none)", "retargeted": 0, "joined": 0, "deleted": 0}
+    keeper = max(body_arms, key=lambda a: len(a.data.bones))
+
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+
+    def _retarget(m, why):
+        for md in m.modifiers:
+            if md.type == "ARMATURE" and md.object is not None and md.object is not keeper:
+                md.object = keeper
+        world = m.matrix_world.copy()
+        m.parent = keeper
+        m.parent_type = "OBJECT"
+        m.matrix_parent_inverse = keeper.matrix_world.inverted()
+        m.matrix_world = world
+        _log(f"  armatures: {m.name} -> {keeper.name} ({why})")
+
+    # --- 1. body-skeleton COPIES: plain retarget, subset-guarded --------------
+    retargeted = 0
+    keeper_bones = {b.name for b in keeper.data.bones}
+    for a in body_arms:
+        if a is keeper:
+            continue
+        for m in meshes:
+            if any(md.type == "ARMATURE" and md.object is a for md in m.modifiers):
+                # Case reconciliation first: the outfit skeleton names its root
+                # 'Root' where the body says 'root' - same joint, different
+                # capitalisation, and glTF binding is case-sensitive. Rename
+                # the vertex group to the keeper's casing rather than refusing
+                # over a spelling.
+                keeper_ci = {b.lower(): b for b in keeper_bones}
+                for vg in m.vertex_groups:
+                    if vg.name not in keeper_bones and vg.name.lower() in keeper_ci:
+                        exact = keeper_ci[vg.name.lower()]
+                        _log(f"  armatures: {m.name} vgroup '{vg.name}' -> "
+                             f"'{exact}' (case reconciliation)")
+                        vg.name = exact
+                missing = [vg.name for vg in m.vertex_groups
+                           if vg.name not in keeper_bones]
+                if missing:
+                    _log(f"  armatures: {m.name} weights {len(missing)} group(s) "
+                         f"absent from keeper (e.g. {missing[:4]}) - NOT retargeted")
+                    continue
+                _retarget(m, "body-skeleton copy")
+                retargeted += 1
+
+    # --- 2. facial armatures: JOIN into the keeper ----------------------------
+    joined = 0
+    for fa in face_arms:
+        # Children (hair cards, un-skinned props) move to the keeper first -
+        # join deletes the source object and would orphan them.
+        for child in list(fa.children):
+            world = child.matrix_world.copy()
+            child.parent = keeper
+            child.parent_type = "OBJECT"
+            child.matrix_parent_inverse = keeper.matrix_world.inverted()
+            child.matrix_world = world
+        # Face meshes point their modifiers at the keeper; their vertex groups
+        # name base bones, which the keeper owns after the join.
+        for m in meshes:
+            if any(md.type == "ARMATURE" and md.object is fa for md in m.modifiers):
+                _retarget(m, "facial mesh")
+
+        before = {b.name for b in keeper.data.bones}
+        bpy.ops.object.select_all(action="DESELECT")
+        fa.select_set(True)
+        keeper.select_set(True)
+        bpy.context.view_layer.objects.active = keeper
+        bpy.ops.object.join()
+        gained = len(keeper.data.bones) - len(before)
+        _log(f"  armatures: joined facial armature -> {keeper.name} (+{gained} bones)")
+        joined += 1
+
+    # --- 3. dedupe connector bones the join suffixed --------------------------
+    # The facial skeleton repeats the torso chain; join renames those arrivals
+    # to <name>.001. Re-parent each duplicate's children onto the keeper's
+    # same-named bone, then delete the duplicate. FACIAL_* names are unique
+    # and survive unrenamed, so the whole facial subtree ends up under the
+    # real head bone.
+    bpy.context.view_layer.objects.active = keeper
+    bpy.ops.object.mode_set(mode="EDIT")
+    ebs = keeper.data.edit_bones
+    dup_rx = _re.compile(r"(.+)\.\d{3}$")
+
+    def _depth(eb):
+        d = 0
+        while eb.parent is not None:
+            d += 1
+            eb = eb.parent
+        return d
+
+    dupes = []
+    for eb in ebs:
+        m = dup_rx.match(eb.name)
+        if m and ebs.get(m.group(1)) is not None:
+            dupes.append((_depth(eb), eb.name))
+    removed = 0
+    for _d, name in sorted(dupes):
+        eb = ebs.get(name)
+        if eb is None:
+            continue
+        base = ebs.get(dup_rx.match(name).group(1))
+        for child in list(eb.children):
+            child.use_connect = False
+            child.parent = base
+        ebs.remove(eb)
+        removed += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    _log(f"  armatures: deduped {removed} connector bone(s) after join")
+
+    # --- 4. delete spares now unused ------------------------------------------
+    deleted = 0
+    for a in [o for o in bpy.data.objects if o.type == "ARMATURE"]:
+        if a is keeper:
+            continue
+        users = [m.name for m in bpy.data.objects if m.type == "MESH"
+                 and any(md.type == "ARMATURE" and md.object is a
+                         for md in m.modifiers)]
+        if users:
+            _log(f"  armatures: NOT deleting '{a.name}' - still used by {users}")
+            continue
+        for child in list(a.children):
+            world = child.matrix_world.copy()
+            child.parent = keeper
+            child.matrix_world = world
+        bpy.data.objects.remove(a, do_unlink=True)
+        deleted += 1
+
+    return {"keeper": keeper.name, "retargeted": retargeted,
+            "joined": joined, "deleted": deleted}
+
+
 def _apply_mesh_contract():
     """Name the six contract meshes. Face is split; body is a rename."""
     face = None
@@ -2536,6 +2711,11 @@ def main():
 
     excluded = _hide_excluded_meshes(char_root)
     _log(f"excluded {excluded} mesh(es) via manifest exclude_meshes")
+
+    merged = _merge_armatures()
+    _log(f"armatures: keeper '{merged['keeper']}' - retargeted "
+         f"{merged['retargeted']}, joined {merged.get('joined', 0)} facial, "
+         f"deleted {merged['deleted']} spare(s)")
 
     # ARKit shape-key bake from the Sequencer-baked LSE FBX (stage 01).
     # UE's Sequencer evaluates the AnimSequence through a live

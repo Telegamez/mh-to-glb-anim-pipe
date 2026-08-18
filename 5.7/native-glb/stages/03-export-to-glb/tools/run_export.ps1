@@ -42,7 +42,7 @@ Write-Host "[run_export] blend     = $Blend"
 # is what the check was written to do. See TELEGAMEZ.md.
 $PrevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $BlenderExe --factory-startup --background $Blend --python $PyScript -- --char $Char --workspace $Workspace
+& $BlenderExe --factory-startup --background $Blend --python-exit-code 1 --python $PyScript -- --char $Char --workspace $Workspace
 $ErrorActionPreference = $PrevEap
 $code = $LASTEXITCODE
 Write-Host "[run_export] exit code: $code"

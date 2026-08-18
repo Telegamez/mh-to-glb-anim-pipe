@@ -89,7 +89,7 @@ if ($missing.Count) { Write-Host "[run_animbake] GLB missing/empty: $($missing -
 
 # --- Blender half: FBX set -> renamed animation-only GLB --------------------
 $OutGlb = Join-Path $Workspace "docs\animations\$($cfg.output)"
-& $BlenderExe --factory-startup --background --python (Join-Path $ToolsDir 'build_animations_glb.py') `
+& $BlenderExe --factory-startup --background --python-exit-code 1 --python (Join-Path $ToolsDir 'build_animations_glb.py') `
   -- --glb-dir $GlbDir --animset $animset --out $OutGlb
 if ($LASTEXITCODE -ne 0) { Write-Host "[run_animbake] Blender build failed ($LASTEXITCODE)"; exit 1 }
 

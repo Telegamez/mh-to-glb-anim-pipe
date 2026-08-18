@@ -59,7 +59,7 @@ Write-Host "[run_assemble] in_root   = $InRoot"
 # is what the check was written to do. See TELEGAMEZ.md.
 $PrevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $BlenderExe --factory-startup --background --python $PyScript -- --char $Char --workspace $Workspace
+& $BlenderExe --factory-startup --background --python-exit-code 1 --python $PyScript -- --char $Char --workspace $Workspace
 $ErrorActionPreference = $PrevEap
 $code = $LASTEXITCODE
 Write-Host "[run_assemble] exit code: $code"

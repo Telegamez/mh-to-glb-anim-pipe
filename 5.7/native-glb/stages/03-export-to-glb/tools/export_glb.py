@@ -585,9 +585,20 @@ WEIGHT_SMOOTH_D1 = 0.40
 # How far to look for cloth along the skin's own normal. Generous: a loose shirt on a heavy
 # build can sit several centimetres off the chest, and anything shorter leaves islands.
 RAY_REACH = 0.25
-# How far BEHIND the skin to look for cloth it has pushed through. Short on purpose - a longer
-# reach starts catching the far side of the garment and tucks skin that should be visible.
-POKE_REACH = 0.04
+# How far out through the fabric a piece of skin may have pushed and still be pulled back.
+#
+# This was 0.04 and that silently re-broke the fix: a heavy build pushes through the shirt by
+# more than 4cm in places, those vertices were marked covered and then never moved, and the
+# large chest patches came straight back. It has to cover the worst real poke-through without
+# reaching the far side of the garment - a torso is ~25cm front to back, so 8cm is safe.
+POKE_REACH = 0.08
+EROSION_RINGS = 2
+MAX_BODY_REMOVAL = 0.85
+# A vertex whose nearest cloth is this close to a garment OPENING is not poking through it - it
+# is simply outside the opening, like a chin in front of a collar or a forearm below a cuff.
+# Without this veto the chin gets dragged back to the collar and the face deforms: Head_Mesh was
+# tucking 4545 verts at a median "poke" of 51.6mm, which is not poke-through, it is a face.
+OPENING_VETO = 0.02
 # Skin that has pushed through the fabric is moved this far behind it rather than deleted, so
 # the surviving fringe of a partly-covered face is hidden instead of leaving a gap.
 TUCK_DEPTH = 0.004
@@ -633,6 +644,8 @@ def _hide_body_under_clothing():
     """
     from mathutils import Vector  # noqa: PLC0415
     from mathutils.bvhtree import BVHTree  # noqa: PLC0415
+    from mathutils.kdtree import KDTree  # noqa: PLC0415
+    import bmesh  # noqa: PLC0415
 
     bodies = [o for o in bpy.data.objects if o.type == "MESH" and SKIN_MESH.search(o.name)]
     garments = [o for o in bpy.data.objects
@@ -653,6 +666,21 @@ def _hide_body_under_clothing():
                 for k in range(1, len(idx) - 1):
                     tris.append((idx[0], idx[k], idx[k + 1]))
             bvh = BVHTree.FromPolygons(verts, tris, all_triangles=True)
+
+            # Boundary loops mark the garment's openings - collar, cuffs, hems.
+            edge_use: dict[tuple[int, int], int] = {}
+            for poly in gm.polygons:
+                idx = list(poly.vertices)
+                for k in range(len(idx)):
+                    a, b = idx[k], idx[(k + 1) % len(idx)]
+                    key = (min(a, b), max(a, b))
+                    edge_use[key] = edge_use.get(key, 0) + 1
+            boundary = {v for (a, b), n in edge_use.items() if n == 1 for v in (a, b)}
+            kd = KDTree(len(boundary)) if boundary else None
+            if kd is not None:
+                for i, vi in enumerate(boundary):
+                    kd.insert(verts[vi], i)
+                kd.balance()
 
             bmw = body.matrix_world
             inv = bmw.inverted()
@@ -676,24 +704,39 @@ def _hide_body_under_clothing():
                 # behaviour the opening margin was approximating.
                 hit = bvh.ray_cast(co + n * 1e-4, n, RAY_REACH)
                 covered_here = hit is not None and hit[0] is not None
+                nearest = bvh.find_nearest(co, POKE_REACH)
+                outside = False
+                near_opening = False
+                if nearest is not None and nearest[3] is not None:
+                    outside = (co - nearest[0]).dot(nearest[1]) > 0
+                    if kd is not None:
+                        _, _, bd = kd.find(nearest[0])
+                        near_opening = bd is not None and bd < OPENING_VETO
                 if not covered_here:
-                    # cloth behind the skin instead of in front: it has pushed through
-                    back = bvh.ray_cast(co - n * 1e-4, -n, POKE_REACH)
-                    covered_here = back is not None and back[0] is not None
+                    # Cloth behind the skin rather than in front: it has pushed through. Decided
+                    # by the nearest surface rather than a backward ray, which at this reach
+                    # would start hitting the far side of the garment.
+                    covered_here = outside
                 if not covered_here:
                     continue
-                if v.index not in covered:
+                # Deletable only well away from an opening. Near one, the skin is legitimately on
+                # show - a chin in front of a collar, a forearm below a cuff - and removing it
+                # was what opened holes under the jaw and through the underarm during a Shrug.
+                # It can still be TUCKED, which is what stops it poking through the fabric.
+                if not near_opening and v.index not in covered:
                     covered.add(v.index)
                     hits += 1
                 # Only skin that is OUTSIDE the fabric moves. Anything already inside is left
                 # exactly where it is - pulling it out to meet the cloth would inflate the body
                 # to fill the garment.
-                nearest = bvh.find_nearest(co, POKE_REACH)
-                if nearest is None or nearest[3] is None:
+                # The veto gates the TUCK as well as the deletion. It is measured from the
+                # nearest CLOTH POINT to a boundary, which separates the two cases cleanly: a
+                # chin's nearest cloth is the collar edge itself (distance ~0, vetoed), while a
+                # chest's is mid-panel (far from any edge, tucked). Without this the chin gets
+                # pulled back onto the collar and the face deforms.
+                if near_opening or not outside or nearest is None or nearest[3] is None:
                     continue
                 location, normal, _, _ = nearest
-                if (co - location).dot(normal) <= 0:
-                    continue
                 pokes.append((co - location).length)
                 v.co = inv @ (location - normal * TUCK_DEPTH)
                 tucked += 1
@@ -705,8 +748,31 @@ def _hide_body_under_clothing():
             _log(f"hide-body: {garment.name} covers {hits} more {body.name} verts, "
                  f"tucked {tucked} that had pushed through it")
 
-        if covered:
-            _log(f"hide-body: {body.name}: {len(covered)} verts under cloth, geometry intact")
+        if not covered:
+            continue
+        # Peel rings off the covered set so the cut edge retreats under the fabric, away from
+        # the opening where the ray test is least certain and where a ragged edge would show.
+        neighbours: dict[int, set[int]] = {}
+        for edge in body.data.edges:
+            a, b = edge.vertices
+            neighbours.setdefault(a, set()).add(b)
+            neighbours.setdefault(b, set()).add(a)
+        before = len(covered)
+        for _ in range(EROSION_RINGS):
+            covered = {v for v in covered if neighbours.get(v, set()) <= covered}
+        bm = bmesh.new()
+        bm.from_mesh(body.data)
+        doomed = [f for f in bm.faces if all(v.index in covered for v in f.verts)]
+        share = len(doomed) / max(len(bm.faces), 1)
+        if share > MAX_BODY_REMOVAL:
+            bm.free()
+            raise RuntimeError(f"hide-body: would delete {share:.0%} of {body.name} - refusing")
+        bmesh.ops.delete(bm, geom=doomed, context="FACES")
+        bm.to_mesh(body.data)
+        bm.free()
+        body.data.update()
+        _log(f"hide-body: {body.name}: eroded {before - len(covered)}, removed {len(doomed)} "
+             f"faces ({share:.1%}), {len(body.data.polygons)} remain")
 
 
 def _read_live_bones(workspace):

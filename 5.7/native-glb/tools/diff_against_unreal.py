@@ -39,6 +39,14 @@ _COMPONENT = {5120: "i1", 5121: "u1", 5122: "i2", 5123: "u2", 5125: "u4", 5126: 
 _COUNT = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
 _NORM = {5121: 255.0, 5123: 65535.0, 5126: 1.0}
 ROOT_BONES = {"root", "Root", "pelvis", "Hips"}
+# The shipped library carries platform contract names for 16 bones; the mesh GLB carries UE
+# names. Match through the map or those 16 silently fail to bind and the diff flatters us.
+CONTRACT = {"pelvis": "Hips", "spine_01": "Spine", "spine_03": "Spine1", "spine_05": "Spine2",
+            "neck_01": "Neck", "head": "Head", "clavicle_l": "LeftShoulder",
+            "upperarm_l": "LeftArm", "lowerarm_l": "LeftForeArm", "hand_l": "LeftHand",
+            "clavicle_r": "RightShoulder", "upperarm_r": "RightArm",
+            "lowerarm_r": "RightForeArm", "hand_r": "RightHand",
+            "eye_l": "LeftEye", "eye_r": "RightEye"}
 
 
 def _log(m):
@@ -209,9 +217,11 @@ def main():
     clip = next((a for a in our_gltf["animations"] if a.get("name") == args.clip), None)
     if clip is None:
         raise SystemExit(f"clip {args.clip} not in {args.our_anim}")
+    alias = {v: k for k, v in CONTRACT.items()}
     chan, dur = {}, 0.0
     for ch in clip["channels"]:
         nm = our_node.get(ch["target"]["node"])
+        nm = alias.get(nm, nm)                 # contract name -> UE name
         if nm not in index:
             continue
         smp = clip["samplers"][ch["sampler"]]

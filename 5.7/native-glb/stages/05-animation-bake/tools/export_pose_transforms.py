@@ -71,10 +71,12 @@ def _xform_to_list(t: "unreal.Transform"):
 def main():
     mesh_path = _arg("mesh")
     anim_path = _arg("anim")
+    animset = _arg("animset")
     out_path = _arg("out")
+    fps = float(_arg("fps", "0"))          # 0 = use --frames, otherwise sample at this rate
     frames = int(_arg("frames", "6"))
-    if not (mesh_path and anim_path and out_path):
-        raise RuntimeError("need --mesh= --anim= --out=")
+    if not (mesh_path and out_path and (anim_path or animset)):
+        raise RuntimeError("need --mesh=, --out=, and one of --anim= / --animset=")
 
     mesh = unreal.EditorAssetLibrary.load_asset(mesh_path)
     anim = unreal.EditorAssetLibrary.load_asset(anim_path)
@@ -147,9 +149,14 @@ def main():
     comp.stop()
 
     length = float(anim.get_editor_property("sequence_length"))
+    if fps > 0:
+        # Full-rate sampling for authoring (as opposed to spot-checking). Endpoint included so a
+        # looping clip keeps its seam.
+        frames = max(2, int(round(length * fps)) + 1)
+        _log(f"sampling {frames} frames at {fps}fps over {length:.2f}s")
     out_frames = []
     for k in range(frames):
-        t = length * (k + 0.5) / frames
+        t = (length * k / (frames - 1)) if fps > 0 else (length * (k + 0.5) / frames)
         comp.set_position(t, False)
         try:
             comp.tick_component(0.0, unreal.TickingGroup.TG_PRE_PHYSICS, None)
@@ -164,19 +171,36 @@ def main():
                 _log(f"socket transform failed for {name}: {e}")
                 break
         out_frames.append({"time": t, "bones": pose})
-        _log(f"frame {k} t={t:.2f}s: {len(pose)} bone transforms")
+        if fps <= 0 or k % 200 == 0:
+            _log(f"frame {k} t={t:.2f}s: {len(pose)} bone transforms")
 
     unreal.EditorLevelLibrary.destroy_actor(actor)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "mesh": mesh_path, "anim": anim_path, "length": length,
-            "units": "centimetres, Unreal component space",
-            "bone_names": bone_names,
-            "ref_pose_component": ref_cs, "frames": out_frames,
-            "diagnostics": DIAG,
-        }, f)
+    if out_path.endswith(".npz"):
+        # JSON is unusable at authoring rates - Speaking alone is ~1900 frames x 342 bones.
+        import numpy as np
+        order = [n for n in bone_names if n in ref_cs]
+        def pack(d):
+            return np.array([d[n]["t"] + d[n]["q"] + d[n]["s"] for n in order], dtype=np.float32)
+        np.savez_compressed(
+            out_path,
+            bone_names=np.array(order, dtype=object),
+            ref=pack(ref_cs),
+            times=np.array([f["time"] for f in out_frames], dtype=np.float32),
+            poses=np.stack([pack(f["bones"]) for f in out_frames]),
+            meta=np.array([json.dumps({"mesh": mesh_path, "anim": anim_path,
+                                       "length": length, "diagnostics": DIAG})], dtype=object),
+        )
+    else:
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "mesh": mesh_path, "anim": anim_path, "length": length,
+                "units": "centimetres, Unreal component space",
+                "bone_names": bone_names,
+                "ref_pose_component": ref_cs, "frames": out_frames,
+                "diagnostics": DIAG,
+            }, f)
     _log(f"wrote {out_path} ({os.path.getsize(out_path)/1e6:.1f} MB)")
     if not out_frames or not out_frames[0]["bones"]:
         sys.exit(1)

@@ -520,6 +520,8 @@ NO_SMOOTH_MESH = re.compile(
 GARMENT_MESH = re.compile(r"outfit|cloth|shirt|chino|trouser|pant|skirt|dress|jacket|boot|shoe",
                           re.IGNORECASE)
 GARMENT_BONE_REMAP = {"Head": "Neck"}
+# The skin mesh whose covered faces get removed. Head/face meshes are never touched.
+BODY_MESH = re.compile(r"body", re.IGNORECASE)
 GARMENT_FORBIDDEN_BONE = re.compile(r"^(FACIAL_|jaw|tongue|teeth)", re.IGNORECASE)
 
 IMPLAUSIBLE_DISTANCE_RATIO = 2.5
@@ -560,6 +562,135 @@ WEIGHT_SMOOTH_D1 = 0.40
 # Uniform x4 is shipped: lowest WORST-case tear (49x, the visible gashes) and lowest body
 # compression (96, the wrist pinch). The adaptive path is kept because it is the better tool
 # once the twist joints are driven - see the note in 6.16 about the real fix.
+
+
+# How close to a garment surface a body vertex has to be to count as covered. Generous on
+# purpose: the defect is the body sitting OUTSIDE the cloth, so "near the surface, either side"
+# is the condition, not "inside".
+COVER_DISTANCE = 0.03
+# Keep body geometry this far back from a garment OPENING. Without it the neck inside the
+# collar, the forearm below the sleeve and the ankle below the trouser hem all get deleted and
+# the character loses the skin that is supposed to show.
+OPENING_MARGIN = 0.025
+# Near an opening, faces are NOT deleted - they are tucked. Deleting there cuts back past the
+# cloth edge and opens a visible gap at the sleeve hem; leaving them alone leaves a sliver of
+# skin poking through. Pushing the vertex just inside the garment surface does neither.
+TUCK_DEPTH = 0.002
+# Refuse to proceed if a garment would delete more than this share of the body. A runaway here
+# would silently produce an invisible character.
+MAX_BODY_REMOVAL = 0.85
+
+
+def _hide_body_under_clothing():
+    """Delete body faces that sit under a garment, so skin cannot poke through it.
+
+    ## The measurement that justifies this
+
+    Every "skin showing through the shirt" report is interpenetration, not torn cloth. Hiding
+    `Body_Mesh` in the harness leaves the garment completely intact - no holes, clean collar,
+    clean silhouette - and the skin patches are present with body animation OFF, at rest. So the
+    body surface simply sits outside the garment surface in those regions, worst on the heaviest
+    build (Tele2). Nothing about weights, rig logic or the 4-influence limit touches it.
+
+    Games solve this by not drawing the covered body at all, and MetaHuman ships a hidden-face
+    mask per garment for exactly this purpose. This is the geometric equivalent, so it works
+    whether or not that mask survived the export: a body face whose vertices all sit within
+    `COVER_DISTANCE` of a garment surface is removed.
+
+    Deleting a face that the body was poking THROUGH reveals the garment behind it, which is the
+    correct result - the clothing materials are already double-sided.
+
+    Openings need the other treatment. A garment's boundary loops are its collar, cuffs and hems,
+    and skin is meant to be visible there. Deleting near them cuts back past the cloth edge and
+    opens a dark gap at the sleeve; not touching them leaves a sliver of skin poking through. So
+    body vertices near an opening are TUCKED instead - if they sit outside the cloth they are
+    moved just inside it - which removes the poke-through without removing the skin.
+    """
+    import bmesh  # noqa: PLC0415 - Blender-only imports stay local to the function
+    from mathutils import Vector  # noqa: PLC0415
+    from mathutils.bvhtree import BVHTree  # noqa: PLC0415
+    from mathutils.kdtree import KDTree  # noqa: PLC0415
+
+    bodies = [o for o in bpy.data.objects
+              if o.type == "MESH" and BODY_MESH.search(o.name) and not NO_SMOOTH_MESH.search(o.name)]
+    garments = [o for o in bpy.data.objects
+                if o.type == "MESH" and GARMENT_MESH.search(o.name)]
+    if not bodies or not garments:
+        _log(f"hide-body: {len(bodies)} body / {len(garments)} garment meshes, nothing to do")
+        return
+
+    for body in bodies:
+        covered = set()
+        for garment in garments:
+            gm = garment.data
+            gmw = garment.matrix_world
+            verts = [gmw @ v.co for v in gm.vertices]
+            tris = []
+            for poly in gm.polygons:
+                idx = list(poly.vertices)
+                for k in range(1, len(idx) - 1):
+                    tris.append((idx[0], idx[k], idx[k + 1]))
+            bvh = BVHTree.FromPolygons(verts, tris, all_triangles=True)
+
+            # boundary = edges used by exactly one face; those are the openings
+            edge_use = {}
+            for poly in gm.polygons:
+                idx = list(poly.vertices)
+                for k in range(len(idx)):
+                    a, b = idx[k], idx[(k + 1) % len(idx)]
+                    edge_use[(min(a, b), max(a, b))] = edge_use.get((min(a, b), max(a, b)), 0) + 1
+            boundary = {v for (a, b), n in edge_use.items() if n == 1 for v in (a, b)}
+            kd = KDTree(len(boundary))
+            for i, vi in enumerate(boundary):
+                kd.insert(verts[vi], i)
+            kd.balance()
+
+            bmw = body.matrix_world
+            inv = bmw.inverted()
+            hits = 0
+            tucked = 0
+            for v in body.data.vertices:
+                co = bmw @ v.co
+                nearest = bvh.find_nearest(co, COVER_DISTANCE)
+                if nearest is None or nearest[3] is None:
+                    continue
+                location, normal, _, _ = nearest
+                near_opening = False
+                if boundary:
+                    _, _, bdist = kd.find(co)
+                    near_opening = bdist is not None and bdist < OPENING_MARGIN
+                if near_opening:
+                    # Tuck rather than delete: only if the vertex is actually OUTSIDE the cloth.
+                    if (co - location).dot(normal) > 0:
+                        v.co = inv @ (location - normal * TUCK_DEPTH)
+                        tucked += 1
+                    continue
+                if v.index not in covered:
+                    covered.add(v.index)
+                    hits += 1
+            _log(f"hide-body: {garment.name} covers {hits} more {body.name} verts, "
+                 f"tucked {tucked} at its openings "
+                 f"({len(boundary)} boundary verts)")
+
+        if not covered:
+            continue
+        bm = bmesh.new()
+        bm.from_mesh(body.data)
+        bm.verts.ensure_lookup_table()
+        doomed = [f for f in bm.faces if all(v.index in covered for v in f.verts)]
+        share = len(doomed) / max(len(bm.faces), 1)
+        if share > MAX_BODY_REMOVAL:
+            bm.free()
+            raise RuntimeError(
+                f"hide-body: would delete {share:.0%} of {body.name} - refusing. Check "
+                f"COVER_DISTANCE ({COVER_DISTANCE}m) against this character's garment fit.")
+        bmesh.ops.delete(bm, geom=doomed, context="FACES")
+        removed = len(doomed)
+        bm.to_mesh(body.data)
+        bm.free()
+        body.data.update()
+        _log(f"hide-body: removed {removed} faces from {body.name} ({share:.1%}), "
+             f"{len(body.data.polygons)} remain")
 
 
 def _read_live_bones(workspace):
@@ -988,6 +1119,9 @@ def main():
     try:
         removed = _delete_hidden_meshes()
         _log(f"removed {len(removed)} hidden meshes")
+
+        # Before anything touches weights: skin that is under cloth should not be drawn at all.
+        _hide_body_under_clothing()
 
         # Solved weights first; the fold is the fallback for an unsolved character.
         if not _apply_solved_weights(workspace, args.char):

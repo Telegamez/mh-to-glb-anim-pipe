@@ -2660,6 +2660,44 @@ def _rename_contract_bones():
     return renamed, missing
 
 
+def _parent_cards_to_head_bone():
+    """Bone-parent every groom card mesh to the contract Head bone.
+
+    Hair, brow, goatee and moustache cards were OBJECT-parented to the armature
+    - static geometry. Nothing ever noticed because nothing ever moved the head
+    bone in world space: face motion is morphs, and the head-look writes were
+    absorbed elsewhere. The first real body clip moved the head and the hair
+    stayed behind, floating where the character used to stand.
+
+    Runs AFTER _rename_contract_bones so the parent target is the final name
+    ('Head') - parent_bone is a string reference, and renaming a bone under an
+    existing string parent is exactly the kind of silent breakage this pipeline
+    collects. Assigning matrix_world back after re-parenting preserves the
+    card's world placement across the bone-tail origin change.
+    """
+    arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
+    if arm is None or arm.data.bones.get("Head") is None:
+        _log("  cards->Head: no armature with a 'Head' bone - NOT parented")
+        return 0
+    n = 0
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        nl = o.name.lower()
+        if "cardsmesh" not in nl and "cardmesh" not in nl:
+            continue
+        world = o.matrix_world.copy()
+        o.parent = arm
+        o.parent_type = "BONE"
+        o.parent_bone = "Head"
+        o.matrix_world = world
+        _log(f"  cards->Head: {o.name}")
+        n += 1
+    if n == 0:
+        _log("  cards->Head: found ZERO card meshes - a bald character or a miss")
+    return n
+
+
 def _compose_visemes(face_obj):
     """Add the 15 contract visemes to the GLB face mesh."""
     created, skipped = [], []
@@ -2852,6 +2890,9 @@ def main():
     # on the intermediates and twist bones, which reads as a subtle stiffness
     # rather than an obvious break.
     n_bones, bone_gap = _rename_contract_bones()
+
+    n_cards = _parent_cards_to_head_bone()
+    _log(f"parented {n_cards} card mesh(es) to the Head bone")
     _log(f"renamed {n_bones} bone(s) to the platform rig contract"
          + (f" - GAP: {bone_gap}" if bone_gap else ""))
 

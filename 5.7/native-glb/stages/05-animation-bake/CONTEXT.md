@@ -58,9 +58,22 @@ panel's *animations url* and compare against the Mixamo baseline.
 ## Traps known in advance
 
 - **Nothing else may hold Unreal** (30010 listener, same as stages 00/01).
-- AnimSequences must target the **MetaHuman body skeleton** the companions were built from. A
-  pack authored for the UE5 Mannequin binds nothing after rename and the harness readout will
-  say so — that is the readout doing its job, not a stage bug.
+- AnimSequences must target the **MetaHuman body skeleton** the companions were built from.
+  **The UE5 Mannequin trap is worse than predicted** (measured 2026-08-17): Manny shares the
+  core bone names, so a Manny-rigged clip does NOT bind-nothing — it *half-binds with wrong
+  proportions*, which looks like a subtle quality problem instead of an obvious failure. The
+  build therefore refuses any clip without `FACIAL_`/`_bulge_` marker curves (present on every
+  real MetaHuman clip, absent on Manny). The one Manny clip in the first pack was caught this
+  way, not by eye.
+- **Interchange is glTF end to end, never FBX.** v1 exported FBX and shipped centimetre tracks
+  in alien bone frames — detached head, sheared mesh. The UE half uses stage 01's glTF option
+  set (`export_uniform_scale 0.01` = metres) and the Blender half imports GLB, so units and
+  bone-local frames match the character pipeline by construction. The units gate (Hips rest
+  0.3–2.0 m) makes the v1 failure unshippable.
+- **The Blender glTF importer stashes its own NLA track** on the armature it creates, named
+  `<AssetName>_0`, and the NLA_TRACKS exporter ships every track it finds. Two runs leaked an
+  extra clip this way; the keeper's tracks are wiped before the stage's own are added, and the
+  clip-set gate compares the finished GLB against animset.json either way.
 - Clip names in `animset.json` are the names the runtime's state map keys on
   (`AgentAnimationContext` / `stateAnimationMap`). `Idle` specifically is also the
   root-motion pin reference in `stabilizeRootMotion` — do not omit it.

@@ -1,5 +1,5 @@
 {
-  "_comment": "Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Mapping supplied by the owner 2026-08-17. Two on-disk interpretations, both flagged in chat: Thinking's asset is TG-Anim_Deep_Breath_Sad (only Deep_Breath family in the project; TG-Animations copy used); Idle2 is read as IP_Dialogue_Serious_idle_02 - the Serious category is the pack's neutral register (Speaking also comes from it) and no plain 'Dialogue_idle_02' exists. Idle2 has no state-map consumer today; it ships as an available variant.",
+  "_comment": "Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Mapping supplied by the owner 2026-08-17. Two on-disk interpretations, both flagged in chat: Thinking's asset is TG-Anim_Deep_Breath_Sad (only Deep_Breath family in the project; TG-Animations copy used); Idle2 REMOVED 2026-08-17: the interpreted asset (IP_Dialogue_Serious_idle_02) is rigged to the UE5 Mannequin (90 nodes, SKM_Manny_Simple preview), not a MetaHuman - the owner's 'Dialogue_idle_02' remains unresolved; re-add when a MetaHuman-rigged second idle is chosen.",
   "required": {
     "Idle": "/Game/Animations/TG-Anim_Idle_2",
     "Listening": "/Game/Animations/Listening-Idle",
@@ -12,7 +12,6 @@
     "HeadShake": "/Game/Animations/Dialog-IP_Dialogue_furious_idle_02",
     "Shrug": "/Game/Animations/Shrug_Anim_Don_t_Know",
     "Dismiss": "/Game/Animations/TG-Anim_Go_Away",
-    "Idle2": "/Game/Dialogue_mocap/UE5_Animations/IP/Serious/IP_Dialogue_Serious_idle_02",
     "Angry": "/Game/Animations/Dialog-IP_Dialogue_furious_idle_03"
   },
   "output": "mh-animations.glb"

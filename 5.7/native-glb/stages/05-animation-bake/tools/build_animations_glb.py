@@ -1,12 +1,12 @@
-"""Stage 05, Blender half — FBX clips → one animation-only GLB with contract bone names.
+"""Stage 05, Blender half — per-clip GLBs → one animation-only GLB with contract bone names.
 
-Imports every _work/fbx/<Clip>.fbx, rewrites the animation f-curve paths through the
+Imports every _work/glb/<Clip>.glb, rewrites the animation f-curve paths through the
 platform's 16-pair bone-rename map, and exports a single GLB whose glTF animations are
 named exactly by clip. The runtime binds these onto companions by node name.
 
 ## Why f-curve paths get rewritten rather than bones renamed per armature
 
-Each FBX import brings its own armature; only one survives into the export. Actions,
+Each GLB import brings its own armature; only one survives into the export. Actions,
 however, bind by *path string* ('pose.bones["pelvis"].rotation_quaternion'), so rewriting
 the paths makes every action valid against the one surviving renamed armature — and the
 rewrite count is logged per clip, because a clip whose rewrite count is zero was authored
@@ -76,7 +76,7 @@ def _rewrite_action_paths(action):
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
-    ap.add_argument("--fbx-dir", required=True)
+    ap.add_argument("--glb-dir", required=True)
     ap.add_argument("--animset", required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
@@ -92,13 +92,17 @@ def main():
     actions_out = []
 
     for clip in clip_names:
-        fbx = os.path.join(args.fbx_dir, f"{clip}.fbx")
-        if not os.path.isfile(fbx):
-            _log(f"  {clip}: FBX MISSING at {fbx}")
+        glb = os.path.join(args.glb_dir, f"{clip}.glb")
+        if not os.path.isfile(glb):
+            _log(f"  {clip}: GLB MISSING at {glb}")
             sys.exit(1)
 
         before = set(bpy.data.actions)
-        bpy.ops.import_scene.fbx(filepath=fbx, use_anim=True)
+        # glTF in, glTF out — the same toolchain the characters ride (stage 02/03),
+        # so bone-local frames and units match them by construction. The FBX
+        # detour (v1) produced centimetre tracks in alien bone frames; see the
+        # module docstring of export_anims.py.
+        bpy.ops.import_scene.gltf(filepath=glb)
         new_actions = [a for a in bpy.data.actions if a not in before]
         arms = [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]
 
@@ -110,6 +114,24 @@ def main():
 
         action = max(new_actions, key=lambda a: len(a.fcurves))
         action.name = clip
+
+        # Purge the spares this import created (the glTF importer makes one action
+        # per animated object). v2 leaked one into the export as 'TG-Anim_Idle_2_0'
+        # and the clip-set gate caught it.
+        for spare in new_actions:
+            if spare is not action:
+                bpy.data.actions.remove(spare)
+
+        # MetaHuman-rig guard. The UE5 Mannequin shares the core bone names, so the
+        # rename count CANNOT catch a Manny-rigged clip — it half-binds with wrong
+        # proportions, which is worse than failing. MetaHuman bodies carry marker
+        # bones Manny lacks (FACIAL_*, *_bulge_*); require them in the curves.
+        if not any(('FACIAL_' in fc.data_path) or ('_bulge_' in fc.data_path)
+                   for fc in action.fcurves):
+            _log(f"  {clip}: rigged for a non-MetaHuman skeleton (Manny?) — "
+                 f"no FACIAL_/_bulge_ curves. Refusing.")
+            sys.exit(1)
+
         rewrites = _rewrite_action_paths(action)
         total = len(action.fcurves)
         _log(f"  {clip}: {total} f-curves, {rewrites} contract-renamed "
@@ -140,11 +162,21 @@ def main():
     # glTF animation targeting the keeper.
     if keeper.animation_data is None:
         keeper.animation_data_create()
+    # The glTF importer stashes its own NLA track for the source animation on
+    # the armature it creates ('<AssetName>_0'), and the NLA_TRACKS exporter
+    # ships every track it finds — v2 and v3 both leaked exactly one extra
+    # clip this way, caught both times by the clip-set gate. Start from zero.
+    for tr in list(keeper.animation_data.nla_tracks):
+        keeper.animation_data.nla_tracks.remove(tr)
     for act in actions_out:
         track = keeper.animation_data.nla_tracks.new()
         track.name = act.name
         track.strips.new(act.name, int(act.frame_range[0]), act)
         track.mute = True
+
+    # No active action at export — NLA tracks are the animation set; an active
+    # action would ride along as a twelfth.
+    keeper.animation_data.action = None
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -177,6 +209,20 @@ def main():
         _log(f"ANIMATION SET MISMATCH — wanted {want}")
         sys.exit(1)
     _log("clip set verified against animset.json")
+
+    # Units gate — the exact failure v1 shipped. A standing humanoid's Hips
+    # rest height is ~0.9 METRES; the FBX detour produced 90 (centimetres
+    # passed through as-is), which sheared the mesh apart on screen. Refuse
+    # any output where Hips is outside a plausible metre range.
+    hips = next((n for n in j.get("nodes", []) if n.get("name") == "Hips"), None)
+    if hips is None:
+        _log("UNITS GATE: no 'Hips' node in output — rename did not reach the export")
+        sys.exit(1)
+    hy = abs((hips.get("translation") or [0, 0, 0])[1])
+    if not (0.3 <= hy <= 2.0):
+        _log(f"UNITS GATE: Hips rest y = {hy:.3f} — not metres. Refusing to ship.")
+        sys.exit(1)
+    _log(f"units gate: Hips rest y = {hy:.3f} m — OK")
 
 
 if __name__ == "__main__":

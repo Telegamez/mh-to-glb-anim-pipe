@@ -1,9 +1,21 @@
-"""Stage 05, UE half — export each configured AnimSequence to FBX.
+"""Stage 05, UE half — export each configured AnimSequence to GLB.
 
-Run inside UnrealEditor-Cmd via run_animbake.ps1. Reads animset.json, exports
-one FBX per clip into _work/fbx/, and verifies each file exists and is
-non-trivial afterwards — stages report intent, not outcome (handoff §6.1), so
-the artifact check lives here rather than in the caller's exit code.
+Run inside UnrealEditor-Cmd via run_animbake.ps1.
+
+## Why glTF and not FBX (v2 — the v1 lesson, learned on screen)
+
+v1 exported FBX. The first evaluation showed a detached head and shredded geometry,
+and the artifact numbers said why: Blender's FBX importer builds different bone-local
+frames than its glTF importer, and FBX carried centimetres where the characters are
+metres — anim Hips rest y 90.1 against the character's 0.871. Rotation and position
+tracks live in per-bone local space, so tracks authored in one convention applied to a
+skeleton built in the other shear the mesh apart.
+
+The characters go UE-glTF → Blender-glTF → runtime. Animations must ride the SAME
+toolchain, with stage 01's exact export options (`export_uniform_scale 0.01` is what
+lands the file in metres). Same exporter, same units, same frames — by construction,
+not by hope. The Blender half also carries a units gate now, so this class of failure
+cannot ship silently again.
 """
 
 import json
@@ -13,7 +25,7 @@ import sys
 import unreal  # type: ignore
 
 STAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FBX_DIR = os.path.join(STAGE_DIR, "_work", "fbx")
+GLB_DIR = os.path.join(STAGE_DIR, "_work", "glb")
 
 
 def _log(msg):
@@ -30,7 +42,32 @@ def _load_animset():
     return cfg, clips
 
 
-def _export_one(clip_name, asset_path):
+def _make_gltf_options():
+    """Stage 01's option pattern, adapted for animation export.
+
+    `export_uniform_scale 0.01` is the units contract — it is what makes the
+    character GLBs metres, so it is what makes these tracks metres.
+    `export_preview_mesh True` is the one deliberate inversion from stage 01:
+    a standalone AnimSequence needs the skeleton's preview mesh exported to
+    carry the node tree; the Blender half strips the geometry.
+    """
+    opts = unreal.GLTFExportOptions()
+    for k, v in (
+        ("export_uniform_scale", 0.01),
+        ("export_preview_mesh", True),
+        ("export_morph_targets", False),
+        ("export_vertex_skin_weights", True),
+        ("default_level_of_detail", 0),
+        ("skip_near_default_values", True),
+    ):
+        try:
+            opts.set_editor_property(k, v)
+        except Exception as e:  # noqa: BLE001 — property sets vary by UE version
+            _log(f"  GLTFExportOption.{k} not set: {e}")
+    return opts
+
+
+def _export_one(clip_name, asset_path, opts):
     if not unreal.EditorAssetLibrary.does_asset_exist(asset_path):
         _log(f"  {clip_name}: ASSET NOT FOUND {asset_path}")
         return False
@@ -40,38 +77,31 @@ def _export_one(clip_name, asset_path):
              f"({type(anim).__name__ if anim else 'None'})")
         return False
 
-    out_fbx = os.path.join(FBX_DIR, f"{clip_name}.fbx")
-
-    options = unreal.FbxExportOption()
-    options.ascii = False
-    options.export_morph_targets = False
-    options.export_preview_mesh = False   # skeleton + animation only
-    options.map_skeletal_motion_to_root = False
+    out_glb = os.path.join(GLB_DIR, f"{clip_name}.glb")
 
     task = unreal.AssetExportTask()
     task.object = anim
-    task.filename = out_fbx
+    task.filename = out_glb
     task.automated = True
     task.replace_identical = True
     task.prompt = False
-    task.options = options
+    task.options = opts
 
     ok = unreal.Exporter.run_asset_export_task(task)
 
-    # Assert on the artifact, not the return value: an exporter that "succeeds"
-    # into a 0-byte file has happened elsewhere in this pipeline family.
-    if not ok or not os.path.isfile(out_fbx) or os.path.getsize(out_fbx) < 10_000:
-        size = os.path.getsize(out_fbx) if os.path.isfile(out_fbx) else "absent"
+    # Assert on the artifact, not the return value.
+    if not ok or not os.path.isfile(out_glb) or os.path.getsize(out_glb) < 10_000:
+        size = os.path.getsize(out_glb) if os.path.isfile(out_glb) else "absent"
         _log(f"  {clip_name}: EXPORT FAILED (ok={ok}, file={size})")
         return False
 
-    _log(f"  {clip_name}: exported {os.path.getsize(out_fbx)/1024:.0f} KB "
+    _log(f"  {clip_name}: exported {os.path.getsize(out_glb)/1024:.0f} KB "
          f"({anim.get_editor_property('sequence_length'):.2f}s) <- {asset_path}")
     return True
 
 
 def main():
-    os.makedirs(FBX_DIR, exist_ok=True)
+    os.makedirs(GLB_DIR, exist_ok=True)
     _cfg, clips = _load_animset()
 
     empty = sorted(n for n, p in clips.items() if not p)
@@ -80,15 +110,16 @@ def main():
              f"paths (decision D7 pack) and re-run")
         sys.exit(2)
 
+    opts = _make_gltf_options()
     failed = []
     for name, path in sorted(clips.items()):
-        if not _export_one(name, path):
+        if not _export_one(name, path, opts):
             failed.append(name)
 
     if failed:
         _log(f"FAILED clips: {failed}")
         sys.exit(1)
-    _log(f"all {len(clips)} clips exported to {FBX_DIR}")
+    _log(f"all {len(clips)} clips exported to {GLB_DIR}")
 
 
 if __name__ == "__main__":

@@ -3,9 +3,13 @@
   Stage 05 — bake MetaHuman body animation loops into one shared animations GLB.
 
 .DESCRIPTION
-  Two halves: UnrealEditor-Cmd exports each animset.json AnimSequence to FBX,
-  then Blender rewrites the animation tracks through the platform's 16-pair
-  contract bone-rename map and exports a single animation-only GLB.
+  Two halves: UnrealEditor-Cmd exports each animset.json AnimSequence to GLB
+  via the native glTF exporter (stage 01's option set — same exporter, units
+  and bone frames as the character GLBs, by construction), then Blender
+  rewrites the animation tracks through the platform's 16-pair contract
+  bone-rename map and exports a single animation-only GLB. A units gate in
+  the Blender half refuses Hips outside a plausible metre range — the exact
+  failure the v1 FBX detour shipped.
 
   Not per-character: one file serves the roster (clips bind by node name).
 
@@ -64,9 +68,9 @@ Write-Host "[run_animbake] editor  = $EditorCmd"
 Write-Host "[run_animbake] project = $Project"
 Write-Host "[run_animbake] blender = $BlenderExe"
 
-# --- UE half: AnimSequence -> FBX -------------------------------------------
-$FbxDir = Join-Path $StageDir '_work\fbx'
-New-Item -ItemType Directory -Force -Path $FbxDir | Out-Null
+# --- UE half: AnimSequence -> GLB (native glTF; v1's FBX detour sheared the mesh) ---
+$GlbDir = Join-Path $StageDir '_work\glb'
+New-Item -ItemType Directory -Force -Path $GlbDir | Out-Null
 
 # Same commandlet invocation as stage 01's run_export.ps1 — the proven flag set.
 $ScriptArg = Join-Path $ToolsDir 'export_anims.py'
@@ -77,16 +81,16 @@ if ($LASTEXITCODE -ne 0) { Write-Host "[run_animbake] UE export failed ($LASTEXI
 $missing = @()
 foreach ($grp in 'required', 'gestures') {
   foreach ($p in $cfg.$grp.PSObject.Properties) {
-    $f = Join-Path $FbxDir "$($p.Name).fbx"
+    $f = Join-Path $GlbDir "$($p.Name).glb"
     if (-not (Test-Path $f) -or (Get-Item $f).Length -lt 10KB) { $missing += $p.Name }
   }
 }
-if ($missing.Count) { Write-Host "[run_animbake] FBX missing/empty: $($missing -join ', ')"; exit 1 }
+if ($missing.Count) { Write-Host "[run_animbake] GLB missing/empty: $($missing -join ', ')"; exit 1 }
 
 # --- Blender half: FBX set -> renamed animation-only GLB --------------------
 $OutGlb = Join-Path $Workspace "docs\animations\$($cfg.output)"
 & $BlenderExe --factory-startup --background --python (Join-Path $ToolsDir 'build_animations_glb.py') `
-  -- --fbx-dir $FbxDir --animset $animset --out $OutGlb
+  -- --glb-dir $GlbDir --animset $animset --out $OutGlb
 if ($LASTEXITCODE -ne 0) { Write-Host "[run_animbake] Blender build failed ($LASTEXITCODE)"; exit 1 }
 
 # --- optional publish, hash-verified -----------------------------------------

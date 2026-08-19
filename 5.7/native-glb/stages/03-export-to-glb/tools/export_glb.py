@@ -946,6 +946,9 @@ def _smooth_weights(obj, per_vertex):
     return [current[representative[i]] for i in range(len(mesh.vertices))]
 
 
+WEIGHT_PROVENANCE = {"path": "unknown"}
+
+
 def _apply_solved_weights(workspace, char):
     """Install skinning-decomposition weights, replacing the fold/filter/smooth stack.
 
@@ -965,6 +968,7 @@ def _apply_solved_weights(workspace, char):
     path = Path(workspace) / "characters" / char / "_solve" / "skin_solved.npz"
     if not path.exists():
         _log(f"no solved weights at {path} - falling back to the fold")
+        WEIGHT_PROVENANCE.update(path="fold", reason="no skin_solved.npz")
         return False
 
     import numpy as np  # Blender ships numpy; scipy lives in the external solver
@@ -1021,9 +1025,68 @@ def _apply_solved_weights(workspace, char):
         _log(f"solved: {key} -> {len(groups)} bone groups, 4 influences by construction")
 
     if not applied:
+        WEIGHT_PROVENANCE.update(path="fold", reason="solve matched no mesh in the scene")
         return False
+    stats = {}
+    if "stats" in data.files:
+        try:
+            stats = json.loads(str(data["stats"][0]))
+        except Exception as e:  # noqa: BLE001
+            _log(f"solved weights carry unreadable stats: {e}")
+    WEIGHT_PROVENANCE.update(
+        path="solved", meshes=applied, source=str(path.name), solve=stats)
     _log(f"solved weights applied to {applied} mesh(es); fold/filter/smooth skipped")
+    for mesh_name, st in (stats.get("per_mesh") or {}).items():
+        _log(f"  solve {mesh_name}: {st['mean_truncated_mm']}mm -> {st['mean_solved_mm']}mm "
+             f"mean, worst {st['worst_truncated_mm']} -> {st['worst_solved_mm']}mm")
     return True
+
+
+def _apply_body_tuck(workspace, char):
+    """Push skin inward by the measured amount it punches through cloth under animation.
+
+    Bind-pose coverage cannot see this: the arm inside a short sleeve at rest swings outside it
+    while moving, and those vertices render as skin shards on the shoulder and sleeve. The
+    offsets come from solve_body_tuck.py, which measures the actual penetration over the shipped
+    clips, so this moves nothing that was not observed to break through.
+
+    Runs BEFORE _hide_body_under_clothing(): tucked skin is more contained, so containment sees
+    the corrected surface rather than the one that pokes.
+    """
+    path = Path(workspace) / "characters" / char / "_solve" / "body_tuck.npz"
+    if not path.exists():
+        _log(f"no body tuck at {path} - skipping (skin may punch through cloth in motion)")
+        return None
+
+    import numpy as np
+
+    data = np.load(str(path), allow_pickle=True)
+    key = str(data["mesh"][0])
+    obj = bpy.data.objects.get(key)
+    if obj is None or obj.type != "MESH":
+        _log(f"body tuck names {key}, not in the scene - skipped")
+        return None
+    offsets = data["offsets"]
+    if len(offsets) != len(obj.data.vertices):
+        raise RuntimeError(
+            f"{key}: body tuck covers {len(offsets)} verts, mesh has "
+            f"{len(obj.data.vertices)} - stale, re-run solve_body_tuck.py")
+
+    co = np.empty((len(obj.data.vertices), 3))
+    obj.data.vertices.foreach_get("co", co.ravel())
+    obj.data.vertices.foreach_set("co", (co + offsets).ravel())
+    obj.data.update()
+
+    stats = {}
+    if "stats" in data.files:
+        try:
+            stats = json.loads(str(data["stats"][0]))
+        except Exception as e:  # noqa: BLE001
+            _log(f"body tuck carries unreadable stats: {e}")
+    moved = int((np.linalg.norm(offsets, axis=1) > 1e-5).sum())
+    _log(f"body tuck: moved {moved} verts on {key}, max "
+         f"{np.linalg.norm(offsets, axis=1).max() * 1000:.2f} mm")
+    return {"verts_moved": moved, "solve": stats}
 
 
 def _fold_frozen_bones(workspace):
@@ -1203,15 +1266,22 @@ def main():
         removed = _delete_hidden_meshes()
         _log(f"removed {len(removed)} hidden meshes")
 
-        # Before anything touches weights: skin that is under cloth should not be drawn at all.
-        _hide_body_under_clothing()
-
-        # Solved weights first; the fold is the fallback for an unsolved character.
+        # Weights BEFORE hide-body. The solve is indexed by the stage-02 vertex order, and
+        # hide-body deletes geometry, so running it first shifts every index past the first
+        # deletion and the stale-solve guard (correctly) refuses the file. Containment is a
+        # ray-cast against bind geometry and does not read weights, so the order is free.
         _log(f"weight compensation: {WEIGHT_COMPENSATION}")
         if WEIGHT_COMPENSATION == "none":
             _log("weight compensation: DISABLED - raw MetaHuman weights, exporter takes top 4")
+            WEIGHT_PROVENANCE.update(path="none", reason="MH_WEIGHT_COMP=none")
         elif not _apply_solved_weights(workspace, args.char):
             fold_stats = _fold_frozen_bones(workspace)
+
+        # Measured pose-aware tuck first, then bind-pose containment on the corrected surface.
+        tuck_stats = _apply_body_tuck(workspace, args.char)
+
+        # Skin that is under cloth should not be drawn at all.
+        _hide_body_under_clothing()
 
         flipped = _flip_normal_maps_g()
         _log(f"flipped G on {flipped} normal maps (DX -> GL)")
@@ -1336,6 +1406,8 @@ def main():
             "downsampled_images": downsampled,
             "flattened_card_materials": flattened,
             "draco": draco,
+            "weights": WEIGHT_PROVENANCE,
+            "body_tuck": tuck_stats,
             # What the vertex colours looked like going in. Compare against the
             # GLB if the scalp ever reads bright through the hair again.
             "vertex_colours": vcol_stats,

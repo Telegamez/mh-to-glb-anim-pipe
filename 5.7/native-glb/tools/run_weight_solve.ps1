@@ -58,7 +58,7 @@ $ErrorActionPreference = $PrevEap
 if ($dumpCode -ne 0) { Write-Host "[weight_solve] dump failed ($dumpCode)"; exit 1 }
 if (-not (Test-Path $Dump)) { Write-Host "[weight_solve] no dump produced"; exit 1 }
 
-& python (Join-Path $PSScriptRoot 'solve_skin.py') --dump $Dump --animations $Anims `
+& python (Join-Path $PSScriptRoot 'solve_skin.py') --dump $Dump --animations $Anims --live-bones (Join-Path $Workspace "_config/live_bones.json") `
   --out $Solved --frames-per-clip $FramesPerClip
 if ($LASTEXITCODE -ne 0) { Write-Host "[weight_solve] solve failed"; exit 1 }
 

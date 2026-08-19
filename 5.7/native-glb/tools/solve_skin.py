@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import math
 import struct
 import time
@@ -236,8 +237,30 @@ def build_joint_matrices(dump, anim_path: Path, frames_per_clip: int):
 # ---------------------------------------------------------------- the solve
 
 
-def solve_mesh(positions, offsets, indices, weights, joints, joints_truth,
-               max_influences=MAX_INFLUENCES):
+def solve_mesh(positions, offsets, indices, weights, joints, joints_truth, live_map,
+               max_influences=MAX_INFLUENCES, cand_remap=None, bone_seg=None,
+               implausible_ratio=None):
+    """One recipe per POSITION, not per vertex.
+
+    The garment duplicates boundary vertices (2489 coincident pairs on Telly's outfit), and the
+    source asset gives the twins DIFFERENT weights - measured against Unreal's own evaluated
+    transforms with all 12 influences, Unreal itself opens those seams up to 58.7mm during
+    Shrug. That is the tearing. Solving per vertex keeps the disagreement; solving per
+    coincident CLUSTER (union of candidates, mean of truth targets) makes a seam tear
+    impossible by construction, for every animation, on every character.
+    """
+    """`live_map[b]` is b's nearest LIVE ancestor - the constraint that makes the solve shippable.
+
+    The basis is mathematically right about frozen bones: one that never moves is an exact alias
+    of its live ancestor, so selecting it reproduces the motion perfectly. The EXPORTER is not,
+    because a bone outside the shipped skeleton is not an alias there, it is absent, and its
+    weight is simply dropped. The first solved build stranded 8.5% of the outfit's weight and
+    71.6% of the head's on bones the runtime has never heard of, and the collar came apart.
+
+    So candidates are mapped to live bones before selection. Truth is NOT mapped - it keeps the
+    full rig logic, including motion from bones we cannot drive, which is what the weights are
+    being asked to absorb.
+    """
     n = len(positions)
     frames = joints.shape[0]
     out_idx = np.zeros((n, max_influences), dtype=np.int32)
@@ -245,32 +268,83 @@ def solve_mesh(positions, offsets, indices, weights, joints, joints_truth,
     err_trunc = np.zeros(n)
     err_solved = np.zeros(n)
 
+    # Coincident vertices collapse to one representative; results are copied to every member.
+    # Union-find over actual coincident PAIRS, not a rounding grid - a grid splits twins that
+    # straddle a cell boundary, and 197 of Telly's 2489 seam pairs did exactly that.
+    from scipy.spatial import cKDTree
+    root = np.arange(n)
+    def _find(x):
+        while root[x] != x:
+            root[x] = root[root[x]]
+            x = root[x]
+        return x
+    for a, b in cKDTree(positions).query_pairs(5e-7):
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            root[max(ra, rb)] = min(ra, rb)
+    cluster_of = np.array([_find(i) for i in range(n)])
+    cluster_rep = np.unique(cluster_of)
+    order = np.argsort(cluster_of, kind="stable")
+    bounds = np.searchsorted(cluster_of[order], cluster_rep)
+    bounds = np.append(bounds, n)
+
     homo = np.ones(4)
-    for v in range(n):
-        a, b = offsets[v], offsets[v + 1]
-        cand = indices[a:b]
-        w0 = weights[a:b]
+    for c, v in enumerate(cluster_rep):
+        members = order[bounds[c]:bounds[c + 1]]
+        # union of the members' influences, weights averaged over members
+        merged = {}
+        for m in members:
+            for i in range(offsets[m], offsets[m + 1]):
+                merged[int(indices[i])] = merged.get(int(indices[i]), 0.0) + float(weights[i])
+        cand = np.array(list(merged.keys()), dtype=np.int64)
+        w0 = np.array(list(merged.values())) / max(len(members), 1)
         if len(cand) == 0:
             continue
         homo[:3] = positions[v]
+
+        # Implausible influences are dropped from the RECIPE, truth target included. The source
+        # binds collar vertices up to 0.82 to `upperarm_out_r` - the crumpled-collar defect of
+        # 00-START-HERE 6.16, in the asset itself. Faithfully reproducing that reproduces the
+        # crumple, so the cleaning the fold used to do lands here, before the fit: any influence
+        # whose bone sits more than `implausible_ratio` times as far from the vertex as the
+        # nearest influence's bone is discarded and the recipe renormalised.
+        if implausible_ratio is not None and len(cand) > 1:
+            heads, tails = bone_seg
+            hk = heads[live_map[cand]]
+            tk = tails[live_map[cand]]
+            seg = tk - hk
+            tt = np.clip(np.einsum("kj,kj->k", positions[v] - hk, seg)
+                         / np.maximum(np.einsum("kj,kj->k", seg, seg), 1e-12), 0.0, 1.0)
+            dist = np.linalg.norm(positions[v] - (hk + tt[:, None] * seg), axis=1)
+            keep = dist <= implausible_ratio * max(dist.min(), 1e-4)
+            if keep.sum() >= 1 and not keep.all():
+                cand, w0 = cand[keep], w0[keep]
+
+        # Candidates live in the SHIPPED skeleton. Duplicates collapse: several frozen helpers
+        # under one live parent are one candidate, which also frees slots for distinct bones.
+        mapped = live_map[cand] if cand_remap is None else cand_remap[live_map[cand]]
+        cand_live, inverse = np.unique(mapped, return_inverse=True)
+        w_live = np.bincount(inverse, weights=w0, minlength=len(cand_live))
+
         # basis[k] is where this vertex lands if driven purely by candidate k, per frame
-        basis = np.einsum("fij,j->fi", joints[:, cand, :, :].reshape(frames * len(cand), 4, 4),
-                          homo).reshape(frames, len(cand), 4)[:, :, :3]
+        basis = np.einsum("fij,j->fi",
+                          joints[:, cand_live, :, :].reshape(frames * len(cand_live), 4, 4),
+                          homo).reshape(frames, len(cand_live), 4)[:, :, :3]
         truth_basis = np.einsum("fij,j->fi",
                                 joints_truth[:, cand, :, :].reshape(frames * len(cand), 4, 4),
                                 homo).reshape(frames, len(cand), 4)[:, :, :3]
         total = w0.sum()
         truth = np.einsum("fkj,k->fj", truth_basis, w0 / (total if total > 0 else 1.0))
 
-        if len(cand) <= max_influences:
-            chosen = np.arange(len(cand))
+        if len(cand_live) <= max_influences:
+            chosen = np.arange(len(cand_live))
         else:
             # greedy: add the candidate that most reduces the residual, up to max_influences
             chosen: list[int] = []
             residual = truth.reshape(-1)
             for _ in range(max_influences):
                 best, best_err = -1, None
-                for k in range(len(cand)):
+                for k in range(len(cand_live)):
                     if k in chosen:
                         continue
                     trial = chosen + [k]
@@ -289,19 +363,21 @@ def solve_mesh(positions, offsets, indices, weights, joints, joints_truth,
         sol, _ = nnls(A, target)
         s = sol.sum()
         if s <= 1e-9:
-            sol = w0[chosen] / max(w0[chosen].sum(), 1e-9)
+            sol = w_live[chosen] / max(w_live[chosen].sum(), 1e-9)
         else:
             sol = sol / s                      # glTF has no way to express "these do not sum to 1"
-        err_solved[v] = np.linalg.norm(A @ sol - target) / math.sqrt(frames)
+        err_solved[members] = np.linalg.norm(A @ sol - target) / math.sqrt(frames)
 
-        # what plain truncation would have produced, for the report
-        top = np.argsort(-w0)[:max_influences]
+        # Baseline = what we SHIPPED before: fold frozen bones into live ancestors, then let the
+        # exporter keep the four largest. Comparing against raw top-4 instead would flatter the
+        # solve by crediting it with the fold's gains as well.
+        top = np.argsort(-w_live)[:max_influences]
         At = basis[:, top, :].transpose(0, 2, 1).reshape(-1, len(top))
-        wt = w0[top] / max(w0[top].sum(), 1e-9)
-        err_trunc[v] = np.linalg.norm(At @ wt - target) / math.sqrt(frames)
+        wt = w_live[top] / max(w_live[top].sum(), 1e-9)
+        err_trunc[members] = np.linalg.norm(At @ wt - target) / math.sqrt(frames)
 
-        out_idx[v, :len(chosen)] = cand[chosen]
-        out_w[v, :len(chosen)] = sol
+        out_idx[members, :len(chosen)] = cand_live[chosen]
+        out_w[members, :len(chosen)] = sol
     return out_idx, out_w, err_trunc, err_solved
 
 
@@ -312,6 +388,8 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--frames-per-clip", type=int, default=4)
     parser.add_argument("--meshes", nargs="*", default=None)
+    parser.add_argument("--live-bones", required=True,
+                        help="_config/live_bones.json - the bones the shipped skeleton can drive")
     args = parser.parse_args()
 
     dump = np.load(args.dump, allow_pickle=True)
@@ -320,7 +398,62 @@ def main() -> None:
     _log(f"{joints.shape[0]} sampled frames over {len(names)} bones "
          f"(truth carries rig-logic slide; basis is runtime-drivable only)")
 
+    # Nearest live ancestor per bone. Walking up terminates at the root, which is always live;
+    # a bone with no live ancestor at all would be a broken skeleton and is reported, not hidden.
+    # LIVE = bones the shipped animation library actually moves. Everything else in the armature
+    # is exported too (the GLB carries all ~1197 nodes, FACIAL_* included), so a frozen bone is
+    # PRESENT and acts as an exact alias of its live ancestor rather than being dropped. Folding
+    # to live ancestors is therefore not a correctness fix - it is a slot fix: several frozen
+    # helpers under one live parent collapse into a single candidate, so the four slots hold four
+    # DISTINCT drivable bones instead of aliases of the same one (00-START-HERE 6.19).
+    live_names = set(json.loads(Path(args.live_bones).read_text(encoding="utf-8"))["live_bones"])
+    _anim_gltf, _ = _load_glb(Path(args.animations))
+    present = {n.get("name") for n in _anim_gltf["nodes"] if n.get("name")}
+    _log(f"skeleton nodes present {len(present)}; of those {len(live_names & present)} move")
+    parents = dump["bone_parents"]
+    index = {n: i for i, n in enumerate(names)}
+    live_map = np.arange(len(names), dtype=np.int64)
+    orphans = []
+    for i, n in enumerate(names):
+        j = i
+        while j >= 0 and names[j] not in live_names:
+            j = int(parents[j])
+        if j < 0:
+            # No live ancestor. Keeping the bone is correct as long as it ships.
+            if n not in present:
+                orphans.append(n)
+            j = i
+        live_map[i] = j
+    folded = int((live_map != np.arange(len(names))).sum())
+    _log(f"live bones {len(live_names)}/{len(names)}; {folded} folded to a live ancestor"
+         + (f"; {len(orphans)} ORPHANS with no live ancestor: {orphans[:5]}" if orphans else ""))
+
+    # Stage 03's fold remapped garment weights off `Head` (GARMENT_BONE_REMAP) because the
+    # runtime rotates the head procedurally - gaze, nods - far outside anything in the clip
+    # library. A collar vertex the solve hangs on Head fits the sampled frames perfectly and
+    # then rides a 23-degree procedural nod. Same rule here, applied BEFORE the fit so the
+    # solve redistributes that motion instead of having it edited out afterwards.
+    garment_re = re.compile(r"Outfit|Garment|Cloth", re.IGNORECASE)
+    IMPLAUSIBLE_RATIO = 2.5      # matches stage 03's IMPLAUSIBLE_DISTANCE_RATIO
+
+    # bone segments for the implausibility test: head from bind, tail = mean of child heads,
+    # a point for leaves. Coarse, but the test is a 2.5x ratio - it does not need precision.
+    bind = dump["bone_bind"]
+    heads = bind[:, :3, 3].copy()
+    tails = heads.copy()
+    child_sum = np.zeros_like(heads); child_n = np.zeros(len(names))
+    for i, par in enumerate(dump["bone_parents"]):
+        if par >= 0:
+            child_sum[par] += heads[i]; child_n[par] += 1
+    has = child_n > 0
+    tails[has] = child_sum[has] / child_n[has][:, None]
+    garment_remap = np.arange(len(names), dtype=np.int64)
+    for src, dst in (("Head", "Neck"),):
+        if src in index and dst in index:
+            garment_remap[index[src]] = index[dst]
+
     result = {"bone_names": np.array(names, dtype=object)}
+    stats = {}
     for key in [str(m) for m in dump["meshes"]]:
         if args.meshes and key not in args.meshes:
             continue
@@ -330,14 +463,48 @@ def main() -> None:
         weights = dump[f"mesh::{key}::weights"]
         start = time.time()
         idx, w, e_trunc, e_solved = solve_mesh(
-            positions, offsets, indices, weights, joints, joints_truth)
+            positions, offsets, indices, weights, joints, joints_truth, live_map,
+            cand_remap=garment_remap if garment_re.search(key) else None,
+            bone_seg=(heads, tails),
+            implausible_ratio=IMPLAUSIBLE_RATIO if garment_re.search(key) else None)
         result[f"mesh::{key}::indices"] = idx
         result[f"mesh::{key}::weights"] = w
         better = float((e_solved < e_trunc - 1e-9).mean() * 100)
+        stats[key] = {
+            "verts": int(len(positions)),
+            "mean_truncated_mm": round(float(e_trunc.mean()) * 1000, 4),
+            "mean_solved_mm": round(float(e_solved.mean()) * 1000, 4),
+            "worst_truncated_mm": round(float(e_trunc.max()) * 1000, 3),
+            "worst_solved_mm": round(float(e_solved.max()) * 1000, 3),
+            "improved_pct": round(better, 1),
+        }
         _log(f"{key}: {len(positions)} verts in {time.time()-start:.1f}s   "
              f"mean deviation truncated {e_trunc.mean()*1000:.3f}mm -> solved "
              f"{e_solved.mean()*1000:.3f}mm   worst {e_trunc.max()*1000:.1f} -> "
              f"{e_solved.max()*1000:.1f}mm   improved on {better:.1f}% of verts")
+    # Report weight that lands on bones the animation library never moves. This is NOT an error -
+    # such a bone still ships and still aliases its parent - but a mesh whose weight sits mostly
+    # on unanimated bones is inert, and that is worth seeing rather than discovering on screen.
+    live_idx = {i for i, n in enumerate(names) if n in live_names}
+    for key in [k.split("::")[1] for k in result
+                if k.startswith("mesh::") and k.endswith("::indices")]:
+        idx = result[f"mesh::{key}::indices"]
+        w = result[f"mesh::{key}::weights"]
+        mass = float(w.sum())
+        inert = float(w[~np.isin(idx, list(live_idx))].sum())
+        if mass > 0 and inert / mass > 0.01:
+            _log(f"note: {key} carries {inert / mass * 100:.1f}% of its weight on bones the "
+                 f"animation library does not move (present, frozen, aliasing their parent)")
+
+    # Provenance travels WITH the weights. A solved npz that cannot say what it was fitted
+    # against, or how much it actually bought, is indistinguishable from the two failed solves
+    # sitting beside it named .v2-broken and .v3-worse.
+    result["stats"] = np.array([json.dumps({
+        "animations": str(args.animations),
+        "frames_per_clip": int(args.frames_per_clip),
+        "max_influences": MAX_INFLUENCES,
+        "per_mesh": stats,
+    })], dtype=object)
     result["meshes"] = np.array(
         [k.split("::")[1] for k in result if k.startswith("mesh::") and k.endswith("::indices")],
         dtype=object,

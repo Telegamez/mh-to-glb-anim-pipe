@@ -106,7 +106,21 @@ def main():
         # iteration order ever stops matching v.index.
         offsets = np.maximum.accumulate(offsets)
 
+        # Bind vertex normals: the tuck solve needs a direction to push skin inward along, and
+        # the mesh is the only thing that knows which way "in" is.
+        normals = np.empty((len(verts), 3), dtype=np.float64)
+        obj.data.vertices.foreach_get("normal", normals.ravel())
+
+        # Triangles: containment has to be measured against the SURFACE. A nearest-vertex test
+        # is unreliable inside a narrow sleeve, where the nearest vertices can sit on the far
+        # wall and their normals face back at you.
+        obj.data.calc_loop_triangles()
+        tris = np.empty((len(obj.data.loop_triangles), 3), dtype=np.int32)
+        obj.data.loop_triangles.foreach_get("vertices", tris.ravel())
+
         key = obj.name
+        payload[f"mesh::{key}::triangles"] = tris
+        payload[f"mesh::{key}::normals"] = normals
         payload[f"mesh::{key}::positions"] = positions
         payload[f"mesh::{key}::offsets"] = offsets
         payload[f"mesh::{key}::indices"] = np.array(idx_list, dtype=np.int32)

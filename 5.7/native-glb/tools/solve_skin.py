@@ -388,6 +388,9 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--frames-per-clip", type=int, default=4)
     parser.add_argument("--meshes", nargs="*", default=None)
+    parser.add_argument("--implausible-ratio", type=float, default=None,
+                        help="drop a garment influence whose bone is this many times farther "
+                             "from the vertex than the nearest one. Omit to disable.")
     parser.add_argument("--live-bones", required=True,
                         help="_config/live_bones.json - the bones the shipped skeleton can drive")
     args = parser.parse_args()
@@ -434,7 +437,7 @@ def main() -> None:
     # then rides a 23-degree procedural nod. Same rule here, applied BEFORE the fit so the
     # solve redistributes that motion instead of having it edited out afterwards.
     garment_re = re.compile(r"Outfit|Garment|Cloth", re.IGNORECASE)
-    IMPLAUSIBLE_RATIO = 2.5      # matches stage 03's IMPLAUSIBLE_DISTANCE_RATIO
+    IMPLAUSIBLE_RATIO = args.implausible_ratio
 
     # bone segments for the implausibility test: head from bind, tail = mean of child heads,
     # a point for leaves. Coarse, but the test is a 2.5x ratio - it does not need precision.

@@ -137,6 +137,32 @@ the terminal where it was tested.
 
 ---
 
+## Publishing to the platform
+
+`tools/publish_characters.ps1` copies a bake into the monorepo's `public/models/<id>/`, which
+serves local development. `tools/publish_to_cdn.ps1` publishes the same directory to the
+platform, and it goes through the admin API — `POST /api/admin/avatars/<id>/companion-directory`
+— rather than copying to the bucket.
+
+That indirection is plan D4: the admin API stays the one front door for assets. It also
+validates what a copy cannot — that the sidecar is present, and that every texture the sidecar
+NAMES was actually uploaded — so a half-copied directory fails at publish instead of rendering
+wrong later.
+
+Objects land at `avatars/<avatarId>/<bakeHash>/` with the bake hash derived from content, so a
+re-bake publishes alongside the live one and rollback is repointing a database row. The script
+prints the `modelKey` and the SQL to go live; it deliberately does not run it.
+
+Two things that will bite:
+
+- **The route needs an operator session today.** `withAdminAuth` accepts only an interactive
+  NextAuth login, so the bake box cannot yet publish unattended (monorepo plan G14).
+- **The character id comes from the model FILENAME**, so keep publishing `<id>.glb`. Name it
+  anything else and every per-character calibration silently reverts to defaults, because the
+  published directory is a bake hash rather than the id.
+
+---
+
 ## Re-syncing with upstream
 
 Category A changes may conflict if upstream fixes the same things independently — take theirs

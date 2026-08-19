@@ -29,14 +29,14 @@
     "03_glb_export": {
       "status": "done",
       "started_at": "2026-08-17T01:41:26Z",
-      "completed_at": "2026-08-18T17:26:13Z",
+      "completed_at": "2026-08-19T04:26:28Z",
       "output_dir": "03-glb/",
       "errors": []
     },
     "04_webview_build": {
       "status": "done",
       "started_at": "2026-08-17T01:41:39Z",
-      "completed_at": "2026-08-18T17:26:47Z",
+      "completed_at": "2026-08-18T22:26:53Z",
       "output_dir": "../../docs/characters/",
       "errors": []
     }

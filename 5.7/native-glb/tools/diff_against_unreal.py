@@ -95,8 +95,9 @@ def _compose(t, q, s):
     return m
 
 
-def _xf(d):
-    return _compose(d["t"], d["q"], d["s"])
+def _xf(m):
+    """Truth transforms arrive already composed from the npz."""
+    return m
 
 
 def _sample(times, values, t):
@@ -143,13 +144,28 @@ def similarity_fit(src: np.ndarray, dst: np.ndarray):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mesh-glb", required=True, help="stage 01 GLB (12 influences, UE names)")
-    ap.add_argument("--truth-json", required=True, help="export_pose_transforms.py output")
+    ap.add_argument("--truth", required=True, help="export_pose_transforms.py .npz output")
     ap.add_argument("--our-anim", required=True, help="the animation library the browser loads")
     ap.add_argument("--clip", required=True)
     ap.add_argument("--mesh-name", default=None)
+    ap.add_argument("--truth-field", default="evaluated", choices=["evaluated", "raw"])
     args = ap.parse_args()
 
-    truth = json.loads(Path(args.truth_json).read_text(encoding="utf-8"))
+    tz = np.load(args.truth, allow_pickle=True)
+    tmeta = json.loads(str(tz["meta"][0]))
+    tbones = [str(b) for b in tz["bone_names"]]
+    _log(f"truth: {tmeta['mesh']} / {Path(tmeta['anim']).name} — {len(tbones)} bones, "
+         f"{tz['evaluated'].shape[0]} frames, ABP contributes up to "
+         f"{tmeta['abp_delta_max_cm']:.2f}cm")
+    def _t(row):
+        return _compose(row[0:3], row[3:7], row[7:10])
+    truth = {
+        "length": tmeta["length"],
+        "ref_pose_component": {n: _t(tz["ref"][i]) for i, n in enumerate(tbones)},
+        "frames": [{"time": float(tz["times"][f]),
+                    "bones": {n: _t(tz[args.truth_field][f, i]) for i, n in enumerate(tbones)}}
+                   for f in range(tz[args.truth_field].shape[0])],
+    }
     mesh_gltf, mesh_bin = _load_glb(Path(args.mesh_glb))
     our_gltf, our_bin = _load_glb(Path(args.our_anim))
 
@@ -242,7 +258,8 @@ def main():
             acc += wc[:, None] * np.einsum("vij,vj->vi", S[ji[:, c]], homo)[:, :3]
         return acc
 
-    e10, e21, e20 = [], [], []
+    e10, e21, e20, e1b, e1a, e2a = [], [], [], [], [], []
+    seam_v0, seam_v2 = [], []
     for fr in truth["frames"]:
         t = float(fr["time"])
         # V0: Unreal's own joint matrices, mapped into glTF space
@@ -253,6 +270,7 @@ def main():
 
         # V1/V2: the browser's joint matrices — clip rotation and scale, BIND translation
         local = local_bind.copy()
+        local_b = local_bind.copy()
         tt = dur * (t / max(truth["length"], 1e-9))
         for n, paths in chan.items():
             i = index[n]
@@ -267,28 +285,168 @@ def main():
             if n in ROOT_BONES and "translation" in paths:
                 trans = _sample(*paths["translation"], tt)
             local[i] = _compose(trans, rot, scale)
+            local_b[i] = local[i]
+            if n in ROOT_BONES and "translation" in paths:
+                # VARIANT: rebase the root onto THIS CHARACTER's bind rather than onto the clip's
+                # own first frame. The clips were baked against another body, so their pelvis
+                # height is that body's, and importing it displaces everything above the feet.
+                first = _sample(*paths["translation"], 0.0)
+                local_b[i] = _compose(base[:3, 3] + (trans - first), rot, scale)
         world = np.empty_like(local)
+        wb = np.empty_like(local_b)
         for i in range(len(names)):
             p = parents[i]
             world[i] = local[i] if p < 0 else world[p] @ local[i]
+            wb[i] = local_b[i] if p < 0 else wb[p] @ local_b[i]
         S_ours = world @ inv_world_bind
+        S_bind = wb @ inv_world_bind
 
         v0 = deform(S_ue, J, W)
         v1 = deform(S_ours, J, W)
         v2 = deform(S_ours, J4, W4)
+        seam_v0.append(v0)
+        seam_v2.append(v2)
+        # Placement and deformation are different faults and want different fixes. A constant
+        # offset means the character stands somewhere else; it cannot crease a shirt. Aligning
+        # each frame by its mean bone offset removes the placement term so what remains is the
+        # deformation difference alone.
+        off = np.array([(world[index[n]][:3, 3] - S_ue[index[n]] @ np.append(world_bind[index[n]][:3, 3], 1.0))[:3]
+                        for n in shared]).mean(0) if False else (v1 - v0).mean(0)
+        e1a.append(np.linalg.norm((v1 - off) - v0, axis=1))
+        e2a.append(np.linalg.norm((v2 - off) - v0, axis=1))
         e10.append(np.linalg.norm(v1 - v0, axis=1))
         e21.append(np.linalg.norm(v2 - v1, axis=1))
         e20.append(np.linalg.norm(v2 - v0, axis=1))
+        e1b.append(np.linalg.norm(deform(S_bind, J, W) - v0, axis=1))
 
-    a, b, c = (np.mean(x, 0) * 1000 for x in (e10, e21, e20))
+    # SEAM GAPS. Tearing is not mean error - it is two coincident vertices (the same point on
+    # the garment, duplicated in the data) receiving different deformations and separating. If
+    # V0 opens the seams, the tear exists in Unreal's own terms and no runtime change closes it;
+    # if only V2 opens them, we introduced it.
+    from scipy.spatial import cKDTree
+    _pairs = np.array(sorted(cKDTree(P).query_pairs(5e-7)))
+    if len(_pairs):
+        for lbl, frames_v in (("UNREAL (V0)", seam_v0), ("ours as shipped (V2)", seam_v2)):
+            g = np.max([np.linalg.norm(v[_pairs[:, 0]] - v[_pairs[:, 1]], axis=1)
+                        for v in frames_v], 0) * 1000
+            _log(f"SEAM GAP {lbl}: {len(_pairs)} coincident pairs   "
+                 f"med {np.median(g):.2f}  p99 {np.percentile(g, 99):.2f}  max {g.max():.1f} mm"
+                 f"   open>2mm: {(g > 2).sum()}")
+    a, b, c, d1, aa, cc = (np.mean(x, 0) * 1000 for x in (e10, e21, e20, e1b, e1a, e2a))
     _log("")
     _log(f"deviation from UNREAL, mm, mean over {len(truth['frames'])} frames of {args.clip}")
     _log(f"{'component':<36} {'median':>8} {'p90':>8} {'p99':>8} {'max':>8}")
     for lbl, arr in (("our transform handling |V1-V0|", a),
                      ("4-influence limit      |V2-V1|", b),
-                     ("TOTAL vs Unreal        |V2-V0|", c)):
+                     ("TOTAL vs Unreal        |V2-V0|", c),
+                     ("VARIANT root on own bind      ", d1),
+                     ("--- placement removed ---------", None),
+                     ("DEFORMATION only, 12 infl     ", aa),
+                     ("DEFORMATION only, as shipped  ", cc)):
+        if arr is None:
+            _log(f"{lbl}")
+            continue
         _log(f"{lbl:<36} {np.median(arr):>8.2f} {np.percentile(arr,90):>8.2f} "
              f"{np.percentile(arr,99):>8.2f} {arr.max():>8.2f}")
+    # WHERE the transform error lives, per bone. A vertex diff says how bad; this says which
+    # joint is responsible, which is the difference between a number and a lead.
+    fr = truth["frames"][len(truth["frames"]) // 2]
+    tt = dur * (float(fr["time"]) / max(truth["length"], 1e-9))
+    local = local_bind.copy()
+    for n, paths in chan.items():
+        i = index[n]
+        base = local_bind[i]
+        scale = np.linalg.norm(base[:3, :3], axis=0)
+        rot = _sample(*paths["rotation"], tt) if "rotation" in paths else None
+        if rot is None:
+            continue
+        if "scale" in paths:
+            scale = _sample(*paths["scale"], tt)
+        trans = base[:3, 3]
+        if n in ROOT_BONES and "translation" in paths:
+            trans = _sample(*paths["translation"], tt)
+        local[i] = _compose(trans, rot, scale)
+    world = np.empty_like(local)
+    for i in range(len(names)):
+        p = parents[i]
+        world[i] = local[i] if p < 0 else world[p] @ local[i]
+    rows = []
+    for n in shared:
+        ours = world[index[n]][:3, 3]
+        theirs = (M @ _xf(fr["bones"][n]))[:3, 3]
+        rows.append((float(np.linalg.norm(ours - theirs)) * 1000, n))
+    rows.sort(reverse=True)
+    _log("")
+    _log(f"per-BONE world position error at t={fr['time']:.2f}s (mm), worst 12:")
+    for v, n in rows[:12]:
+        _log(f"   {n:<28} {v:8.1f}")
+    small = [r for r in rows if r[0] < 5]
+    _log(f"   bones under 5mm: {len(small)} of {len(rows)}")
+    # Constant offset, or real deformation? A near-constant vector means the whole skeleton is
+    # displaced and nothing is deforming differently at all.
+    vecs = np.array([(world[index[n]][:3, 3] - (M @ _xf(fr["bones"][n]))[:3, 3])
+                     for n in shared]) * 1000
+    mean = vecs.mean(0)
+    resid = np.linalg.norm(vecs - mean, axis=1)
+    _log(f"   offset vector: mean [{mean[0]:.1f}, {mean[1]:.1f}, {mean[2]:.1f}] mm")
+    _log(f"   deviation from that constant: med {np.median(resid):.2f}mm "
+         f"p90 {np.percentile(resid, 90):.2f} max {resid.max():.2f}")
+    if np.median(resid) < 5:
+        _log("   -> a CONSTANT OFFSET. The skeleton is displaced, not deformed differently.")
+
+    # Which bones ROTATE differently. Position error accumulates down the chain, so a parent's
+    # mistake shows up on every descendant; local rotation isolates the joint actually at fault.
+    def _rot_of(m):
+        r = m[:3, :3].copy()
+        sc = np.linalg.norm(r, axis=0)
+        sc[sc < 1e-12] = 1.0
+        return r / sc
+    rot_rows = []
+    for n in shared:
+        i = index[n]
+        p = parents[i]
+        ours = _rot_of(local[i])
+        tw = M @ _xf(fr["bones"][n]) @ Minv
+        tp = M @ _xf(fr["bones"][names[p]]) @ Minv if p >= 0 and names[p] in fr["bones"] else np.eye(4)
+        theirs_local = np.linalg.inv(tp) @ tw
+        theirs = _rot_of(theirs_local)
+        rel = ours.T @ theirs
+        ang = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(rel) - 1) / 2))))
+        rot_rows.append((ang, n))
+    rot_rows.sort(reverse=True)
+    angs = np.array([r[0] for r in rot_rows])
+    _log("")
+    _log(f"local ROTATION error vs Unreal (deg): med {np.median(angs):.2f} "
+         f"p90 {np.percentile(angs, 90):.2f} max {angs.max():.2f}   "
+         f"over 1deg: {(angs > 1).sum()}  over 10deg: {(angs > 10).sum()}")
+    for v, n in rot_rows[:10]:
+        _log(f"   {n:<28} {v:7.2f} deg")
+
+    # Local TRANSLATION and SCALE. We drop non-root translation and keep clip scale; if the
+    # rotations match Unreal and truncation is nil, whatever remains has to be here.
+    tr_rows, sc_rows = [], []
+    for n in shared:
+        i = index[n]
+        p = parents[i]
+        tw = M @ _xf(fr["bones"][n]) @ Minv
+        tp = M @ _xf(fr["bones"][names[p]]) @ Minv if p >= 0 and names[p] in fr["bones"] else np.eye(4)
+        theirs_local = np.linalg.inv(tp) @ tw
+        tr_rows.append((float(np.linalg.norm(local[i][:3, 3] - theirs_local[:3, 3])) * 1000, n))
+        so = np.linalg.norm(local[i][:3, :3], axis=0)
+        st = np.linalg.norm(theirs_local[:3, :3], axis=0)
+        sc_rows.append((float(np.abs(so - st).max()), n))
+    tr_rows.sort(reverse=True); sc_rows.sort(reverse=True)
+    tr = np.array([r[0] for r in tr_rows]); sc = np.array([r[0] for r in sc_rows])
+    _log("")
+    _log(f"local TRANSLATION error vs Unreal (mm): med {np.median(tr):.3f} "
+         f"p90 {np.percentile(tr, 90):.3f} max {tr.max():.3f}   over 1mm: {(tr > 1).sum()}")
+    for v, n in tr_rows[:8]:
+        _log(f"   {n:<28} {v:8.2f} mm")
+    _log(f"local SCALE error vs Unreal: med {np.median(sc):.4f} "
+         f"p90 {np.percentile(sc, 90):.4f} max {sc.max():.4f}   over 0.01: {(sc > 0.01).sum()}")
+    for v, n in sc_rows[:5]:
+        _log(f"   {n:<28} {v:8.4f}")
+
     _log("")
     _log(f"{'height band':<18} {'verts':>7} {'transforms':>11} {'4-infl':>8} {'total':>8}")
     ys = P[:, 1]

@@ -48,7 +48,9 @@ import sys
 import unreal  # type: ignore
 
 STAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GLB_DIR = os.path.join(STAGE_DIR, "_work", "glb")
+# Per-set scratch, chosen by the runner so two gender bakes cannot read each
+# other's exports. Falls back to the original shared path.
+GLB_DIR = os.environ.get("MH_GLB_DIR") or os.path.join(STAGE_DIR, "_work", "glb")
 BAKE_PACKAGE = "/Game/_animbake"
 
 # 30fps is the pipeline's rate; the source clips are authored at it and the runtime resamples.
@@ -64,7 +66,13 @@ def _log(msg):
 
 
 def _load_animset():
-    with open(os.path.join(STAGE_DIR, "animset.json"), "r", encoding="utf-8") as f:
+    # Which set to bake comes from the runner via MH_ANIMSET, because
+    # UnrealEditor-Cmd -run=pythonscript gives the script no argv of its own.
+    # Defaults to the original single shared set so an old invocation still works.
+    name = os.environ.get("MH_ANIMSET") or "animset.json"
+    path = name if os.path.isabs(name) else os.path.join(STAGE_DIR, name)
+    _log(f"animset = {path}")
+    with open(path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
     clips = {}
     clips.update(cfg.get("required") or {})

@@ -1,0 +1,18 @@
+{
+  "_comment": "MALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the female set at the owner's direction. Thinking, Focused and the remaining gestures are unchanged from the single shared set and still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed. Those five slots are the ones still awaiting gendered replacements.",
+  "required": {
+    "Idle": "/Game/Animations/male_AN_Idle_65",
+    "Listening": "/Game/Animations/male_AN_Idle_49_WarmUp",
+    "Thinking": "/Game/TG-Animations/TG-Anim_Deep_Breath_Sad",
+    "Focused": "/Game/Animations/previousPack/Focused_Anim_Salute",
+    "Speaking": "/Game/Animations/male_AN_Idle_03"
+  },
+  "gestures": {
+    "Nod": "/Game/Animations/previousPack/No_Anim_No",
+    "HeadShake": "/Game/Animations/previousPack/Dialog-IP_Dialogue_furious_idle_02",
+    "Shrug": "/Game/Animations/male_AN_Idle_13",
+    "Dismiss": "/Game/Animations/previousPack/TG-Anim_Go_Away",
+    "Angry": "/Game/Animations/previousPack/Dialog-IP_Dialogue_furious_idle_03"
+  },
+  "output": "mh-animations-male.glb"
+}

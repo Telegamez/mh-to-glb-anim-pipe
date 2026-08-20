@@ -26,7 +26,10 @@
   ./stages/05-animation-bake/tools/run_animbake.ps1 -PublishTo S:\...\public\models\metahuman-shared
 #>
 param(
-  [string] $PublishTo
+  [string] $PublishTo,
+  # Which clip set to bake. The roster is split by gender (issue #3214), so this
+  # runs once per set; the file names the output GLB, so two runs cannot collide.
+  [string] $AnimSet = 'animset.json'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,7 +53,11 @@ $Project    = Read-Yaml 'ue_project_path'
 $BlenderExe = Read-Yaml 'blender_exe'
 
 # --- pre-flight: refuse while the animset is unsourced ----------------------
-$animset = Join-Path $StageDir 'animset.json'
+$animset = Join-Path $StageDir $AnimSet
+if (-not (Test-Path $animset)) { Write-Host "[run_animbake] no such animset: $animset"; exit 1 }
+# The UE half takes no argv (-run=pythonscript), so the choice travels by env var.
+$env:MH_ANIMSET = $animset
+Write-Host "[run_animbake] animset   : $animset"
 $cfg = Get-Content $animset -Raw | ConvertFrom-Json
 $empty = @()
 foreach ($grp in 'required', 'gestures') {
@@ -69,8 +76,16 @@ Write-Host "[run_animbake] project = $Project"
 Write-Host "[run_animbake] blender = $BlenderExe"
 
 # --- UE half: AnimSequence -> GLB (native glTF; v1's FBX detour sheared the mesh) ---
-$GlbDir = Join-Path $StageDir '_work\glb'
+# Per-set scratch. The UE half names each export after its CLIP, so two sets
+# sharing one directory would let run 2 pass its "every clip exists" check on
+# run 1's leftovers - a stale female Idle silently shipping inside the male GLB.
+$SetTag = [IO.Path]::GetFileNameWithoutExtension($AnimSet) -replace '^animset\.?', ''
+if (-not $SetTag) { $SetTag = 'shared' }
+$GlbDir = Join-Path $StageDir "_work\glb\$SetTag"
+if (Test-Path $GlbDir) { Remove-Item $GlbDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $GlbDir | Out-Null
+$env:MH_GLB_DIR = $GlbDir
+Write-Host "[run_animbake] scratch   : $GlbDir"
 
 # Same commandlet invocation as stage 01's run_export.ps1 — the proven flag set.
 #

@@ -130,3 +130,7 @@ docs/animations/
 # Skinning-decomposition intermediates (tools/run_weight_solve.ps1).
 # Per-character, regenerable, and large.
 5.7/native-glb/characters/*/_solve/
+
+# Stage 05 per-clip GLB scratch. One directory per animation set; regenerated on
+# every bake and only meaningful between the UE half and the Blender half.
+5.7/native-glb/stages/05-animation-bake/_work/

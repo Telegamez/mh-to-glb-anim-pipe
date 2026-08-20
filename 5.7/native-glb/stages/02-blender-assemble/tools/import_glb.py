@@ -32,6 +32,24 @@ import sys
 import bpy
 
 
+def _manifest_body(char_id):
+    """The character's body archetype, as declared in its manifest.
+
+    Read rather than inferred: the MetaHuman body archetype is an authoring fact
+    the operator knows and nothing in the GLB reliably reports. Returns "" when
+    absent so the caller can warn instead of guessing wrong.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    stage_dir = os.path.dirname(here)
+    manifest = os.path.join(stage_dir, "..", "..", "characters", char_id, "manifest.json")
+    try:
+        with open(os.path.normpath(manifest), "r", encoding="utf-8") as f:
+            value = (json.load(f).get("body") or "").strip().lower()
+    except Exception:  # noqa: BLE001 - absent or unreadable is a warn, not a crash
+        return ""
+    return value if value in ("female", "male") else ""
+
+
 def _log(msg):
     print(f"[stage02-glb] {msg}", flush=True)
 
@@ -758,9 +776,28 @@ def _emit_material_spec(out_root, mh_manifest):
         # shipped demos. Harmless to the renderer, which keys off
         # material_name, but a sidecar that misidentifies its own character is
         # a trap for anything that ever trusts the field.
-        json.dump({"character": os.path.basename(os.path.dirname(out_root.rstrip("/\\"))) or "unknown",
+        char_id = os.path.basename(os.path.dirname(out_root.rstrip("/\\"))) or "unknown"
+        # TELEGAMEZ: `body` selects the animation library at runtime. The roster
+        # is split female/male (issue #3214) and the choice has to travel WITH
+        # the model: `companionAnimations.ts` derives the library from this
+        # sidecar, which is the same probe that decides the material profile, so
+        # motion and materials can never disagree about what a companion is.
+        # Threading it through the render surfaces instead would restate the
+        # decision at five call sites — the defect that module exists to remove.
+        # Declared per character in `characters/<id>/manifest.json`; a bake that
+        # omits it produces a sidecar with no `body`, and the runtime falls back
+        # to the female set rather than failing to animate.
+        payload = {"character": char_id,
                    "saved_at": _iso_now(),
-                   "materials": materials}, f, indent=2)
+                   "materials": materials}
+        body = _manifest_body(char_id)
+        if body:
+            payload = {"character": char_id, "body": body,
+                       "saved_at": payload["saved_at"], "materials": materials}
+        else:
+            _log(f"  WARNING no 'body' in manifest for {char_id} — sidecar will "
+                 f"carry no archetype and the runtime will assume female")
+        json.dump(payload, f, indent=2)
     return materials
 
 

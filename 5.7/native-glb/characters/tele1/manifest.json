@@ -54,5 +54,6 @@
   },
   "exclude_meshes": [
     "Tele1_Outfits_2"
-  ]
+  ],
+  "body": "male"
 }

@@ -1,10 +1,10 @@
 {
-  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Thinking, Focused and the remaining gestures are unchanged from the single shared set and still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed. Those five slots are the ones still awaiting gendered replacements.",
+  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking and the remaining gestures are unchanged from the single shared set and still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed. Those four slots are the ones still awaiting gendered replacements.",
   "required": {
     "Idle": "/Game/Animations/female_AN_Idle_37_Female",
     "Listening": "/Game/Animations/female_AN_Idle_40_Female",
     "Thinking": "/Game/TG-Animations/TG-Anim_Deep_Breath_Sad",
-    "Focused": "/Game/Animations/previousPack/Focused_Anim_Salute",
+    "Focused": "/Game/Animations/FocusHandFemale_AN_Idle_42_Female",
     "Speaking": "/Game/Animations/female_AN_Idle_32_Female"
   },
   "gestures": {

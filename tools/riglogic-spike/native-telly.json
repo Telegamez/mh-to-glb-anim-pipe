@@ -1,0 +1,15 @@
+{
+  "dna": "S:\Avatars\metahuman\_dna\Telly_Head.dna",
+  "lod": 0,
+  "gui_controls": 174,
+  "raw_controls": 263,
+  "psd_controls": 545,
+  "joint_outputs": 7830,
+  "joint_outputs_nonzero": 5016,
+  "blend_shape_outputs": 782,
+  "animated_maps": 82,
+  "checksum_joints": -12516.693552,
+  "checksum_shapes": 10926.181787,
+  "frames": 5000,
+  "per_frame_ms": 0.116690
+}

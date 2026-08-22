@@ -1,0 +1,3444 @@
+{
+  "$schema_note": "Same schema as tg_viseme_poses.json, consumed by author_viseme_anim.py. Built by tools/dna/build_validation_poses.py.",
+  "asset_path": "/Game/TG_Face/AS_TG_Validation",
+  "skeleton": "",
+  "frame_rate": 30,
+  "control_prefix": "ctrl_expressions_",
+  "_purpose": "Ground-truth table for slice 5.0/5.1. Bake through the post-process ABP with export_pose_transforms.py; diff against riglogic_eval.py (the Python oracle) and riglogic_probe (Epic's compiled library).",
+  "_bands": {
+    "single-control": "every raw control alone at 1.0 -- isolates one matrix column",
+    "authored-viseme": "the poses F2 ships",
+    "viseme-pair": "t=0.5 blends ranked by corrective activation",
+    "viseme-x-upperface": "mouth + upper face co-active"
+  },
+  "poses": [
+    {
+      "name": "single__browDownL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browDownL": 1.0
+      }
+    },
+    {
+      "name": "single__browDownR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browDownR": 1.0
+      }
+    },
+    {
+      "name": "single__browLateralL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browLateralL": 1.0
+      }
+    },
+    {
+      "name": "single__browLateralR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browLateralR": 1.0
+      }
+    },
+    {
+      "name": "single__browRaiseInL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browRaiseInL": 1.0
+      }
+    },
+    {
+      "name": "single__browRaiseInR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browRaiseInR": 1.0
+      }
+    },
+    {
+      "name": "single__browRaiseOuterL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browRaiseOuterL": 1.0
+      }
+    },
+    {
+      "name": "single__browRaiseOuterR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "browRaiseOuterR": 1.0
+      }
+    },
+    {
+      "name": "single__earUpL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "earUpL": 1.0
+      }
+    },
+    {
+      "name": "single__earUpR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "earUpR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeBlinkL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeBlinkL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeBlinkR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeBlinkR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLidPressL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLidPressL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLidPressR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLidPressR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeWidenL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeWidenL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeWidenR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeWidenR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeSquintInnerL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeSquintInnerL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeSquintInnerR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeSquintInnerR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeCheekRaiseL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeCheekRaiseL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeCheekRaiseR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeCheekRaiseR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeFaceScrunchL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeFaceScrunchL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeFaceScrunchR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeFaceScrunchR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeUpperLidUpL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeUpperLidUpL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeUpperLidUpR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeUpperLidUpR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeRelaxL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeRelaxL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeRelaxR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeRelaxR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLowerLidUpL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLowerLidUpL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLowerLidUpR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLowerLidUpR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLowerLidDownL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLowerLidDownL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLowerLidDownR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLowerLidDownR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookUpL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookUpL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookUpR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookUpR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookDownL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookDownL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookDownR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookDownR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookLeftL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookLeftL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookLeftR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookLeftR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookRightL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookRightL": 1.0
+      }
+    },
+    {
+      "name": "single__eyeLookRightR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeLookRightR": 1.0
+      }
+    },
+    {
+      "name": "single__eyePupilWideL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyePupilWideL": 1.0
+      }
+    },
+    {
+      "name": "single__eyePupilWideR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyePupilWideR": 1.0
+      }
+    },
+    {
+      "name": "single__eyePupilNarrowL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyePupilNarrowL": 1.0
+      }
+    },
+    {
+      "name": "single__eyePupilNarrowR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyePupilNarrowR": 1.0
+      }
+    },
+    {
+      "name": "single__eyeParallelLookDirection",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyeParallelLookDirection": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesUpINL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesUpINL": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesUpINR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesUpINR": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesUpOUTL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesUpOUTL": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesUpOUTR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesUpOUTR": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesDownINL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesDownINL": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesDownINR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesDownINR": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesDownOUTL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesDownOUTL": 1.0
+      }
+    },
+    {
+      "name": "single__eyelashesDownOUTR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "eyelashesDownOUTR": 1.0
+      }
+    },
+    {
+      "name": "single__noseWrinkleL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseWrinkleL": 1.0
+      }
+    },
+    {
+      "name": "single__noseWrinkleR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseWrinkleR": 1.0
+      }
+    },
+    {
+      "name": "single__noseWrinkleUpperL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseWrinkleUpperL": 1.0
+      }
+    },
+    {
+      "name": "single__noseWrinkleUpperR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseWrinkleUpperR": 1.0
+      }
+    },
+    {
+      "name": "single__noseNostrilDepressL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNostrilDepressL": 1.0
+      }
+    },
+    {
+      "name": "single__noseNostrilDepressR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNostrilDepressR": 1.0
+      }
+    },
+    {
+      "name": "single__noseNostrilDilateL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNostrilDilateL": 1.0
+      }
+    },
+    {
+      "name": "single__noseNostrilDilateR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNostrilDilateR": 1.0
+      }
+    },
+    {
+      "name": "single__noseNostrilCompressL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNostrilCompressL": 1.0
+      }
+    },
+    {
+      "name": "single__noseNostrilCompressR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNostrilCompressR": 1.0
+      }
+    },
+    {
+      "name": "single__noseNasolabialDeepenL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNasolabialDeepenL": 1.0
+      }
+    },
+    {
+      "name": "single__noseNasolabialDeepenR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "noseNasolabialDeepenR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCheekSuckL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCheekSuckL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCheekSuckR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCheekSuckR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCheekBlowL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCheekBlowL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCheekBlowR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCheekBlowR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsBlowL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsBlowL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsBlowR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsBlowR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLeft",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLeft": 1.0
+      }
+    },
+    {
+      "name": "single__mouthRight",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthRight": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUp",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUp": 1.0
+      }
+    },
+    {
+      "name": "single__mouthDown",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthDown": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipRaiseL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipRaiseL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipRaiseR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipRaiseR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipDepressL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipDepressL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipDepressR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipDepressR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerPullL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerPullL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerPullR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerPullR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStretchL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStretchL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStretchR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStretchR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStretchLipsCloseL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStretchLipsCloseL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStretchLipsCloseR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStretchLipsCloseR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthDimpleL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthDimpleL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthDimpleR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthDimpleR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerDepressL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerDepressL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerDepressR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerDepressR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthPressUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthPressUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthPressUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthPressUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthPressDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthPressDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthPressDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthPressDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPurseUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPurseUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPurseUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPurseUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPurseDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPurseDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPurseDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPurseDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTowardsUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTowardsUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTowardsUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTowardsUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTowardsDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTowardsDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTowardsDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTowardsDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthFunnelUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthFunnelUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthFunnelUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthFunnelUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthFunnelDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthFunnelDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthFunnelDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthFunnelDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTogetherUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTogetherUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTogetherUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTogetherUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTogetherDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTogetherDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTogetherDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTogetherDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipBiteL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipBiteL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipBiteR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipBiteR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipBiteL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipBiteL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipBiteR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipBiteR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTightenUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTightenUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTightenUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTightenUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTightenDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTightenDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsTightenDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsTightenDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPressL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPressL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPressR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPressR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthSharpCornerPullL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthSharpCornerPullL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthSharpCornerPullR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthSharpCornerPullR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyUC",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyUC": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyUINL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyUINL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyUINR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyUINR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyUOUTL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyUOUTL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyUOUTR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyUOUTR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyDC",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyDC": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyDINL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyDINL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyDINR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyDINR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyDOUTL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyDOUTL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthStickyDOUTR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthStickyDOUTR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsStickyLPh1",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsStickyLPh1": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsStickyLPh2",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsStickyLPh2": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsStickyLPh3",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsStickyLPh3": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsStickyRPh1",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsStickyRPh1": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsStickyRPh2",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsStickyRPh2": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsStickyRPh3",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsStickyRPh3": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPushUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPushUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPushUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPushUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPushDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPushDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPushDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPushDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPullUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPullUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPullUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPullUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPullDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPullDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsPullDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsPullDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinInwardUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinInwardUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinInwardUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinInwardUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinInwardDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinInwardDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThinInwardDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThinInwardDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickInwardUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickInwardUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickInwardUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickInwardUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickInwardDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickInwardDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLipsThickInwardDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLipsThickInwardDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerSharpenUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerSharpenUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerSharpenUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerSharpenUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerSharpenDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerSharpenDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerSharpenDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerSharpenDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerRounderUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerRounderUL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerRounderUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerRounderUR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerRounderDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerRounderDL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerRounderDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerRounderDR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipTowardsTeethL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipTowardsTeethL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipTowardsTeethR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipTowardsTeethR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipTowardsTeethL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipTowardsTeethL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipTowardsTeethR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipTowardsTeethR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipShiftLeft",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipShiftLeft": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipShiftRight",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipShiftRight": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipShiftLeft",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipShiftLeft": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipShiftRight",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipShiftRight": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipRollInL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipRollInL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipRollInR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipRollInR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipRollOutL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipRollOutL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthUpperLipRollOutR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthUpperLipRollOutR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipRollInL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipRollInL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipRollInR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipRollInR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipRollOutL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipRollOutL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthLowerLipRollOutR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthLowerLipRollOutR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerUpL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerUpL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerUpR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerUpR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerDownL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerDownL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerDownR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerDownR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerWideL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerWideL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerWideR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerWideR": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerNarrowL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerNarrowL": 1.0
+      }
+    },
+    {
+      "name": "single__mouthCornerNarrowR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "mouthCornerNarrowR": 1.0
+      }
+    },
+    {
+      "name": "single__jawOpen",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawOpen": 1.0
+      }
+    },
+    {
+      "name": "single__jawLeft",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawLeft": 1.0
+      }
+    },
+    {
+      "name": "single__jawRight",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawRight": 1.0
+      }
+    },
+    {
+      "name": "single__jawFwd",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawFwd": 1.0
+      }
+    },
+    {
+      "name": "single__jawBack",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawBack": 1.0
+      }
+    },
+    {
+      "name": "single__jawClenchL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawClenchL": 1.0
+      }
+    },
+    {
+      "name": "single__jawClenchR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawClenchR": 1.0
+      }
+    },
+    {
+      "name": "single__jawChinRaiseDL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawChinRaiseDL": 1.0
+      }
+    },
+    {
+      "name": "single__jawChinRaiseDR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawChinRaiseDR": 1.0
+      }
+    },
+    {
+      "name": "single__jawChinRaiseUL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawChinRaiseUL": 1.0
+      }
+    },
+    {
+      "name": "single__jawChinRaiseUR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawChinRaiseUR": 1.0
+      }
+    },
+    {
+      "name": "single__jawChinCompressL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawChinCompressL": 1.0
+      }
+    },
+    {
+      "name": "single__jawChinCompressR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawChinCompressR": 1.0
+      }
+    },
+    {
+      "name": "single__jawOpenExtreme",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "jawOpenExtreme": 1.0
+      }
+    },
+    {
+      "name": "single__neckStretchL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckStretchL": 1.0
+      }
+    },
+    {
+      "name": "single__neckStretchR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckStretchR": 1.0
+      }
+    },
+    {
+      "name": "single__neckSwallowPh1",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckSwallowPh1": 1.0
+      }
+    },
+    {
+      "name": "single__neckSwallowPh2",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckSwallowPh2": 1.0
+      }
+    },
+    {
+      "name": "single__neckSwallowPh3",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckSwallowPh3": 1.0
+      }
+    },
+    {
+      "name": "single__neckSwallowPh4",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckSwallowPh4": 1.0
+      }
+    },
+    {
+      "name": "single__neckMastoidContractL",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckMastoidContractL": 1.0
+      }
+    },
+    {
+      "name": "single__neckMastoidContractR",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckMastoidContractR": 1.0
+      }
+    },
+    {
+      "name": "single__neckThroatDown",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckThroatDown": 1.0
+      }
+    },
+    {
+      "name": "single__neckThroatUp",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckThroatUp": 1.0
+      }
+    },
+    {
+      "name": "single__neckDigastricDown",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckDigastricDown": 1.0
+      }
+    },
+    {
+      "name": "single__neckDigastricUp",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckDigastricUp": 1.0
+      }
+    },
+    {
+      "name": "single__neckThroatExhale",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckThroatExhale": 1.0
+      }
+    },
+    {
+      "name": "single__neckThroatInhale",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neckThroatInhale": 1.0
+      }
+    },
+    {
+      "name": "single__teethUpU",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethUpU": 1.0
+      }
+    },
+    {
+      "name": "single__teethUpD",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethUpD": 1.0
+      }
+    },
+    {
+      "name": "single__teethDownU",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethDownU": 1.0
+      }
+    },
+    {
+      "name": "single__teethDownD",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethDownD": 1.0
+      }
+    },
+    {
+      "name": "single__teethLeftU",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethLeftU": 1.0
+      }
+    },
+    {
+      "name": "single__teethLeftD",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethLeftD": 1.0
+      }
+    },
+    {
+      "name": "single__teethRightU",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethRightU": 1.0
+      }
+    },
+    {
+      "name": "single__teethRightD",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethRightD": 1.0
+      }
+    },
+    {
+      "name": "single__teethFwdU",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethFwdU": 1.0
+      }
+    },
+    {
+      "name": "single__teethFwdD",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethFwdD": 1.0
+      }
+    },
+    {
+      "name": "single__teethBackU",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethBackU": 1.0
+      }
+    },
+    {
+      "name": "single__teethBackD",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "teethBackD": 1.0
+      }
+    },
+    {
+      "name": "single__tongueUp",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueUp": 1.0
+      }
+    },
+    {
+      "name": "single__tongueDown",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueDown": 1.0
+      }
+    },
+    {
+      "name": "single__tongueLeft",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueLeft": 1.0
+      }
+    },
+    {
+      "name": "single__tongueRight",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueRight": 1.0
+      }
+    },
+    {
+      "name": "single__tongueOut",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueOut": 1.0
+      }
+    },
+    {
+      "name": "single__tongueIn",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueIn": 1.0
+      }
+    },
+    {
+      "name": "single__tongueBendUp",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueBendUp": 1.0
+      }
+    },
+    {
+      "name": "single__tongueBendDown",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueBendDown": 1.0
+      }
+    },
+    {
+      "name": "single__tongueTwistLeft",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueTwistLeft": 1.0
+      }
+    },
+    {
+      "name": "single__tongueTwistRight",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueTwistRight": 1.0
+      }
+    },
+    {
+      "name": "single__tongueTipUp",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueTipUp": 1.0
+      }
+    },
+    {
+      "name": "single__tongueTipDown",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueTipDown": 1.0
+      }
+    },
+    {
+      "name": "single__tongueTipLeft",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueTipLeft": 1.0
+      }
+    },
+    {
+      "name": "single__tongueTipRight",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueTipRight": 1.0
+      }
+    },
+    {
+      "name": "single__tongueWide",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueWide": 1.0
+      }
+    },
+    {
+      "name": "single__tongueNarrow",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueNarrow": 1.0
+      }
+    },
+    {
+      "name": "single__tonguePress",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tonguePress": 1.0
+      }
+    },
+    {
+      "name": "single__tongueRoll",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueRoll": 1.0
+      }
+    },
+    {
+      "name": "single__tongueThick",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueThick": 1.0
+      }
+    },
+    {
+      "name": "single__tongueThin",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "tongueThin": 1.0
+      }
+    },
+    {
+      "name": "single__neck_01.qx",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_01.qx": 1.0
+      }
+    },
+    {
+      "name": "single__neck_01.qy",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_01.qy": 1.0
+      }
+    },
+    {
+      "name": "single__neck_01.qz",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_01.qz": 1.0
+      }
+    },
+    {
+      "name": "single__neck_01.qw",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_01.qw": 1.0
+      }
+    },
+    {
+      "name": "single__neck_02.qx",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_02.qx": 1.0
+      }
+    },
+    {
+      "name": "single__neck_02.qy",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_02.qy": 1.0
+      }
+    },
+    {
+      "name": "single__neck_02.qz",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_02.qz": 1.0
+      }
+    },
+    {
+      "name": "single__neck_02.qw",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "neck_02.qw": 1.0
+      }
+    },
+    {
+      "name": "single__head.qx",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "head.qx": 1.0
+      }
+    },
+    {
+      "name": "single__head.qy",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "head.qy": 1.0
+      }
+    },
+    {
+      "name": "single__head.qz",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "head.qz": 1.0
+      }
+    },
+    {
+      "name": "single__head.qw",
+      "band": "single-control",
+      "note": "one column of the joint matrix in isolation",
+      "controls": {
+        "head.qw": 1.0
+      }
+    },
+    {
+      "name": "viseme__viseme_PP",
+      "band": "authored-viseme",
+      "note": "Bilabial stop. The seal is the whole signature -- lips together and compressed, jaw shut. MEASURED CORRECTION 2026-08-22: at press 0.34 this baked to 4.03 mm ag",
+      "controls": {
+        "mouthLipsTogetherUL": 0.62,
+        "mouthLipsTogetherUR": 0.62,
+        "mouthLipsTogetherDL": 0.62,
+        "mouthLipsTogetherDR": 0.62,
+        "mouthPressUL": 0.66,
+        "mouthPressUR": 0.66,
+        "mouthPressDL": 0.66,
+        "mouthPressDR": 0.66,
+        "mouthUpperLipRollInL": 0.2,
+        "mouthUpperLipRollInR": 0.2,
+        "mouthLowerLipRollInL": 0.2,
+        "mouthLowerLipRollInR": 0.2,
+        "mouthLipsTightenUL": 0.3,
+        "mouthLipsTightenUR": 0.3,
+        "mouthLipsTightenDL": 0.3,
+        "mouthLipsTightenDR": 0.3
+      }
+    },
+    {
+      "name": "viseme__viseme_FF",
+      "band": "authored-viseme",
+      "note": "Labiodental. Lower lip to the UPPER TEETH -- mouthLowerLipTowardsTeeth* is the literal control and the composed recipe had no access to it, approximating with m",
+      "controls": {
+        "mouthLowerLipTowardsTeethL": 0.72,
+        "mouthLowerLipTowardsTeethR": 0.72,
+        "mouthLowerLipRollInL": 0.3,
+        "mouthLowerLipRollInR": 0.3,
+        "mouthUpperLipRaiseL": 0.2,
+        "mouthUpperLipRaiseR": 0.2,
+        "jawOpen": 0.06
+      }
+    },
+    {
+      "name": "viseme__viseme_TH",
+      "band": "authored-viseme",
+      "note": "Interdental -- the tongue tip is VISIBLE between the teeth. This is the pose the composed shape could not make: it had jawOpen + tongueOut and no tip control at",
+      "controls": {
+        "jawOpen": 0.15,
+        "tongueOut": 0.28,
+        "tongueTipUp": 0.34,
+        "tongueWide": 0.26,
+        "tongueThin": 0.22
+      }
+    },
+    {
+      "name": "viseme__viseme_DD",
+      "band": "authored-viseme",
+      "note": "Alveolar stop. Tongue TIP to the ridge behind the upper teeth, jaw barely open so the contact is visible. tonguePress is the contact itself. The composed shape ",
+      "controls": {
+        "jawOpen": 0.19,
+        "tongueTipUp": 0.74,
+        "tongueUp": 0.34,
+        "tonguePress": 0.3,
+        "tongueIn": 0.14
+      }
+    },
+    {
+      "name": "viseme__viseme_kk",
+      "band": "authored-viseme",
+      "note": "Velar. The constriction is at the BACK -- tongue body humped up and retracted, tip DOWN and out of the way. Almost no lip signature, which is why the composed v",
+      "controls": {
+        "jawOpen": 0.17,
+        "tongueBendUp": 0.52,
+        "tongueIn": 0.38,
+        "tongueTipDown": 0.3,
+        "tongueThick": 0.24
+      }
+    },
+    {
+      "name": "viseme__viseme_CH",
+      "band": "authored-viseme",
+      "note": "Postalveolar. Lips protruded and rounded, tongue blade raised toward the ridge. Rounding via PURSE per fact 2; a little funnel for the flare, kept low so teeth ",
+      "controls": {
+        "mouthLipsPurseUL": 0.42,
+        "mouthLipsPurseUR": 0.42,
+        "mouthLipsPurseDL": 0.42,
+        "mouthLipsPurseDR": 0.42,
+        "mouthCornerNarrowL": 0.34,
+        "mouthCornerNarrowR": 0.34,
+        "mouthFunnelUL": 0.2,
+        "mouthFunnelUR": 0.2,
+        "mouthFunnelDL": 0.2,
+        "mouthFunnelDR": 0.2,
+        "jawOpen": 0.1,
+        "tongueTipUp": 0.3,
+        "tongueUp": 0.24
+      }
+    },
+    {
+      "name": "viseme__viseme_SS",
+      "band": "authored-viseme",
+      "note": "Sibilant. Teeth nearly together, lips spread, tongue grooved just behind the ridge. jawOpen stays at fact 3's teeth-reveal threshold on purpose -- /s/ shows a s",
+      "controls": {
+        "mouthCornerWideL": 0.4,
+        "mouthCornerWideR": 0.4,
+        "mouthStretchL": 0.24,
+        "mouthStretchR": 0.24,
+        "jawOpen": 0.05,
+        "tongueTipUp": 0.44,
+        "tongueNarrow": 0.3,
+        "tongueUp": 0.2
+      }
+    },
+    {
+      "name": "viseme__viseme_nn",
+      "band": "authored-viseme",
+      "note": "Nasal / lateral. Tongue held ON the ridge -- a sustained version of DD's contact with a smaller aperture. tonguePress higher than DD because the contact is held",
+      "controls": {
+        "jawOpen": 0.13,
+        "tongueTipUp": 0.64,
+        "tonguePress": 0.46,
+        "tongueUp": 0.3
+      }
+    },
+    {
+      "name": "viseme__viseme_RR",
+      "band": "authored-viseme",
+      "note": "Rhotic. Slight rounding plus a BUNCHED tongue -- body raised and retracted, tip loose. The bunch is what makes /r/ read as /r/ rather than as a weak /w/.",
+      "controls": {
+        "mouthLipsPurseUL": 0.26,
+        "mouthLipsPurseUR": 0.26,
+        "mouthLipsPurseDL": 0.26,
+        "mouthLipsPurseDR": 0.26,
+        "mouthCornerNarrowL": 0.22,
+        "mouthCornerNarrowR": 0.22,
+        "jawOpen": 0.11,
+        "tongueBendUp": 0.34,
+        "tongueIn": 0.24,
+        "tongueTipUp": 0.18
+      }
+    },
+    {
+      "name": "viseme__viseme_aa",
+      "band": "authored-viseme",
+      "note": "Open vowel. Jaw is the whole pose. Tongue low and flat so the mouth reads open rather than merely slack. Kept at 0.64 not 1.0 -- jawOpen 1.0 on this rig is 32.7",
+      "controls": {
+        "jawOpen": 0.64,
+        "tongueDown": 0.22,
+        "mouthCornerWideL": 0.08,
+        "mouthCornerWideR": 0.08
+      }
+    },
+    {
+      "name": "viseme__viseme_E",
+      "band": "authored-viseme",
+      "note": "Mid-front vowel. Moderate opening with the corners drawn slightly wide, tongue mid-high and forward.",
+      "controls": {
+        "jawOpen": 0.3,
+        "mouthCornerWideL": 0.28,
+        "mouthCornerWideR": 0.28,
+        "tongueUp": 0.16
+      }
+    },
+    {
+      "name": "viseme__viseme_I",
+      "band": "authored-viseme",
+      "note": "Close-front vowel. Nearly closed and strongly spread -- the widest corners of any pose. Tongue high and narrow.",
+      "controls": {
+        "jawOpen": 0.09,
+        "mouthCornerWideL": 0.5,
+        "mouthCornerWideR": 0.5,
+        "mouthStretchL": 0.26,
+        "mouthStretchR": 0.26,
+        "tongueUp": 0.34,
+        "tongueNarrow": 0.16
+      }
+    },
+    {
+      "name": "viseme__viseme_O",
+      "band": "authored-viseme",
+      "note": "Mid-back rounded. Open AND round, which is the combination the old recipe got wrong by leaning on funnel: funnel opened the aperture instead of rounding it. Pur",
+      "controls": {
+        "mouthLipsPurseUL": 0.46,
+        "mouthLipsPurseUR": 0.46,
+        "mouthLipsPurseDL": 0.46,
+        "mouthLipsPurseDR": 0.46,
+        "mouthCornerNarrowL": 0.44,
+        "mouthCornerNarrowR": 0.44,
+        "mouthFunnelUL": 0.34,
+        "mouthFunnelUR": 0.34,
+        "mouthFunnelDL": 0.34,
+        "mouthFunnelDR": 0.34,
+        "jawOpen": 0.26,
+        "tongueIn": 0.2
+      }
+    },
+    {
+      "name": "viseme__viseme_U",
+      "band": "authored-viseme",
+      "note": "Close-back rounded -- the tightest rounding in the set. Purse near maximum, corners drawn in hard, funnel deliberately low (fact 2) and jaw nearly shut.",
+      "controls": {
+        "mouthLipsPurseUL": 0.8,
+        "mouthLipsPurseUR": 0.8,
+        "mouthLipsPurseDL": 0.8,
+        "mouthLipsPurseDR": 0.8,
+        "mouthCornerNarrowL": 0.64,
+        "mouthCornerNarrowR": 0.64,
+        "mouthFunnelUL": 0.12,
+        "mouthFunnelUR": 0.12,
+        "mouthFunnelDL": 0.12,
+        "mouthFunnelDR": 0.12,
+        "jawOpen": 0.06,
+        "tongueIn": 0.24,
+        "tongueBendUp": 0.18
+      }
+    },
+    {
+      "name": "viseme__mouthClose",
+      "band": "authored-viseme",
+      "note": "ARKit mouthClose seals the LIPS INDEPENDENTLY OF THE JAW. MEASURED CORRECTION 2026-08-22: authored first as mouthLipsTogether* alone, it baked to 0.00 mm -- a d",
+      "controls": {
+        "mouthLipsTogetherUL": 0.85,
+        "mouthLipsTogetherUR": 0.85,
+        "mouthLipsTogetherDL": 0.85,
+        "mouthLipsTogetherDR": 0.85,
+        "mouthPressUL": 0.58,
+        "mouthPressUR": 0.58,
+        "mouthPressDL": 0.58,
+        "mouthPressDR": 0.58,
+        "mouthUpperLipRollInL": 0.24,
+        "mouthUpperLipRollInR": 0.24,
+        "mouthLowerLipRollInL": 0.24,
+        "mouthLowerLipRollInR": 0.24,
+        "mouthLipsTightenUL": 0.22,
+        "mouthLipsTightenUR": 0.22,
+        "mouthLipsTightenDL": 0.22,
+        "mouthLipsTightenDR": 0.22
+      }
+    },
+    {
+      "name": "pair__viseme_PP__viseme_CH",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 40 correctives",
+      "controls": {
+        "mouthLipsTogetherUL": 0.31,
+        "mouthLipsTogetherUR": 0.31,
+        "mouthLipsTogetherDL": 0.31,
+        "mouthLipsTogetherDR": 0.31,
+        "mouthPressUL": 0.33,
+        "mouthPressUR": 0.33,
+        "mouthPressDL": 0.33,
+        "mouthPressDR": 0.33,
+        "mouthUpperLipRollInL": 0.1,
+        "mouthUpperLipRollInR": 0.1,
+        "mouthLowerLipRollInL": 0.1,
+        "mouthLowerLipRollInR": 0.1,
+        "mouthLipsTightenUL": 0.15,
+        "mouthLipsTightenUR": 0.15,
+        "mouthLipsTightenDL": 0.15,
+        "mouthLipsTightenDR": 0.15,
+        "mouthLipsPurseUL": 0.21,
+        "mouthLipsPurseUR": 0.21,
+        "mouthLipsPurseDL": 0.21,
+        "mouthLipsPurseDR": 0.21,
+        "mouthCornerNarrowL": 0.17,
+        "mouthCornerNarrowR": 0.17,
+        "mouthFunnelUL": 0.1,
+        "mouthFunnelUR": 0.1,
+        "mouthFunnelDL": 0.1,
+        "mouthFunnelDR": 0.1,
+        "jawOpen": 0.05,
+        "tongueTipUp": 0.15,
+        "tongueUp": 0.12
+      }
+    },
+    {
+      "name": "pair__viseme_PP__viseme_O",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 40 correctives",
+      "controls": {
+        "mouthLipsTogetherUL": 0.31,
+        "mouthLipsTogetherUR": 0.31,
+        "mouthLipsTogetherDL": 0.31,
+        "mouthLipsTogetherDR": 0.31,
+        "mouthPressUL": 0.33,
+        "mouthPressUR": 0.33,
+        "mouthPressDL": 0.33,
+        "mouthPressDR": 0.33,
+        "mouthUpperLipRollInL": 0.1,
+        "mouthUpperLipRollInR": 0.1,
+        "mouthLowerLipRollInL": 0.1,
+        "mouthLowerLipRollInR": 0.1,
+        "mouthLipsTightenUL": 0.15,
+        "mouthLipsTightenUR": 0.15,
+        "mouthLipsTightenDL": 0.15,
+        "mouthLipsTightenDR": 0.15,
+        "mouthLipsPurseUL": 0.23,
+        "mouthLipsPurseUR": 0.23,
+        "mouthLipsPurseDL": 0.23,
+        "mouthLipsPurseDR": 0.23,
+        "mouthCornerNarrowL": 0.22,
+        "mouthCornerNarrowR": 0.22,
+        "mouthFunnelUL": 0.17,
+        "mouthFunnelUR": 0.17,
+        "mouthFunnelDL": 0.17,
+        "mouthFunnelDR": 0.17,
+        "jawOpen": 0.13,
+        "tongueIn": 0.1
+      }
+    },
+    {
+      "name": "pair__viseme_PP__viseme_U",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 40 correctives",
+      "controls": {
+        "mouthLipsTogetherUL": 0.31,
+        "mouthLipsTogetherUR": 0.31,
+        "mouthLipsTogetherDL": 0.31,
+        "mouthLipsTogetherDR": 0.31,
+        "mouthPressUL": 0.33,
+        "mouthPressUR": 0.33,
+        "mouthPressDL": 0.33,
+        "mouthPressDR": 0.33,
+        "mouthUpperLipRollInL": 0.1,
+        "mouthUpperLipRollInR": 0.1,
+        "mouthLowerLipRollInL": 0.1,
+        "mouthLowerLipRollInR": 0.1,
+        "mouthLipsTightenUL": 0.15,
+        "mouthLipsTightenUR": 0.15,
+        "mouthLipsTightenDL": 0.15,
+        "mouthLipsTightenDR": 0.15,
+        "mouthLipsPurseUL": 0.4,
+        "mouthLipsPurseUR": 0.4,
+        "mouthLipsPurseDL": 0.4,
+        "mouthLipsPurseDR": 0.4,
+        "mouthCornerNarrowL": 0.32,
+        "mouthCornerNarrowR": 0.32,
+        "mouthFunnelUL": 0.06,
+        "mouthFunnelUR": 0.06,
+        "mouthFunnelDL": 0.06,
+        "mouthFunnelDR": 0.06,
+        "jawOpen": 0.03,
+        "tongueIn": 0.12,
+        "tongueBendUp": 0.09
+      }
+    },
+    {
+      "name": "pair__viseme_CH__mouthClose",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 40 correctives",
+      "controls": {
+        "mouthLipsPurseUL": 0.21,
+        "mouthLipsPurseUR": 0.21,
+        "mouthLipsPurseDL": 0.21,
+        "mouthLipsPurseDR": 0.21,
+        "mouthCornerNarrowL": 0.17,
+        "mouthCornerNarrowR": 0.17,
+        "mouthFunnelUL": 0.1,
+        "mouthFunnelUR": 0.1,
+        "mouthFunnelDL": 0.1,
+        "mouthFunnelDR": 0.1,
+        "jawOpen": 0.05,
+        "tongueTipUp": 0.15,
+        "tongueUp": 0.12,
+        "mouthLipsTogetherUL": 0.425,
+        "mouthLipsTogetherUR": 0.425,
+        "mouthLipsTogetherDL": 0.425,
+        "mouthLipsTogetherDR": 0.425,
+        "mouthPressUL": 0.29,
+        "mouthPressUR": 0.29,
+        "mouthPressDL": 0.29,
+        "mouthPressDR": 0.29,
+        "mouthUpperLipRollInL": 0.12,
+        "mouthUpperLipRollInR": 0.12,
+        "mouthLowerLipRollInL": 0.12,
+        "mouthLowerLipRollInR": 0.12,
+        "mouthLipsTightenUL": 0.11,
+        "mouthLipsTightenUR": 0.11,
+        "mouthLipsTightenDL": 0.11,
+        "mouthLipsTightenDR": 0.11
+      }
+    },
+    {
+      "name": "pair__viseme_O__mouthClose",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 40 correctives",
+      "controls": {
+        "mouthLipsPurseUL": 0.23,
+        "mouthLipsPurseUR": 0.23,
+        "mouthLipsPurseDL": 0.23,
+        "mouthLipsPurseDR": 0.23,
+        "mouthCornerNarrowL": 0.22,
+        "mouthCornerNarrowR": 0.22,
+        "mouthFunnelUL": 0.17,
+        "mouthFunnelUR": 0.17,
+        "mouthFunnelDL": 0.17,
+        "mouthFunnelDR": 0.17,
+        "jawOpen": 0.13,
+        "tongueIn": 0.1,
+        "mouthLipsTogetherUL": 0.425,
+        "mouthLipsTogetherUR": 0.425,
+        "mouthLipsTogetherDL": 0.425,
+        "mouthLipsTogetherDR": 0.425,
+        "mouthPressUL": 0.29,
+        "mouthPressUR": 0.29,
+        "mouthPressDL": 0.29,
+        "mouthPressDR": 0.29,
+        "mouthUpperLipRollInL": 0.12,
+        "mouthUpperLipRollInR": 0.12,
+        "mouthLowerLipRollInL": 0.12,
+        "mouthLowerLipRollInR": 0.12,
+        "mouthLipsTightenUL": 0.11,
+        "mouthLipsTightenUR": 0.11,
+        "mouthLipsTightenDL": 0.11,
+        "mouthLipsTightenDR": 0.11
+      }
+    },
+    {
+      "name": "pair__viseme_U__mouthClose",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 40 correctives",
+      "controls": {
+        "mouthLipsPurseUL": 0.4,
+        "mouthLipsPurseUR": 0.4,
+        "mouthLipsPurseDL": 0.4,
+        "mouthLipsPurseDR": 0.4,
+        "mouthCornerNarrowL": 0.32,
+        "mouthCornerNarrowR": 0.32,
+        "mouthFunnelUL": 0.06,
+        "mouthFunnelUR": 0.06,
+        "mouthFunnelDL": 0.06,
+        "mouthFunnelDR": 0.06,
+        "jawOpen": 0.03,
+        "tongueIn": 0.12,
+        "tongueBendUp": 0.09,
+        "mouthLipsTogetherUL": 0.425,
+        "mouthLipsTogetherUR": 0.425,
+        "mouthLipsTogetherDL": 0.425,
+        "mouthLipsTogetherDR": 0.425,
+        "mouthPressUL": 0.29,
+        "mouthPressUR": 0.29,
+        "mouthPressDL": 0.29,
+        "mouthPressDR": 0.29,
+        "mouthUpperLipRollInL": 0.12,
+        "mouthUpperLipRollInR": 0.12,
+        "mouthLowerLipRollInL": 0.12,
+        "mouthLowerLipRollInR": 0.12,
+        "mouthLipsTightenUL": 0.11,
+        "mouthLipsTightenUR": 0.11,
+        "mouthLipsTightenDL": 0.11,
+        "mouthLipsTightenDR": 0.11
+      }
+    },
+    {
+      "name": "pair__viseme_SS__viseme_U",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 32 correctives",
+      "controls": {
+        "mouthCornerWideL": 0.2,
+        "mouthCornerWideR": 0.2,
+        "mouthStretchL": 0.12,
+        "mouthStretchR": 0.12,
+        "jawOpen": 0.055,
+        "tongueTipUp": 0.22,
+        "tongueNarrow": 0.15,
+        "tongueUp": 0.1,
+        "mouthLipsPurseUL": 0.4,
+        "mouthLipsPurseUR": 0.4,
+        "mouthLipsPurseDL": 0.4,
+        "mouthLipsPurseDR": 0.4,
+        "mouthCornerNarrowL": 0.32,
+        "mouthCornerNarrowR": 0.32,
+        "mouthFunnelUL": 0.06,
+        "mouthFunnelUR": 0.06,
+        "mouthFunnelDL": 0.06,
+        "mouthFunnelDR": 0.06,
+        "tongueIn": 0.12,
+        "tongueBendUp": 0.09
+      }
+    },
+    {
+      "name": "pair__viseme_I__viseme_U",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 32 correctives",
+      "controls": {
+        "jawOpen": 0.075,
+        "mouthCornerWideL": 0.25,
+        "mouthCornerWideR": 0.25,
+        "mouthStretchL": 0.13,
+        "mouthStretchR": 0.13,
+        "tongueUp": 0.17,
+        "tongueNarrow": 0.08,
+        "mouthLipsPurseUL": 0.4,
+        "mouthLipsPurseUR": 0.4,
+        "mouthLipsPurseDL": 0.4,
+        "mouthLipsPurseDR": 0.4,
+        "mouthCornerNarrowL": 0.32,
+        "mouthCornerNarrowR": 0.32,
+        "mouthFunnelUL": 0.06,
+        "mouthFunnelUR": 0.06,
+        "mouthFunnelDL": 0.06,
+        "mouthFunnelDR": 0.06,
+        "tongueIn": 0.12,
+        "tongueBendUp": 0.09
+      }
+    },
+    {
+      "name": "pair__viseme_CH__viseme_SS",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 31 correctives",
+      "controls": {
+        "mouthLipsPurseUL": 0.21,
+        "mouthLipsPurseUR": 0.21,
+        "mouthLipsPurseDL": 0.21,
+        "mouthLipsPurseDR": 0.21,
+        "mouthCornerNarrowL": 0.17,
+        "mouthCornerNarrowR": 0.17,
+        "mouthFunnelUL": 0.1,
+        "mouthFunnelUR": 0.1,
+        "mouthFunnelDL": 0.1,
+        "mouthFunnelDR": 0.1,
+        "jawOpen": 0.075,
+        "tongueTipUp": 0.37,
+        "tongueUp": 0.22,
+        "mouthCornerWideL": 0.2,
+        "mouthCornerWideR": 0.2,
+        "mouthStretchL": 0.12,
+        "mouthStretchR": 0.12,
+        "tongueNarrow": 0.15
+      }
+    },
+    {
+      "name": "pair__viseme_CH__viseme_I",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 31 correctives",
+      "controls": {
+        "mouthLipsPurseUL": 0.21,
+        "mouthLipsPurseUR": 0.21,
+        "mouthLipsPurseDL": 0.21,
+        "mouthLipsPurseDR": 0.21,
+        "mouthCornerNarrowL": 0.17,
+        "mouthCornerNarrowR": 0.17,
+        "mouthFunnelUL": 0.1,
+        "mouthFunnelUR": 0.1,
+        "mouthFunnelDL": 0.1,
+        "mouthFunnelDR": 0.1,
+        "jawOpen": 0.095,
+        "tongueTipUp": 0.15,
+        "tongueUp": 0.29,
+        "mouthCornerWideL": 0.25,
+        "mouthCornerWideR": 0.25,
+        "mouthStretchL": 0.13,
+        "mouthStretchR": 0.13,
+        "tongueNarrow": 0.08
+      }
+    },
+    {
+      "name": "pair__viseme_SS__viseme_O",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 31 correctives",
+      "controls": {
+        "mouthCornerWideL": 0.2,
+        "mouthCornerWideR": 0.2,
+        "mouthStretchL": 0.12,
+        "mouthStretchR": 0.12,
+        "jawOpen": 0.155,
+        "tongueTipUp": 0.22,
+        "tongueNarrow": 0.15,
+        "tongueUp": 0.1,
+        "mouthLipsPurseUL": 0.23,
+        "mouthLipsPurseUR": 0.23,
+        "mouthLipsPurseDL": 0.23,
+        "mouthLipsPurseDR": 0.23,
+        "mouthCornerNarrowL": 0.22,
+        "mouthCornerNarrowR": 0.22,
+        "mouthFunnelUL": 0.17,
+        "mouthFunnelUR": 0.17,
+        "mouthFunnelDL": 0.17,
+        "mouthFunnelDR": 0.17,
+        "tongueIn": 0.1
+      }
+    },
+    {
+      "name": "pair__viseme_I__viseme_O",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 31 correctives",
+      "controls": {
+        "jawOpen": 0.175,
+        "mouthCornerWideL": 0.25,
+        "mouthCornerWideR": 0.25,
+        "mouthStretchL": 0.13,
+        "mouthStretchR": 0.13,
+        "tongueUp": 0.17,
+        "tongueNarrow": 0.08,
+        "mouthLipsPurseUL": 0.23,
+        "mouthLipsPurseUR": 0.23,
+        "mouthLipsPurseDL": 0.23,
+        "mouthLipsPurseDR": 0.23,
+        "mouthCornerNarrowL": 0.22,
+        "mouthCornerNarrowR": 0.22,
+        "mouthFunnelUL": 0.17,
+        "mouthFunnelUR": 0.17,
+        "mouthFunnelDL": 0.17,
+        "mouthFunnelDR": 0.17,
+        "tongueIn": 0.1
+      }
+    },
+    {
+      "name": "pair__viseme_FF__viseme_CH",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 23 correctives",
+      "controls": {
+        "mouthLowerLipTowardsTeethL": 0.36,
+        "mouthLowerLipTowardsTeethR": 0.36,
+        "mouthLowerLipRollInL": 0.15,
+        "mouthLowerLipRollInR": 0.15,
+        "mouthUpperLipRaiseL": 0.1,
+        "mouthUpperLipRaiseR": 0.1,
+        "jawOpen": 0.08,
+        "mouthLipsPurseUL": 0.21,
+        "mouthLipsPurseUR": 0.21,
+        "mouthLipsPurseDL": 0.21,
+        "mouthLipsPurseDR": 0.21,
+        "mouthCornerNarrowL": 0.17,
+        "mouthCornerNarrowR": 0.17,
+        "mouthFunnelUL": 0.1,
+        "mouthFunnelUR": 0.1,
+        "mouthFunnelDL": 0.1,
+        "mouthFunnelDR": 0.1,
+        "tongueTipUp": 0.15,
+        "tongueUp": 0.12
+      }
+    },
+    {
+      "name": "pair__viseme_FF__viseme_O",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 23 correctives",
+      "controls": {
+        "mouthLowerLipTowardsTeethL": 0.36,
+        "mouthLowerLipTowardsTeethR": 0.36,
+        "mouthLowerLipRollInL": 0.15,
+        "mouthLowerLipRollInR": 0.15,
+        "mouthUpperLipRaiseL": 0.1,
+        "mouthUpperLipRaiseR": 0.1,
+        "jawOpen": 0.16,
+        "mouthLipsPurseUL": 0.23,
+        "mouthLipsPurseUR": 0.23,
+        "mouthLipsPurseDL": 0.23,
+        "mouthLipsPurseDR": 0.23,
+        "mouthCornerNarrowL": 0.22,
+        "mouthCornerNarrowR": 0.22,
+        "mouthFunnelUL": 0.17,
+        "mouthFunnelUR": 0.17,
+        "mouthFunnelDL": 0.17,
+        "mouthFunnelDR": 0.17,
+        "tongueIn": 0.1
+      }
+    },
+    {
+      "name": "pair__viseme_FF__viseme_U",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 23 correctives",
+      "controls": {
+        "mouthLowerLipTowardsTeethL": 0.36,
+        "mouthLowerLipTowardsTeethR": 0.36,
+        "mouthLowerLipRollInL": 0.15,
+        "mouthLowerLipRollInR": 0.15,
+        "mouthUpperLipRaiseL": 0.1,
+        "mouthUpperLipRaiseR": 0.1,
+        "jawOpen": 0.06,
+        "mouthLipsPurseUL": 0.4,
+        "mouthLipsPurseUR": 0.4,
+        "mouthLipsPurseDL": 0.4,
+        "mouthLipsPurseDR": 0.4,
+        "mouthCornerNarrowL": 0.32,
+        "mouthCornerNarrowR": 0.32,
+        "mouthFunnelUL": 0.06,
+        "mouthFunnelUR": 0.06,
+        "mouthFunnelDL": 0.06,
+        "mouthFunnelDR": 0.06,
+        "tongueIn": 0.12,
+        "tongueBendUp": 0.09
+      }
+    },
+    {
+      "name": "pair__viseme_PP__viseme_RR",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 20 correctives",
+      "controls": {
+        "mouthLipsTogetherUL": 0.31,
+        "mouthLipsTogetherUR": 0.31,
+        "mouthLipsTogetherDL": 0.31,
+        "mouthLipsTogetherDR": 0.31,
+        "mouthPressUL": 0.33,
+        "mouthPressUR": 0.33,
+        "mouthPressDL": 0.33,
+        "mouthPressDR": 0.33,
+        "mouthUpperLipRollInL": 0.1,
+        "mouthUpperLipRollInR": 0.1,
+        "mouthLowerLipRollInL": 0.1,
+        "mouthLowerLipRollInR": 0.1,
+        "mouthLipsTightenUL": 0.15,
+        "mouthLipsTightenUR": 0.15,
+        "mouthLipsTightenDL": 0.15,
+        "mouthLipsTightenDR": 0.15,
+        "mouthLipsPurseUL": 0.13,
+        "mouthLipsPurseUR": 0.13,
+        "mouthLipsPurseDL": 0.13,
+        "mouthLipsPurseDR": 0.13,
+        "mouthCornerNarrowL": 0.11,
+        "mouthCornerNarrowR": 0.11,
+        "jawOpen": 0.055,
+        "tongueBendUp": 0.17,
+        "tongueIn": 0.12,
+        "tongueTipUp": 0.09
+      }
+    },
+    {
+      "name": "pair__viseme_RR__mouthClose",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 20 correctives",
+      "controls": {
+        "mouthLipsPurseUL": 0.13,
+        "mouthLipsPurseUR": 0.13,
+        "mouthLipsPurseDL": 0.13,
+        "mouthLipsPurseDR": 0.13,
+        "mouthCornerNarrowL": 0.11,
+        "mouthCornerNarrowR": 0.11,
+        "jawOpen": 0.055,
+        "tongueBendUp": 0.17,
+        "tongueIn": 0.12,
+        "tongueTipUp": 0.09,
+        "mouthLipsTogetherUL": 0.425,
+        "mouthLipsTogetherUR": 0.425,
+        "mouthLipsTogetherDL": 0.425,
+        "mouthLipsTogetherDR": 0.425,
+        "mouthPressUL": 0.29,
+        "mouthPressUR": 0.29,
+        "mouthPressDL": 0.29,
+        "mouthPressDR": 0.29,
+        "mouthUpperLipRollInL": 0.12,
+        "mouthUpperLipRollInR": 0.12,
+        "mouthLowerLipRollInL": 0.12,
+        "mouthLowerLipRollInR": 0.12,
+        "mouthLipsTightenUL": 0.11,
+        "mouthLipsTightenUR": 0.11,
+        "mouthLipsTightenDL": 0.11,
+        "mouthLipsTightenDR": 0.11
+      }
+    },
+    {
+      "name": "pair__viseme_PP__viseme_FF",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 19 correctives",
+      "controls": {
+        "mouthLipsTogetherUL": 0.31,
+        "mouthLipsTogetherUR": 0.31,
+        "mouthLipsTogetherDL": 0.31,
+        "mouthLipsTogetherDR": 0.31,
+        "mouthPressUL": 0.33,
+        "mouthPressUR": 0.33,
+        "mouthPressDL": 0.33,
+        "mouthPressDR": 0.33,
+        "mouthUpperLipRollInL": 0.1,
+        "mouthUpperLipRollInR": 0.1,
+        "mouthLowerLipRollInL": 0.25,
+        "mouthLowerLipRollInR": 0.25,
+        "mouthLipsTightenUL": 0.15,
+        "mouthLipsTightenUR": 0.15,
+        "mouthLipsTightenDL": 0.15,
+        "mouthLipsTightenDR": 0.15,
+        "mouthLowerLipTowardsTeethL": 0.36,
+        "mouthLowerLipTowardsTeethR": 0.36,
+        "mouthUpperLipRaiseL": 0.1,
+        "mouthUpperLipRaiseR": 0.1,
+        "jawOpen": 0.03
+      }
+    },
+    {
+      "name": "pair__viseme_FF__mouthClose",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 19 correctives",
+      "controls": {
+        "mouthLowerLipTowardsTeethL": 0.36,
+        "mouthLowerLipTowardsTeethR": 0.36,
+        "mouthLowerLipRollInL": 0.27,
+        "mouthLowerLipRollInR": 0.27,
+        "mouthUpperLipRaiseL": 0.1,
+        "mouthUpperLipRaiseR": 0.1,
+        "jawOpen": 0.03,
+        "mouthLipsTogetherUL": 0.425,
+        "mouthLipsTogetherUR": 0.425,
+        "mouthLipsTogetherDL": 0.425,
+        "mouthLipsTogetherDR": 0.425,
+        "mouthPressUL": 0.29,
+        "mouthPressUR": 0.29,
+        "mouthPressDL": 0.29,
+        "mouthPressDR": 0.29,
+        "mouthUpperLipRollInL": 0.12,
+        "mouthUpperLipRollInR": 0.12,
+        "mouthLipsTightenUL": 0.11,
+        "mouthLipsTightenUR": 0.11,
+        "mouthLipsTightenDL": 0.11,
+        "mouthLipsTightenDR": 0.11
+      }
+    },
+    {
+      "name": "pair__viseme_TH__viseme_U",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 19 correctives",
+      "controls": {
+        "jawOpen": 0.105,
+        "tongueOut": 0.14,
+        "tongueTipUp": 0.17,
+        "tongueWide": 0.13,
+        "tongueThin": 0.11,
+        "mouthLipsPurseUL": 0.4,
+        "mouthLipsPurseUR": 0.4,
+        "mouthLipsPurseDL": 0.4,
+        "mouthLipsPurseDR": 0.4,
+        "mouthCornerNarrowL": 0.32,
+        "mouthCornerNarrowR": 0.32,
+        "mouthFunnelUL": 0.06,
+        "mouthFunnelUR": 0.06,
+        "mouthFunnelDL": 0.06,
+        "mouthFunnelDR": 0.06,
+        "tongueIn": 0.12,
+        "tongueBendUp": 0.09
+      }
+    },
+    {
+      "name": "pair__viseme_TH__viseme_CH",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 18 correctives",
+      "controls": {
+        "jawOpen": 0.125,
+        "tongueOut": 0.14,
+        "tongueTipUp": 0.32,
+        "tongueWide": 0.13,
+        "tongueThin": 0.11,
+        "mouthLipsPurseUL": 0.21,
+        "mouthLipsPurseUR": 0.21,
+        "mouthLipsPurseDL": 0.21,
+        "mouthLipsPurseDR": 0.21,
+        "mouthCornerNarrowL": 0.17,
+        "mouthCornerNarrowR": 0.17,
+        "mouthFunnelUL": 0.1,
+        "mouthFunnelUR": 0.1,
+        "mouthFunnelDL": 0.1,
+        "mouthFunnelDR": 0.1,
+        "tongueUp": 0.12
+      }
+    },
+    {
+      "name": "pair__viseme_TH__viseme_O",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 18 correctives",
+      "controls": {
+        "jawOpen": 0.205,
+        "tongueOut": 0.14,
+        "tongueTipUp": 0.17,
+        "tongueWide": 0.13,
+        "tongueThin": 0.11,
+        "mouthLipsPurseUL": 0.23,
+        "mouthLipsPurseUR": 0.23,
+        "mouthLipsPurseDL": 0.23,
+        "mouthLipsPurseDR": 0.23,
+        "mouthCornerNarrowL": 0.22,
+        "mouthCornerNarrowR": 0.22,
+        "mouthFunnelUL": 0.17,
+        "mouthFunnelUR": 0.17,
+        "mouthFunnelDL": 0.17,
+        "mouthFunnelDR": 0.17,
+        "tongueIn": 0.1
+      }
+    },
+    {
+      "name": "pair__viseme_DD__viseme_U",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 17 correctives",
+      "controls": {
+        "jawOpen": 0.125,
+        "tongueTipUp": 0.37,
+        "tongueUp": 0.17,
+        "tonguePress": 0.15,
+        "tongueIn": 0.19,
+        "mouthLipsPurseUL": 0.4,
+        "mouthLipsPurseUR": 0.4,
+        "mouthLipsPurseDL": 0.4,
+        "mouthLipsPurseDR": 0.4,
+        "mouthCornerNarrowL": 0.32,
+        "mouthCornerNarrowR": 0.32,
+        "mouthFunnelUL": 0.06,
+        "mouthFunnelUR": 0.06,
+        "mouthFunnelDL": 0.06,
+        "mouthFunnelDR": 0.06,
+        "tongueBendUp": 0.09
+      }
+    },
+    {
+      "name": "pair__viseme_kk__viseme_CH",
+      "band": "viseme-pair",
+      "note": "t=0.5 blend; fires 17 correctives",
+      "controls": {
+        "jawOpen": 0.135,
+        "tongueBendUp": 0.26,
+        "tongueIn": 0.19,
+        "tongueTipDown": 0.15,
+        "tongueThick": 0.12,
+        "mouthLipsPurseUL": 0.21,
+        "mouthLipsPurseUR": 0.21,
+        "mouthLipsPurseDL": 0.21,
+        "mouthLipsPurseDR": 0.21,
+        "mouthCornerNarrowL": 0.17,
+        "mouthCornerNarrowR": 0.17,
+        "mouthFunnelUL": 0.1,
+        "mouthFunnelUR": 0.1,
+        "mouthFunnelDL": 0.1,
+        "mouthFunnelDR": 0.1,
+        "tongueTipUp": 0.15,
+        "tongueUp": 0.12
+      }
+    },
+    {
+      "name": "upper__viseme_PP__browRaise",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsTogetherUL": 0.62,
+        "mouthLipsTogetherUR": 0.62,
+        "mouthLipsTogetherDL": 0.62,
+        "mouthLipsTogetherDR": 0.62,
+        "mouthPressUL": 0.66,
+        "mouthPressUR": 0.66,
+        "mouthPressDL": 0.66,
+        "mouthPressDR": 0.66,
+        "mouthUpperLipRollInL": 0.2,
+        "mouthUpperLipRollInR": 0.2,
+        "mouthLowerLipRollInL": 0.2,
+        "mouthLowerLipRollInR": 0.2,
+        "mouthLipsTightenUL": 0.3,
+        "mouthLipsTightenUR": 0.3,
+        "mouthLipsTightenDL": 0.3,
+        "mouthLipsTightenDR": 0.3,
+        "browRaiseInL": 0.7,
+        "browRaiseInR": 0.7,
+        "browRaiseOuterL": 0.7,
+        "browRaiseOuterR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_PP__browFurrow",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsTogetherUL": 0.62,
+        "mouthLipsTogetherUR": 0.62,
+        "mouthLipsTogetherDL": 0.62,
+        "mouthLipsTogetherDR": 0.62,
+        "mouthPressUL": 0.66,
+        "mouthPressUR": 0.66,
+        "mouthPressDL": 0.66,
+        "mouthPressDR": 0.66,
+        "mouthUpperLipRollInL": 0.2,
+        "mouthUpperLipRollInR": 0.2,
+        "mouthLowerLipRollInL": 0.2,
+        "mouthLowerLipRollInR": 0.2,
+        "mouthLipsTightenUL": 0.3,
+        "mouthLipsTightenUR": 0.3,
+        "mouthLipsTightenDL": 0.3,
+        "mouthLipsTightenDR": 0.3,
+        "browDownL": 0.7,
+        "browDownR": 0.7,
+        "browLateralL": 0.7,
+        "browLateralR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_PP__squint",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsTogetherUL": 0.62,
+        "mouthLipsTogetherUR": 0.62,
+        "mouthLipsTogetherDL": 0.62,
+        "mouthLipsTogetherDR": 0.62,
+        "mouthPressUL": 0.66,
+        "mouthPressUR": 0.66,
+        "mouthPressDL": 0.66,
+        "mouthPressDR": 0.66,
+        "mouthUpperLipRollInL": 0.2,
+        "mouthUpperLipRollInR": 0.2,
+        "mouthLowerLipRollInL": 0.2,
+        "mouthLowerLipRollInR": 0.2,
+        "mouthLipsTightenUL": 0.3,
+        "mouthLipsTightenUR": 0.3,
+        "mouthLipsTightenDL": 0.3,
+        "mouthLipsTightenDR": 0.3,
+        "eyeSquintInnerL": 0.7,
+        "eyeSquintInnerR": 0.7,
+        "eyeCheekRaiseL": 0.7,
+        "eyeCheekRaiseR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_PP__eyeWide",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsTogetherUL": 0.62,
+        "mouthLipsTogetherUR": 0.62,
+        "mouthLipsTogetherDL": 0.62,
+        "mouthLipsTogetherDR": 0.62,
+        "mouthPressUL": 0.66,
+        "mouthPressUR": 0.66,
+        "mouthPressDL": 0.66,
+        "mouthPressDR": 0.66,
+        "mouthUpperLipRollInL": 0.2,
+        "mouthUpperLipRollInR": 0.2,
+        "mouthLowerLipRollInL": 0.2,
+        "mouthLowerLipRollInR": 0.2,
+        "mouthLipsTightenUL": 0.3,
+        "mouthLipsTightenUR": 0.3,
+        "mouthLipsTightenDL": 0.3,
+        "mouthLipsTightenDR": 0.3,
+        "eyeWidenL": 0.7,
+        "eyeWidenR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_CH__browRaise",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.42,
+        "mouthLipsPurseUR": 0.42,
+        "mouthLipsPurseDL": 0.42,
+        "mouthLipsPurseDR": 0.42,
+        "mouthCornerNarrowL": 0.34,
+        "mouthCornerNarrowR": 0.34,
+        "mouthFunnelUL": 0.2,
+        "mouthFunnelUR": 0.2,
+        "mouthFunnelDL": 0.2,
+        "mouthFunnelDR": 0.2,
+        "jawOpen": 0.1,
+        "tongueTipUp": 0.3,
+        "tongueUp": 0.24,
+        "browRaiseInL": 0.7,
+        "browRaiseInR": 0.7,
+        "browRaiseOuterL": 0.7,
+        "browRaiseOuterR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_CH__browFurrow",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.42,
+        "mouthLipsPurseUR": 0.42,
+        "mouthLipsPurseDL": 0.42,
+        "mouthLipsPurseDR": 0.42,
+        "mouthCornerNarrowL": 0.34,
+        "mouthCornerNarrowR": 0.34,
+        "mouthFunnelUL": 0.2,
+        "mouthFunnelUR": 0.2,
+        "mouthFunnelDL": 0.2,
+        "mouthFunnelDR": 0.2,
+        "jawOpen": 0.1,
+        "tongueTipUp": 0.3,
+        "tongueUp": 0.24,
+        "browDownL": 0.7,
+        "browDownR": 0.7,
+        "browLateralL": 0.7,
+        "browLateralR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_CH__squint",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.42,
+        "mouthLipsPurseUR": 0.42,
+        "mouthLipsPurseDL": 0.42,
+        "mouthLipsPurseDR": 0.42,
+        "mouthCornerNarrowL": 0.34,
+        "mouthCornerNarrowR": 0.34,
+        "mouthFunnelUL": 0.2,
+        "mouthFunnelUR": 0.2,
+        "mouthFunnelDL": 0.2,
+        "mouthFunnelDR": 0.2,
+        "jawOpen": 0.1,
+        "tongueTipUp": 0.3,
+        "tongueUp": 0.24,
+        "eyeSquintInnerL": 0.7,
+        "eyeSquintInnerR": 0.7,
+        "eyeCheekRaiseL": 0.7,
+        "eyeCheekRaiseR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_CH__eyeWide",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.42,
+        "mouthLipsPurseUR": 0.42,
+        "mouthLipsPurseDL": 0.42,
+        "mouthLipsPurseDR": 0.42,
+        "mouthCornerNarrowL": 0.34,
+        "mouthCornerNarrowR": 0.34,
+        "mouthFunnelUL": 0.2,
+        "mouthFunnelUR": 0.2,
+        "mouthFunnelDL": 0.2,
+        "mouthFunnelDR": 0.2,
+        "jawOpen": 0.1,
+        "tongueTipUp": 0.3,
+        "tongueUp": 0.24,
+        "eyeWidenL": 0.7,
+        "eyeWidenR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_aa__browRaise",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.64,
+        "tongueDown": 0.22,
+        "mouthCornerWideL": 0.08,
+        "mouthCornerWideR": 0.08,
+        "browRaiseInL": 0.7,
+        "browRaiseInR": 0.7,
+        "browRaiseOuterL": 0.7,
+        "browRaiseOuterR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_aa__browFurrow",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.64,
+        "tongueDown": 0.22,
+        "mouthCornerWideL": 0.08,
+        "mouthCornerWideR": 0.08,
+        "browDownL": 0.7,
+        "browDownR": 0.7,
+        "browLateralL": 0.7,
+        "browLateralR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_aa__squint",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.64,
+        "tongueDown": 0.22,
+        "mouthCornerWideL": 0.08,
+        "mouthCornerWideR": 0.08,
+        "eyeSquintInnerL": 0.7,
+        "eyeSquintInnerR": 0.7,
+        "eyeCheekRaiseL": 0.7,
+        "eyeCheekRaiseR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_aa__eyeWide",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.64,
+        "tongueDown": 0.22,
+        "mouthCornerWideL": 0.08,
+        "mouthCornerWideR": 0.08,
+        "eyeWidenL": 0.7,
+        "eyeWidenR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_E__browRaise",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.3,
+        "mouthCornerWideL": 0.28,
+        "mouthCornerWideR": 0.28,
+        "tongueUp": 0.16,
+        "browRaiseInL": 0.7,
+        "browRaiseInR": 0.7,
+        "browRaiseOuterL": 0.7,
+        "browRaiseOuterR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_E__browFurrow",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.3,
+        "mouthCornerWideL": 0.28,
+        "mouthCornerWideR": 0.28,
+        "tongueUp": 0.16,
+        "browDownL": 0.7,
+        "browDownR": 0.7,
+        "browLateralL": 0.7,
+        "browLateralR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_E__squint",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.3,
+        "mouthCornerWideL": 0.28,
+        "mouthCornerWideR": 0.28,
+        "tongueUp": 0.16,
+        "eyeSquintInnerL": 0.7,
+        "eyeSquintInnerR": 0.7,
+        "eyeCheekRaiseL": 0.7,
+        "eyeCheekRaiseR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_E__eyeWide",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "jawOpen": 0.3,
+        "mouthCornerWideL": 0.28,
+        "mouthCornerWideR": 0.28,
+        "tongueUp": 0.16,
+        "eyeWidenL": 0.7,
+        "eyeWidenR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_O__browRaise",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.46,
+        "mouthLipsPurseUR": 0.46,
+        "mouthLipsPurseDL": 0.46,
+        "mouthLipsPurseDR": 0.46,
+        "mouthCornerNarrowL": 0.44,
+        "mouthCornerNarrowR": 0.44,
+        "mouthFunnelUL": 0.34,
+        "mouthFunnelUR": 0.34,
+        "mouthFunnelDL": 0.34,
+        "mouthFunnelDR": 0.34,
+        "jawOpen": 0.26,
+        "tongueIn": 0.2,
+        "browRaiseInL": 0.7,
+        "browRaiseInR": 0.7,
+        "browRaiseOuterL": 0.7,
+        "browRaiseOuterR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_O__browFurrow",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.46,
+        "mouthLipsPurseUR": 0.46,
+        "mouthLipsPurseDL": 0.46,
+        "mouthLipsPurseDR": 0.46,
+        "mouthCornerNarrowL": 0.44,
+        "mouthCornerNarrowR": 0.44,
+        "mouthFunnelUL": 0.34,
+        "mouthFunnelUR": 0.34,
+        "mouthFunnelDL": 0.34,
+        "mouthFunnelDR": 0.34,
+        "jawOpen": 0.26,
+        "tongueIn": 0.2,
+        "browDownL": 0.7,
+        "browDownR": 0.7,
+        "browLateralL": 0.7,
+        "browLateralR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_O__squint",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.46,
+        "mouthLipsPurseUR": 0.46,
+        "mouthLipsPurseDL": 0.46,
+        "mouthLipsPurseDR": 0.46,
+        "mouthCornerNarrowL": 0.44,
+        "mouthCornerNarrowR": 0.44,
+        "mouthFunnelUL": 0.34,
+        "mouthFunnelUR": 0.34,
+        "mouthFunnelDL": 0.34,
+        "mouthFunnelDR": 0.34,
+        "jawOpen": 0.26,
+        "tongueIn": 0.2,
+        "eyeSquintInnerL": 0.7,
+        "eyeSquintInnerR": 0.7,
+        "eyeCheekRaiseL": 0.7,
+        "eyeCheekRaiseR": 0.7
+      }
+    },
+    {
+      "name": "upper__viseme_O__eyeWide",
+      "band": "viseme-x-upperface",
+      "note": "mouth and upper face co-active -- the shape speech takes when someone is also emoting. Labelled by what it MOVES, not by an emotion: no emotion->control mapping exists yet (4.2c owes it).",
+      "controls": {
+        "mouthLipsPurseUL": 0.46,
+        "mouthLipsPurseUR": 0.46,
+        "mouthLipsPurseDL": 0.46,
+        "mouthLipsPurseDR": 0.46,
+        "mouthCornerNarrowL": 0.44,
+        "mouthCornerNarrowR": 0.44,
+        "mouthFunnelUL": 0.34,
+        "mouthFunnelUR": 0.34,
+        "mouthFunnelDL": 0.34,
+        "mouthFunnelDR": 0.34,
+        "jawOpen": 0.26,
+        "tongueIn": 0.2,
+        "eyeWidenL": 0.7,
+        "eyeWidenR": 0.7
+      }
+    }
+  ]
+}

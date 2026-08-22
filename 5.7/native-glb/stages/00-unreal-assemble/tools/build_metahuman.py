@@ -459,16 +459,38 @@ def on_tick(dt: float) -> None:
                     return False
 
                 # Stock UE pipeline. pipeline_type chooses the MH runtime
-                # template (Cinematic, Optimized, DCC). All other build
-                # parameters stay at the plugin's defaults — no overrides
-                # to pipeline_quality, no force-deletes, no plugin asset
-                # mutations. The 1024 web ceiling is enforced downstream
-                # in the GLB export stage, not here.
-                pipeline_enum = {
-                    "cinematic": unreal.MetaHumanDefaultPipelineType.CINEMATIC,
-                    "optimized": unreal.MetaHumanDefaultPipelineType.OPTIMIZED,
-                    "dcc":       unreal.MetaHumanDefaultPipelineType.DCC,
-                }[STATE["pipeline"].lower()]
+                # template. All other build parameters stay at the plugin's
+                # defaults — no overrides to pipeline_quality, no
+                # force-deletes, no plugin asset mutations. The 1024 web
+                # ceiling is enforced downstream in the GLB export stage.
+                #
+                # TELEGAMEZ PATCH (UE 5.8): the enum members are version
+                # dependent — 5.7 exposes CINEMATIC/OPTIMIZED/DCC, 5.8 drops
+                # DCC and exposes CINEMATIC/OPTIMIZED/UEFN. The original dict
+                # literal dereferenced all three eagerly, so a build on 5.8
+                # died with "no attribute 'DCC'" even when only CINEMATIC was
+                # requested. Built by hasattr instead: every engine gets the
+                # members it actually has, and asking for one this engine
+                # lacks fails with a message that says so.
+                _pt = unreal.MetaHumanDefaultPipelineType
+                pipeline_enum_map = {
+                    key: getattr(_pt, member)
+                    for key, member in (
+                        ("cinematic", "CINEMATIC"),
+                        ("optimized", "OPTIMIZED"),
+                        ("dcc", "DCC"),
+                        ("uefn", "UEFN"),
+                    )
+                    if hasattr(_pt, member)
+                }
+                requested = STATE["pipeline"].lower()
+                if requested not in pipeline_enum_map:
+                    raise RuntimeError(
+                        f"pipeline {requested!r} not available on this engine; "
+                        f"MetaHumanDefaultPipelineType exposes "
+                        f"{sorted(pipeline_enum_map)}"
+                    )
+                pipeline_enum = pipeline_enum_map[requested]
                 set_if(["pipeline_type", "PipelineType"], pipeline_enum)
 
                 if STATE["pipeline"].lower() == "dcc":
@@ -477,6 +499,43 @@ def on_tick(dt: float) -> None:
                     set_if(["name_override", "NameOverride"],
                            STATE["output_name"])
                     set_if(["export_zip_file"], True)
+
+                # TELEGAMEZ: clear the build folder first.
+                #
+                # build_meta_human ADDS to /Game/Unpacked/<Name>/ — it does
+                # not replace it. Assets from previous bakes therefore
+                # survive, and after a groom change the folder holds BOTH
+                # grooms: change hair from SideSweptFringe to BobLayered and
+                # both are present afterwards. Stage 01 then exports whatever
+                # it finds and can publish the stale one, so an edit made in
+                # MetaHuman Creator appears to have had no effect at all.
+                #
+                # Observed across four characters at once, and it cost a long
+                # investigation because the symptom ("my change did nothing")
+                # points at the editor rather than at the pipeline.
+                #
+                # The folder is wholly generated from the character asset, so
+                # deleting it is safe and makes a re-bake a rebuild. Anything
+                # hand-edited in here was always going to be transient — see
+                # wardrobe_overrides for the supported way to change a
+                # material.
+                # ONLY the Unpacked build output. Deliberately not
+                # /Game/<Name> — that path can hold authored source content
+                # (Tele has /Game/Tele/Clothing), and deleting it would
+                # destroy real data rather than a build artefact.
+                built_root = f"/Game/Unpacked/{STATE['output_name']}"
+                try:
+                    if unreal.EditorAssetLibrary.does_directory_exist(built_root):
+                        ok = unreal.EditorAssetLibrary.delete_directory(built_root)
+                        log(f"  cleared {built_root} before build -> {ok}")
+                    else:
+                        log(f"  {built_root} absent - nothing to clear")
+                except Exception as e:
+                    # Not fatal: a stale asset produces a wrong bake, but
+                    # failing to delete should not block the build. Say so
+                    # loudly, because the resulting bake may be stale.
+                    log(f"  WARNING: could not clear {built_root}: {e} "
+                        f"(bake may contain stale assets)")
 
                 subsystem.build_meta_human(character, params)
             except Exception as e:
@@ -508,13 +567,88 @@ def on_tick(dt: float) -> None:
                 for a in new_assets[:20]:
                     log(f"  + {a}")
                 write_status("SAVING", produced=new_assets)
-                game_folder = f"/Game/{STATE['output_name']}"
+
+                # TELEGAMEZ PATCH (UE 5.8): 5.7 builds into /Game/<Name>/;
+                # 5.8 builds into /Game/Unpacked/<Name>/. The original
+                # hardcoded /Game/<output_name>, so save_directory missed
+                # entirely, its failure was swallowed as a warning, and the
+                # stage reported DONE having persisted NOTHING — the FBX
+                # export still succeeded, so it looked like a clean run while
+                # stage 01's /Game/<name>/ precondition could never be met.
+                #
+                # Save the packages actually produced, derive the folders from
+                # them rather than assuming, and treat a failed save as fatal.
+                # A stage that cannot persist its own output must not report
+                # success.
+                def _package_of(entry: str) -> str:
+                    """`/Game/A/B.B` -> `/Game/A/B`; already-package paths pass through."""
+                    head, _, tail = entry.rpartition("/")
+                    return f"{head}/{tail.split('.', 1)[0]}" if head else entry
+
+                # FIRST, and regardless of what `new_assets` holds: flush every
+                # dirty content package.
+                #
+                # `new_assets` is a set-difference of SkeletalMeshes before vs
+                # after the build, so it is EMPTY on a re-bake — the assets
+                # already exist, nothing is "new", and any save logic keyed off
+                # that list does nothing at all. That is not hypothetical: the
+                # first fix here derived the save folders from `new_assets`, so
+                # re-baking Telly with eyelashes enabled rebuilt in memory,
+                # saved nothing, and still reported DONE. Same silent success
+                # as the bug it replaced, reached by a different route.
+                #
+                # Saving dirty packages does not care where the build wrote or
+                # whether the assets already existed.
                 try:
-                    unreal.EditorAssetLibrary.save_directory(
-                        game_folder, only_if_is_dirty=False, recursive=True)
+                    dirty = unreal.EditorLoadingAndSavingUtils.save_dirty_packages(
+                        save_map_packages=False, save_content_packages=True)
+                    log(f"  save_dirty_packages -> {dirty}")
                 except Exception as e:
-                    log(f"  save_directory({game_folder}) warning: {e}")
+                    log(f"  save_dirty_packages failed: {e}")
+
+                saved_ok = True
+                for entry in new_assets:
+                    pkg = _package_of(entry)
+                    try:
+                        if unreal.EditorAssetLibrary.save_asset(
+                                pkg, only_if_is_dirty=False):
+                            log(f"  saved {pkg}")
+                        else:
+                            log(f"  save_asset({pkg}) returned False")
+                            saved_ok = False
+                    except Exception as e:
+                        log(f"  save_asset({pkg}) failed: {e}")
+                        saved_ok = False
+
+                # Ancillary assets (materials, textures, physics) sit beside
+                # the meshes. Save every directory that contained one, plus
+                # their common ancestor, plus the legacy 5.7 location.
+                dirs = {_package_of(a).rsplit("/", 1)[0] for a in new_assets}
+                if dirs:
+                    split = [d.split("/") for d in dirs]
+                    common: list[str] = []
+                    for seg in zip(*split):
+                        if len(set(seg)) == 1:
+                            common.append(seg[0])
+                        else:
+                            break
+                    if len(common) > 2:
+                        dirs.add("/".join(common))
+                dirs.add(f"/Game/{STATE['output_name']}")
+                for folder in sorted(dirs):
+                    try:
+                        unreal.EditorAssetLibrary.save_directory(
+                            folder, only_if_is_dirty=False, recursive=True)
+                    except Exception as e:
+                        log(f"  save_directory({folder}) warning: {e}")
+
                 unreal.EditorAssetLibrary.save_loaded_asset(character)
+
+                if not saved_ok:
+                    raise RuntimeError(
+                        "built assets failed to save; stage 01 would find "
+                        f"nothing at {sorted(dirs)}"
+                    )
 
                 # Reference screenshot — TODO: integrate after the
                 # standalone take_reference.ps1 prototype proves out the
@@ -583,7 +717,7 @@ def main() -> int:
     p.add_argument("--name", default=None,
                    help="override for the output name; defaults to the asset's leaf name")
     p.add_argument("--pipeline", default="cinematic",
-                   choices=["cinematic", "optimized", "dcc"],
+                   choices=["cinematic", "optimized", "dcc", "uefn"],
                    help="which MetaHumanDefaultPipelineType to build with")
     args = p.parse_args(argv)
 

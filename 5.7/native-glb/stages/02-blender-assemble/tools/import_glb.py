@@ -26,9 +26,28 @@ import argparse
 import datetime as _dt
 import json
 import os
+import re
 import sys
 
 import bpy
+
+
+def _manifest_body(char_id):
+    """The character's body archetype, as declared in its manifest.
+
+    Read rather than inferred: the MetaHuman body archetype is an authoring fact
+    the operator knows and nothing in the GLB reliably reports. Returns "" when
+    absent so the caller can warn instead of guessing wrong.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    stage_dir = os.path.dirname(here)
+    manifest = os.path.join(stage_dir, "..", "..", "characters", char_id, "manifest.json")
+    try:
+        with open(os.path.normpath(manifest), "r", encoding="utf-8") as f:
+            value = (json.load(f).get("body") or "").strip().lower()
+    except Exception:  # noqa: BLE001 - absent or unreadable is a warn, not a crash
+        return ""
+    return value if value in ("female", "male") else ""
 
 
 def _log(msg):
@@ -70,6 +89,63 @@ def _hide_non_lod0():
         if ("_lod" in name and "_lod0" not in name) or name.startswith("ucx_"):
             obj.hide_viewport = True
             obj.hide_render = True
+            hidden += 1
+    return hidden
+
+
+def _hide_excluded_meshes(char_root):
+    """Hide meshes the character manifest lists under `exclude_meshes`.
+
+    TELEGAMEZ: `tele` and `tele1` carry a second outfit mesh (`Tele_Outfits_2`,
+    `Tele1_Outfits_2`) and so publish six clothing materials rather than three.
+    Two garment sets on one body can interpenetrate once the rig moves.
+
+    **Removing the extra outfit in MetaHuman Creator is the right fix** — this
+    is a stopgap for when a re-authoring pass is not available, and it is
+    opt-in per character so it cannot quietly drop geometry from a character
+    that is fine. Nothing is excluded by default.
+
+    Stage 03 deletes hidden meshes, so hiding is enough to keep it out of the
+    GLB; that is the same route `_hide_non_lod0` takes.
+
+    Matching is exact, after stripping Blender's `.001` disambiguation suffix.
+    The glTF importer renames on datablock collision, so the object holding the
+    mesh the GLB calls `Tele_Outfits_2` is `Tele_Outfits_2.001` in the scene —
+    a manifest written against the published mesh names matches nothing
+    otherwise, which is exactly what happened on the first run.
+
+    Exact-after-strip, never a prefix test: `Tele_Outfits` is a prefix of
+    `Tele_Outfits_2`, so the loose version would delete the outfit it was meant
+    to keep. That is the §6.3 trap with the operands reversed.
+    """
+    def _base(n):
+        return re.sub(r"\.\d{3}$", "", n)
+
+    names = []
+    try:
+        with open(os.path.join(char_root, "manifest.json"), encoding="utf-8") as f:
+            names = json.load(f).get("exclude_meshes") or []
+    except Exception as e:
+        _log(f"  exclude: could not read manifest: {e}")
+        return 0
+    if not names:
+        return 0
+
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+    hidden = 0
+    for n in names:
+        want = _base(n)
+        matches = [o for o in meshes if _base(o.name) == want]
+        if not matches:
+            # Loudly. An exclusion that matches nothing is either a typo or a
+            # mesh that got renamed, and both look like success in silence.
+            _log(f"  exclude: '{n}' NOT FOUND "
+                 f"(meshes: {sorted(o.name for o in meshes)})")
+            continue
+        for obj in matches:
+            obj.hide_viewport = True
+            obj.hide_render = True
+            _log(f"  exclude: hiding {obj.name}")
             hidden += 1
     return hidden
 
@@ -306,7 +382,17 @@ def _wire_card_materials(in_root, mh_manifest):
             elif name_low.startswith("mustache_") or name_low.startswith("moustache_"):
                 attr_name, attr_path = _find(["Mustache_"])
             else:
-                continue
+                # TELEGAMEZ: third and last prefix whitelist in this chain
+                # (stage 01's atlas lookup and this file's spec emitter were
+                # the other two). A goatee is `Goatee_L_Wavy`, matches none of
+                # the branches above, and fell through to `continue` — so no
+                # _CardMat was ever wired, which is why the spec emitter never
+                # saw it either. Derive the style from the mesh name instead
+                # of adding "Goatee_" and leaving the next style to fail.
+                style = re.split(r"_cards?mesh_", name_low)[0]
+                if not style or style == name_low:
+                    continue
+                attr_name, attr_path = _find([f"{style}_"])
             if not attr_path:
                 _log(f"  wire {obj.name}: no Attribute atlas found")
                 continue
@@ -545,7 +631,23 @@ def _emit_material_spec(out_root, mh_manifest):
                 stem = _find_stem(["Mustache_"])
                 color = _hair_color_for("mi_wi_mustache_") or [0.18, 0.10, 0.05, 1.0]
             else:
-                continue
+                # TELEGAMEZ: this chain is a prefix whitelist, and the beard
+                # family does not all start with "Beard_" — a goatee is named
+                # Goatee_L_Wavy. It matched nothing and fell through to
+                # `continue`, so the material got no spec, stage 03 forwarded
+                # no atlas, and the cards rendered untextured even though
+                # stage 01 had exported the atlas correctly. Extending the
+                # list would just move the same trap one style along, so
+                # derive the style from the material's own name.
+                style = re.split(r"_cards?mesh_", ml)[0]
+                if not style or style == ml:
+                    continue
+                stem = _find_stem([f"{style}_"])
+                color = (_hair_color_for(f"mi_wi_{style}_")
+                         or [0.18, 0.10, 0.05, 1.0])
+                if stem is None:
+                    _log(f"  groom: no atlas stem for derived style "
+                         f"'{style}' (material {mn}) - not declared")
             if stem is None:
                 continue
             materials.append({
@@ -556,6 +658,14 @@ def _emit_material_spec(out_root, mh_manifest):
                     "alpha_clip": True,
                     "alpha_channel": "r",
                     "alpha_stem": stem,
+                    # TELEGAMEZ: declare the strand-tangent atlas explicitly.
+                    # It drives anisotropic specular, and without a declaration
+                    # stage 03 never forwards it and stage 04 never deploys it —
+                    # so a PUBLISHED avatar silently loses the strand highlight
+                    # while a local bake keeps it. Naming is a strict convention
+                    # (_CardsAtlas_Attribute / _CardsAtlas_Tangent).
+                    **({"tangent_stem": stem.replace("_Attribute", "_Tangent")}
+                       if stem.endswith("_Attribute") else {}),
                     "roughness": 0.55,
                     "ignore_gltf_map": True,
                 },
@@ -582,14 +692,124 @@ def _emit_material_spec(out_root, mh_manifest):
                 "textures": {"alpha": f"textures/{stem}.png"},
             })
 
+    # TELEGAMEZ: clothing colour.
+    #
+    # Outfit materials keep their colour in a `Color1` vector param and UE's
+    # GLTFExporter drops it — the exported glTF material has neither a
+    # baseColorTexture nor a baseColorFactor, and glTF defaults absent base
+    # colour to WHITE. A character whose shirt is navy and chinos khaki in the
+    # editor therefore exports dressed entirely in white, with nothing
+    # reporting a problem. Carry Color1 through so the runtime can apply it.
+    cloth_mis = mh_manifest.get("clothing_materials") or {}
+
+    # Only declare clothing that is actually on a mesh that will be exported.
+    #
+    # This list comes from stage 01's scan of the UE clothing folder, not from
+    # the Blender scene, so it happily declares materials for geometry that is
+    # not here. `tele` and `tele1` carried a duplicate outfit mesh; once
+    # `exclude_meshes` dropped it, the sidecar still declared six clothing
+    # materials for three meshes, and the three orphans came out the other end
+    # as `unmatched` at runtime.
+    #
+    # That matters more than it looks. `unmatched` exists to make a silently
+    # unstyled material visible — it is the alarm for the whole class of bug
+    # this pipeline keeps hitting. Three permanent false entries in it teach
+    # whoever reads the console to ignore the alarm, which is worse than not
+    # having one.
+    #
+    # Hidden meshes are excluded too, since stage 03 deletes them.
+    live_mats = set()
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or obj.hide_render:
+            continue
+        for slot in obj.material_slots:
+            if slot.material:
+                live_mats.add(re.sub(r"\.\d{3}$", "", slot.material.name))
+
+    for mi_name, rec in sorted(cloth_mis.items()):
+        vectors = rec.get("vectors") or {}
+        col = vectors.get("Color1")
+        if not col:
+            continue
+        if live_mats and mi_name not in live_mats:
+            _log(f"  clothing: {mi_name} declared by stage 01 but on no "
+                 f"exported mesh - skipping")
+            continue
+        scalars = rec.get("scalars") or {}
+
+        # Classify the exported maps into canonical slots. The MI parameter
+        # names vary by base material, but the texture ASSET names carry a
+        # reliable suffix: _BC (fabric base colour, greyscale-ish, meant to be
+        # tinted by Color1), _N (normal), _ORM (occlusion/roughness/metallic
+        # packed R/G/B — already three.js' convention). Anything unrecognised
+        # is kept under its parameter name rather than dropped.
+        tex = {}
+        for pname, relpath in sorted((rec.get("textures") or {}).items()):
+            stem = os.path.splitext(os.path.basename(relpath))[0].upper()
+            if stem.endswith("_BC"):
+                tex["base_color"] = relpath
+            elif stem.endswith("_N"):
+                tex["normal"] = relpath
+            elif stem.endswith("_ORM"):
+                tex["orm"] = relpath
+            else:
+                tex.setdefault(pname, relpath)
+
+        materials.append({
+            "material_name": mi_name,
+            "kind": "clothing",
+            "params": {
+                "base_color": [float(col[0]), float(col[1]), float(col[2])],
+                "roughness": float(scalars.get("Roughness", 1.0)),
+            },
+            "textures": tex,
+        })
+        _log(f"  clothing: {mi_name} base_color="
+             f"({col[0]:.3f},{col[1]:.3f},{col[2]:.3f}) maps={sorted(tex)}")
+
     if not materials:
         return []
 
     out_path = os.path.join(out_root, "mh_materials.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"character": "ada",  # caller can overwrite if needed
+        # TELEGAMEZ: was hardcoded "ada" for every character, including the
+        # shipped demos. Harmless to the renderer, which keys off
+        # material_name, but a sidecar that misidentifies its own character is
+        # a trap for anything that ever trusts the field.
+        char_id = os.path.basename(os.path.dirname(out_root.rstrip("/\\"))) or "unknown"
+        # TELEGAMEZ: `body` selects the animation library at runtime. The roster
+        # is split female/male (issue #3214) and the choice has to travel WITH
+        # the model: `companionAnimations.ts` derives the library from this
+        # sidecar, which is the same probe that decides the material profile, so
+        # motion and materials can never disagree about what a companion is.
+        # Threading it through the render surfaces instead would restate the
+        # decision at five call sites — the defect that module exists to remove.
+        # Declared per character in `characters/<id>/manifest.json`; a bake that
+        # omits it produces a sidecar with no `body`, and the runtime falls back
+        # to the female set rather than failing to animate.
+        payload = {"character": char_id,
                    "saved_at": _iso_now(),
-                   "materials": materials}, f, indent=2)
+                   "materials": materials}
+        body = _manifest_body(char_id)
+        if not body:
+            # HARD FAIL, not a warning.
+            #
+            # A sidecar with no `body` does not fail visibly: the runtime falls back
+            # to the female animation library, so a male character ships animating
+            # female and nothing says so. Two characters reached production that way
+            # (mh-tele and mh-tele2, telegamez#3285) - though via a WRONG value
+            # rather than a missing one, which this check cannot catch.
+            #
+            # The archetype is a fact about the character that the operator knows at
+            # bootstrap. Guessing it silently is worse than refusing to bake.
+            raise SystemExit(
+                f"[stage02-glb] FATAL: characters/{char_id}/manifest.json has no valid "
+                f"'body' (expected 'female' or 'male'). The animation library is chosen "
+                f"from this value; a wrong or missing archetype ships silently."
+            )
+        payload = {"character": char_id, "body": body,
+                   "saved_at": payload["saved_at"], "materials": materials}
+        json.dump(payload, f, indent=2)
     return materials
 
 
@@ -1586,12 +1806,98 @@ def _fix_hair_face_clearance():
     return total_fixed
 
 
-_SCALP_DARK_PREFIXES = (
-    "Hair_", "Mustache_", "Moustache_", "Beard_",
-    "Goatee_", "Stubble_", "Sideburns_", "Fuzz_",
-)
-_SCALP_DARK_RADIUS = 0.030   # 30 mm — verts within this distance get darkened
-_SCALP_DARK_MIN    = 0.12    # darkest multiplier (0 = black, 1 = no change)
+# Card meshes are found by the "CardsMesh"/"CardMesh" marker in their own name
+# rather than a prefix whitelist. A whitelist has already been wrong at three
+# separate sites in this pipeline (see the goatee case in stage 01/02) and this
+# was a fourth waiting to happen: it listed `Beard_` and `Goatee_` but a Fab
+# groom under any other name would have contributed no occlusion at all, and
+# the character would simply have had a brighter jaw with nothing logged.
+_DARK_FACIAL_TOKENS = ("mustache", "moustache", "beard", "goatee",
+                       "stubble", "sideburns", "fuzz", "peachfuzz")
+# Brows and lashes are face accessories, not volume hair. They sit flat on the
+# skin and carry their own shading; darkening a radius around them just smudges
+# the lids and brow ridge.
+_DARK_SKIP_TOKENS = ("eyebrow", "eyebrows", "brows", "eyelash", "eyelashes", "lash")
+
+# Radii differ by class because the geometry does. Head hair is a volume held
+# off the scalp, so occlusion reaches; a beard sits directly against skin, and
+# a radius sized for a hairline throws a 30 mm shadow across the whole jaw and
+# well down the neck.
+_SCALP_DARK_RADIUS  = 0.014  # 14 mm — head hair
+_FACIAL_DARK_RADIUS = 0.008  #  8 mm — beard / moustache / goatee / stubble
+
+# Darkest multiplier (0 = black, 1 = no change).
+#
+# Was 0.12, which is very nearly black. That value was never reviewed against a
+# render, because stage 03 was discarding the whole attribute before it reached
+# a GLB — the first time anyone saw it applied it read as bruising rather than
+# shadow.
+#
+# This is a LINEAR multiplier — what the renderer actually multiplies skin by
+# at the contact point. `_write_vertex_colour` below encodes it on the way into
+# the BYTE_COLOR layer so that stays true.
+#
+# It has to be encoded, because the layer is sRGB-backed and the glTF exporter
+# converts to linear on the way out. Writing the number raw ships something far
+# darker than it reads:
+#
+#     written raw   0.12   0.40   0.55   0.65   0.75   0.87   1.00
+#     shipped       0.014  0.133  0.264  0.387  0.529  0.727  1.00
+#
+# That is the whole explanation for the original 0.12 measuring 0.014 in the
+# GLB — one number in two colour spaces, not two bugs. It was first documented
+# here and left uncorrected, and the result was a contact shadow still sitting
+# at 0.138 while the constant claimed 0.40, which read as a dirty patch on the
+# forehead rather than shade. Documenting a trap is not the same as removing
+# one.
+_SCALP_DARK_MIN = 0.55
+
+# Falloff exponent, applied as `1 - (1 - t)^n`.
+#
+# The original ramp was linear in distance, which spreads a wide even grey halo
+# over the full radius. Real contact occlusion is concentrated at the contact
+# and falls away quickly. n > 1 does that: at a quarter of the radius this is
+# already ~47% recovered toward unshadowed, and past half the radius it is
+# visually gone.
+_SCALP_DARK_FALLOFF = 2.2
+
+# How far off the skin's own normal a card can sit and still shadow it.
+#
+# Distance alone is the wrong question. It asks "is there hair near this skin",
+# when what matters is "is there hair OVER this skin". Those differ most
+# exactly where it shows: a goatee's cards hang down beside the neck, so neck
+# skin is a few millimetres from hair that never passes between it and the
+# light, and the shadow spilled well past the beard's silhouette onto bare
+# throat. The same effect smears a hairline sideways onto the temples.
+#
+# So each candidate card is weighted by `dot(normalize(card - vert), normal)`:
+# a card out along the skin's normal is covering it and shadows fully, a card
+# off to the side or behind contributes nothing. Below the cutoff a card is
+# beside the skin, not above it.
+_SCALP_DARK_NDOT_MIN = 0.30
+
+# Cards considered per vertex. The nearest card is not necessarily the
+# occluding one — under a jaw the closest card is often a tangential strand
+# while the one actually overhead is slightly further — so take the strongest
+# occluder among the nearest few rather than trusting rank 1.
+_SCALP_DARK_SAMPLES = 8
+
+
+def _linear_to_srgb(c):
+    """Encode a linear multiplier for storage in a BYTE_COLOR attribute.
+
+    Blender's byte colour attributes are sRGB-backed, and assigning through
+    `.color` stores the value as given while everything downstream — reading
+    it back, and the glTF exporter — treats it as sRGB and decodes to linear.
+    So a raw 0.40 arrives at the renderer as 0.133.
+
+    Encoding here means the constants above are linear multipliers and mean
+    what they say, which is the only way the ramp can be reasoned about
+    against a render.
+    """
+    if c <= 0.0031308:
+        return max(0.0, c * 12.92)
+    return min(1.0, 1.055 * (c ** (1.0 / 2.4)) - 0.055)
 
 
 def _bake_scalp_darkening():
@@ -1624,25 +1930,47 @@ def _bake_scalp_darkening():
         _log("  scalp-dark: no face mesh found, skipping")
         return 0
 
-    # Collect all hair card verts in world space
-    cards = [o for o in bpy.data.objects
-             if o.type == "MESH"
-             and any(o.name.startswith(p) for p in _SCALP_DARK_PREFIXES)]
-    if not cards:
-        _log("  scalp-dark: no hair card meshes found")
+    # Split the card meshes by class. Head hair and facial hair get their own
+    # tree so each can use the radius its geometry actually warrants.
+    head_cards, facial_cards, skipped = [], [], []
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        nl = o.name.lower()
+        if "cardsmesh" not in nl and "cardmesh" not in nl:
+            continue
+        token = nl.split("_")[0]
+        if any(k in nl for k in _DARK_SKIP_TOKENS):
+            skipped.append(o.name)
+        elif token in _DARK_FACIAL_TOKENS:
+            facial_cards.append(o)
+        else:
+            head_cards.append(o)
+
+    _log(f"  scalp-dark: {len(head_cards)} head, {len(facial_cards)} facial, "
+         f"{len(skipped)} skipped (brows/lashes)")
+    if not head_cards and not facial_cards:
+        # Log the empty case: a character with no groom and a classifier that
+        # matched nothing look identical in silence, and that is how the
+        # prefix-whitelist bugs in this pipeline kept surviving.
+        _log("  scalp-dark: no hair card meshes found - no darkening baked")
         return 0
 
-    # Build KD-tree from all hair card vertices (world space)
-    total_card_verts = sum(len(o.data.vertices) for o in cards)
-    tree = KDTree(total_card_verts)
-    idx = 0
-    for card_obj in cards:
-        cw = card_obj.matrix_world
-        for v in card_obj.data.vertices:
-            wp = cw @ v.co
-            tree.insert(wp, idx)
-            idx += 1
-    tree.balance()
+    def _build(objs):
+        if not objs:
+            return None
+        tree = KDTree(sum(len(o.data.vertices) for o in objs))
+        idx = 0
+        for card_obj in objs:
+            cw = card_obj.matrix_world
+            for v in card_obj.data.vertices:
+                tree.insert(cw @ v.co, idx)
+                idx += 1
+        tree.balance()
+        return tree
+
+    head_tree = _build(head_cards)
+    facial_tree = _build(facial_cards)
 
     # Ensure face mesh has a vertex color layer
     mesh = face_obj.data
@@ -1654,26 +1982,60 @@ def _bake_scalp_darkening():
     for loop_color in color_layer.data:
         loop_color.color = (1.0, 1.0, 1.0, 1.0)
 
-    # Compute per-vertex darkening factor based on nearest hair card
+    # Compute per-vertex darkening from the nearest card of each class, taking
+    # whichever is darker. A vertex under a jaw-length beard is also within
+    # reach of head hair on some characters, and it should get the stronger of
+    # the two occlusions, not whichever tree happened to be queried last.
     fw = face_obj.matrix_world
     darkened = 0
     vert_factors = {}
+
+    # Normals need the inverse-transpose, not the world matrix, or any
+    # non-uniform scale on the face object skews every direction test.
+    nrm_mat = fw.to_3x3().inverted_safe().transposed()
+
+    def _occlusion(tree, radius, wp, nrm):
+        """Strongest occlusion from this tree, in 0..1. 0 = nothing over it."""
+        if tree is None:
+            return 0.0
+        best = 0.0
+        for co, _idx, dist in tree.find_n(wp, _SCALP_DARK_SAMPLES):
+            if dist >= radius:
+                break                      # find_n returns nearest-first
+            d = co - wp
+            if d.length < 1e-9:
+                ndot = 1.0
+            else:
+                ndot = (d / d.length).dot(nrm)
+            if ndot <= _SCALP_DARK_NDOT_MIN:
+                continue                   # beside the skin, not over it
+            # Distance term: 1 at contact, 0 at the radius.
+            t = dist / radius
+            by_dist = (1.0 - t) ** _SCALP_DARK_FALLOFF
+            # Direction term: ramp in from the cutoff so the boundary is not
+            # a hard edge across the skin.
+            by_dir = (ndot - _SCALP_DARK_NDOT_MIN) / (1.0 - _SCALP_DARK_NDOT_MIN)
+            occ = by_dist * by_dir
+            if occ > best:
+                best = occ
+        return best
+
     for v in mesh.vertices:
         wp = fw @ v.co
-        _co, _idx, dist = tree.find(wp)
-        if dist < _SCALP_DARK_RADIUS:
-            # Smooth falloff: closer = darker
-            t = dist / _SCALP_DARK_RADIUS
-            factor = _SCALP_DARK_MIN + (1.0 - _SCALP_DARK_MIN) * t
-            vert_factors[v.index] = factor
+        nrm = (nrm_mat @ v.normal).normalized()
+        occ = max(_occlusion(head_tree, _SCALP_DARK_RADIUS, wp, nrm),
+                  _occlusion(facial_tree, _FACIAL_DARK_RADIUS, wp, nrm))
+        if occ > 0.0:
+            vert_factors[v.index] = 1.0 - (1.0 - _SCALP_DARK_MIN) * occ
             darkened += 1
 
-    # Write per-loop vertex colors (each polygon corner references a vert)
+    # Write per-loop vertex colors (each polygon corner references a vert),
+    # sRGB-encoded so the linear constants above survive the round trip.
     for poly in mesh.polygons:
         for li in range(poly.loop_start, poly.loop_start + poly.loop_total):
             vi = mesh.loops[li].vertex_index
             if vi in vert_factors:
-                f = vert_factors[vi]
+                f = _linear_to_srgb(vert_factors[vi])
                 color_layer.data[li].color = (f, f, f, 1.0)
 
     # Wire vertex colors into skin materials so the glTF exporter
@@ -1731,7 +2093,10 @@ def _bake_scalp_darkening():
         _log(f"  scalp-dark: wired vertex colors into {wired} skin material(s)")
 
     _log(f"  scalp-dark: darkened {darkened}/{len(mesh.vertices)} face verts "
-         f"(radius={_SCALP_DARK_RADIUS*1000:.0f}mm, min={_SCALP_DARK_MIN})")
+         f"(head={_SCALP_DARK_RADIUS*1000:.0f}mm, "
+         f"facial={_FACIAL_DARK_RADIUS*1000:.0f}mm, "
+         f"min={_SCALP_DARK_MIN} linear, falloff={_SCALP_DARK_FALLOFF}, "
+         f"ndot>={_SCALP_DARK_NDOT_MIN})")
     return darkened
 
 
@@ -1750,6 +2115,661 @@ def _remove_gltf_placeholder_empties():
                 bpy.data.objects.remove(obj, do_unlink=True)
                 removed += 1
     return removed
+
+
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform morph contract — convenience shapes (07 §4 group 3)
+# ---------------------------------------------------------------------------
+#
+# `audit_models.py` requires six convenience shapes that ARKit does not
+# provide. Five are deterministic symmetric merges of shapes the bake already
+# captured, so they are composed here rather than authored:
+#
+#   mouthSmile / eyesClosed / eyesLookUp / eyesLookDown  — left+right merges
+#   mouthOpen                                            — alias of jawOpen
+#
+# `eyesClosed` is the load-bearing one: it is what BlinkScheduler prefers and
+# what the compositor names in BLINK_COMBINED_MORPH.
+#
+# The sixth, `mouthClose`, is NOT here. MetaHuman's ARKit mapping PoseAsset
+# does not supply the ARKit `mouthClose` pose — our export is 51 of ARKit-52
+# and that is the one missing — so it cannot be merged from captured shapes
+# and must be synthesised from mouthPress*/mouthRoll*. That needs a visual
+# pass, so it is deliberately left outstanding and logged rather than guessed.
+CONVENIENCE_RECIPES = (
+    ("mouthSmile",   (("mouthSmileLeft", 1.0), ("mouthSmileRight", 1.0))),
+    ("eyesClosed",   (("eyeBlinkLeft", 1.0), ("eyeBlinkRight", 1.0))),
+    ("eyesLookUp",   (("eyeLookUpLeft", 1.0), ("eyeLookUpRight", 1.0))),
+    ("eyesLookDown", (("eyeLookDownLeft", 1.0), ("eyeLookDownRight", 1.0))),
+    ("mouthOpen",    (("jawOpen", 1.0),)),
+)
+
+
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform morph contract — visemes (07 §4 group 1)
+# ---------------------------------------------------------------------------
+#
+# The 15 canonical viseme names come from VISEME_MAP in @telegamez/lipsync.
+# ARKit does not provide them, so they are composed from the captured ARKit
+# shapes. There is no closed-form recipe — these weights are a FIRST PASS,
+# calibrated against measurements taken on Telly and a visual session in
+# Blender, and they are expected to be refined by watching lipsync run.
+#
+# Measured on this rig (max vertex displacement): jawOpen 32.7mm,
+# tongueOut 29.2mm, mouthSmileLeft 18.5mm, mouthStretchLeft 15.3mm,
+# mouthPucker 13.9mm, mouthFunnel 12.0mm, mouthShrugLower 12.0mm,
+# mouthRollLower 7.4mm, mouthRollUpper 5.7mm. jawOpen matching the
+# documented ~33mm confirms the bake produces true-magnitude deformation.
+#
+# Three things learned in the visual pass that these weights encode, and that
+# contradict what the shape NAMES suggest:
+#
+#   1. At rest the lips are CLOSED and no teeth show. viseme_sil is therefore
+#      a zero-delta shape, not a pose.
+#   2. `mouthFunnel` FLARES and parts the lip opening rather than protruding
+#      it. It is not the rounding control its name implies; used heavily it
+#      exposes teeth. Rounding comes from `mouthPucker`.
+#   3. `jawOpen` reveals teeth by about 0.05. Closed-mouth consonants must
+#      keep it at or near zero.
+#
+# KNOWN CEILING: the tongue-dependent visemes (TH, DD, nn, kk) are
+# approximations. ARKit exposes `tongueOut` and nothing else — no tongue tip,
+# no back-of-tongue — so these are built from jaw and lip cues that merely
+# correlate with the real articulation. The raw RigLogic rig has genuine
+# tongue controls among its 858 shapes, so this is a ceiling Phase 2's live
+# evaluator could lift; it is not liftable here.
+VISEME_RECIPES = (
+    # silence / rest — deliberately zero-delta; rest already reads as closed
+    ("viseme_sil", ()),
+    # bilabial plosive (p, b, m) — lips sealed and pressed
+    ("viseme_PP", (("mouthPressLeft", 0.70), ("mouthPressRight", 0.70),
+                   ("mouthRollLower", 0.25), ("mouthRollUpper", 0.25))),
+    # labiodental (f, v) — lower lip tucked to upper teeth
+    ("viseme_FF", (("mouthRollLower", 0.55), ("mouthUpperUpLeft", 0.25),
+                   ("mouthUpperUpRight", 0.25), ("jawOpen", 0.05))),
+    # dental (th) — tongue between the teeth
+    ("viseme_TH", (("jawOpen", 0.16), ("tongueOut", 0.30))),
+    # alveolar (d, t) — tongue to the ridge, jaw slightly open
+    ("viseme_DD", (("jawOpen", 0.20), ("mouthShrugUpper", 0.18))),
+    # velar (k, g) — back of tongue; almost no visible lip signature
+    ("viseme_kk", (("jawOpen", 0.18), ("mouthShrugLower", 0.12))),
+    # postalveolar (ch, j, sh) — lips protruded and slightly rounded
+    ("viseme_CH", (("mouthPucker", 0.45), ("mouthFunnel", 0.25),
+                   ("jawOpen", 0.10))),
+    # sibilant (s, z) — teeth close together, lips spread
+    ("viseme_SS", (("mouthStretchLeft", 0.35), ("mouthStretchRight", 0.35),
+                   ("jawOpen", 0.05))),
+    # nasal (n, ng, l) — tongue up, small aperture
+    ("viseme_nn", (("jawOpen", 0.13), ("tongueOut", 0.12))),
+    # rhotic (r) — slight rounding
+    ("viseme_RR", (("mouthPucker", 0.30), ("mouthFunnel", 0.18),
+                   ("jawOpen", 0.10))),
+    # open vowel (father)
+    ("viseme_aa", (("jawOpen", 0.70),)),
+    # mid-front vowel (bed)
+    ("viseme_E", (("jawOpen", 0.32), ("mouthStretchLeft", 0.22),
+                  ("mouthStretchRight", 0.22))),
+    # close-front vowel (bee) — spread, nearly closed
+    ("viseme_I", (("jawOpen", 0.10), ("mouthStretchLeft", 0.40),
+                  ("mouthStretchRight", 0.40))),
+    # mid-back rounded (go)
+    ("viseme_O", (("mouthPucker", 0.40), ("mouthFunnel", 0.45),
+                  ("jawOpen", 0.28))),
+    # close-back rounded (boot) — the tightest rounding; funnel kept low
+    ("viseme_U", (("mouthPucker", 0.85), ("mouthFunnel", 0.12))),
+)
+
+# The sixth convenience shape. MetaHuman's ARKit mapping omits ARKit's own
+# `mouthClose`, so it is synthesised as a gentle lip seal — pressing beyond
+# the resting closure rather than merely closing, since rest is already shut.
+MOUTHCLOSE_RECIPE = (("mouthPressLeft", 0.45), ("mouthPressRight", 0.45),
+                     ("mouthRollLower", 0.20), ("mouthRollUpper", 0.20))
+
+
+def _compose_shape_key(obj, name, recipe):
+    """Create shape key `name` as a weighted sum of existing keys' deltas.
+
+    Composed by direct vertex math rather than `shape_key_add(from_mix=True)`.
+    from_mix depends on the current value of every active key and on modifier
+    state, so it is only correct if the whole stack is zeroed first — an
+    invariant that is easy to break silently later. Summing deltas explicitly
+    is deterministic and matches how the ARKit transfer above builds keys.
+
+    Returns (created, missing_sources).
+    """
+    keys = obj.data.shape_keys
+    if keys is None:
+        return False, [s for s, _ in recipe]
+    basis = keys.key_blocks[0]
+
+    missing = [s for s, _ in recipe if keys.key_blocks.get(s) is None]
+    if missing:
+        return False, missing
+
+    existing = keys.key_blocks.get(name)
+    if existing is not None:
+        obj.shape_key_remove(existing)
+    new_kb = obj.shape_key_add(name=name, from_mix=False)
+
+    sources = [(keys.key_blocks[s], w) for s, w in recipe]
+    for i in range(len(basis.data)):
+        base_co = basis.data[i].co
+        x = y = z = 0.0
+        for kb, w in sources:
+            d = kb.data[i].co - base_co
+            x += d.x * w
+            y += d.y * w
+            z += d.z * w
+        new_kb.data[i].co = (base_co.x + x, base_co.y + y, base_co.z + z)
+    new_kb.value = 0.0
+    return True, []
+
+
+def _compose_convenience_shapes(face_obj):
+    """Add the contract's convenience shapes to the GLB face mesh."""
+    created, skipped = [], []
+    for name, recipe in CONVENIENCE_RECIPES:
+        ok, missing = _compose_shape_key(face_obj, name, recipe)
+        if ok:
+            created.append(name)
+        else:
+            skipped.append(f"{name} (missing {','.join(missing)})")
+
+    if created:
+        _log(f"  convenience: composed {len(created)} -> {created}")
+    for s in skipped:
+        _log(f"  convenience: SKIPPED {s}")
+
+    # State the remaining contract gap explicitly. A silent partial result
+    # here surfaces much later as a runtime morph lookup that quietly does
+    # nothing, which is the failure mode this pipeline keeps producing.
+    # mouthClose: ARKit's own is absent from MetaHuman's mapping, so synthesise.
+    ok, missing = _compose_shape_key(face_obj, "mouthClose", MOUTHCLOSE_RECIPE)
+    if ok:
+        created.append("mouthClose")
+        _log("  convenience: synthesised mouthClose (ARKit mapping omits it)")
+    else:
+        _log(f"  convenience: mouthClose FAILED - missing {','.join(missing)}")
+
+    if face_obj.data.shape_keys is not None:
+        have = set(face_obj.data.shape_keys.key_blocks.keys())
+        gap = [c for c in ("mouthOpen", "mouthClose", "mouthSmile",
+                           "eyesClosed", "eyesLookUp", "eyesLookDown")
+               if c not in have]
+        if gap:
+            _log(f"  convenience: CONTRACT GAP remains -> {gap}")
+    return len(created)
+
+
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform rig contract — bone names (07 §1)
+# ---------------------------------------------------------------------------
+#
+# `audit_models.py` requires 16 Mixamo-family bone names. A MetaHuman export
+# has NONE of them — not thirteen of sixteen, zero: even `head` fails against
+# `Head`, and the eyes are `FACIAL_L_Eye`/`FACIAL_R_Eye`.
+#
+# This is a RENAME, not a hierarchy collapse. The contract checks names, not
+# structure, and the 31 shared clips bind by name too. The MetaHuman spine is
+# five joints where Mixamo has three:
+#
+#   pelvis -> spine_01 -> spine_02 -> spine_03 -> spine_04 -> spine_05
+#
+# so `spine_01/03/05` take the three contract names and `spine_02/04` stay as
+# unnamed intermediates. Clips animating Spine/Spine1/Spine2 apply at those
+# three joints and the intermediates ride along at rest. The pose is valid;
+# whether it reads as well as a native three-joint spine is a question for
+# Stage A's capture, not for the contract. Same for `neck_01` taking `Neck`
+# while `neck_02` remains.
+#
+# Nothing is deleted. Removing joints would be irreversible here and buys
+# nothing the contract asks for.
+CONTRACT_BONE_RENAMES = (
+    ("pelvis", "Hips"),
+    ("spine_01", "Spine"),
+    ("spine_03", "Spine1"),
+    ("spine_05", "Spine2"),
+    ("neck_01", "Neck"),
+    ("head", "Head"),
+    ("clavicle_l", "LeftShoulder"),
+    ("upperarm_l", "LeftArm"),
+    ("lowerarm_l", "LeftForeArm"),
+    ("hand_l", "LeftHand"),
+    ("clavicle_r", "RightShoulder"),
+    ("upperarm_r", "RightArm"),
+    ("lowerarm_r", "RightForeArm"),
+    ("hand_r", "RightHand"),
+    ("FACIAL_L_Eye", "LeftEye"),
+    ("FACIAL_R_Eye", "RightEye"),
+)
+
+
+# ---------------------------------------------------------------------------
+# TELEGAMEZ: platform mesh contract — split the face by material (07 §1)
+# ---------------------------------------------------------------------------
+#
+# `audit_models.py` requires six exactly-named meshes. A MetaHuman export
+# ships ONE face mesh carrying eight material slots, so this is a split, not a
+# rename — the hardest single item in the asset contract.
+#
+# It matters beyond passing an audit. The lid-morph rule requires eyesClosed /
+# eyeBlink* to be present on EVERY eye-region mesh independently, which is
+# only meaningful once those regions are separate objects. Blender's
+# separate-by-material carries the full shape-key set onto each piece, and
+# because the ARKit shapes were captured on the whole face, the lash and
+# eye-shell vertices genuinely move under a blink — so the coverage is real
+# rather than nominal zero-delta padding.
+#
+# Slots with no contract home (M_Hide, LacrimalFluid) are kept as their own
+# objects rather than merged into Head_Mesh. They are deliberately invisible,
+# and folding transparent geometry into the skin mesh would put an alpha-zero
+# material on the face's own slot list.
+CONTRACT_MESH_BY_MATERIAL = (
+    ("eyeshell", "EyeAO_Mesh"),      # before "eye" — the occlusion shell
+    ("lacrimal", "Lacrimal_Mesh"),
+    ("eyelash", "Eyelash_Mesh"),
+    ("lashmat", "Eyelash_Mesh"),
+    ("eyel_", "Eye_Mesh"),
+    ("eyer_", "Eye_Mesh"),
+    ("_eyel", "Eye_Mesh"),
+    ("_eyer", "Eye_Mesh"),
+    ("teeth", "Teeth_Mesh"),
+    ("saliva", "Teeth_Mesh"),
+    ("hide", "Hide_Mesh"),
+    ("skin", "Head_Mesh"),           # last: broadest match
+)
+
+
+def _contract_mesh_for_material(mat_name):
+    low = (mat_name or "").lower()
+    for needle, target in CONTRACT_MESH_BY_MATERIAL:
+        if needle in low:
+            return target
+    return None
+
+
+def _split_face_by_contract(face_obj):
+    """Split the single MetaHuman face mesh into the contract's named meshes."""
+    mats = [ms.material.name if ms.material else "" for ms in face_obj.material_slots]
+    plan = {m: _contract_mesh_for_material(m) for m in mats}
+    unmapped = [m for m, t in plan.items() if t is None]
+    _log(f"  split: {len(mats)} material slot(s) -> "
+         f"{sorted({t for t in plan.values() if t})}")
+    if unmapped:
+        _log(f"  split: UNMAPPED materials (left as-is): {unmapped}")
+
+    before = {o.name for o in bpy.data.objects if o.type == "MESH"}
+
+    bpy.ops.object.select_all(action="DESELECT")
+    face_obj.select_set(True)
+    bpy.context.view_layer.objects.active = face_obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    try:
+        bpy.ops.mesh.separate(type="MATERIAL")
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    pieces = [o for o in bpy.data.objects
+              if o.type == "MESH" and (o.name not in before or o is face_obj)]
+
+    # Group the resulting single-material pieces by contract target.
+    groups = {}
+    for o in pieces:
+        mat = o.material_slots[0].material.name if o.material_slots and o.material_slots[0].material else ""
+        target = _contract_mesh_for_material(mat)
+        if target is None:
+            continue
+        groups.setdefault(target, []).append(o)
+
+    made = []
+    for target, objs in groups.items():
+        keep = objs[0]
+        if len(objs) > 1:
+            # Eye_Mesh is L+R; Teeth_Mesh may pick up saliva.
+            bpy.ops.object.select_all(action="DESELECT")
+            for o in objs:
+                o.select_set(True)
+            bpy.context.view_layer.objects.active = keep
+            bpy.ops.object.join()
+        # Free the name if some leftover already holds it.
+        clash = bpy.data.objects.get(target)
+        if clash is not None and clash is not keep:
+            clash.name = f"{target}_unused"
+        keep.name = target
+        keep.data.name = target
+        made.append(target)
+
+    _log(f"  split: produced {sorted(made)}")
+    return made
+
+
+def _merge_armatures():
+    """Collapse the per-import skeletons into ONE armature, by joining.
+
+    Stage 01 exports face, body and outfits as separate SKMs, each with its own
+    armature. The published GLB then carried three skins and 342 duplicated
+    bone names - invisible until the first real body clip, because three.js
+    binds tracks by node name (first match wins), so the body followed the
+    clips while meshes skinned to the other skeletons held bind pose. Head,
+    hair, body and clothes as unconnected layers.
+
+    The first fix attempt retargeted modifiers onto the FACIAL armature on the
+    assumption it was a superset. It is not - measured: the face skeleton is
+    the facial rig plus only an upper spine/neck/head chain; hand_l and 300+
+    body bones exist only in the body skeleton. Its subset guard refused,
+    which is why this is now a JOIN:
+
+      keeper = the full-body armature (has hand_l)
+      copies = body-skeleton duplicates (outfits) - modifiers retargeted,
+               subset-guarded, spare deleted
+      facial = JOINed into the keeper; the duplicated connector chain
+               (root/spine_04/spine_05/neck_01/neck_02/head arrives suffixed
+               .001) is deduped by re-parenting its children - the FACIAL_*
+               subtree - onto the keeper's same-named bones. Face-mesh vertex
+               groups reference the base names throughout, so weights land on
+               the keeper's bones untouched.
+    """
+    import re as _re
+
+    arms = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    if len(arms) <= 1:
+        # Log the empty case: a single-armature scene and a merge that never
+        # ran look identical in silence (handoff 6.1).
+        return {"keeper": arms[0].name if arms else "(none)",
+                "retargeted": 0, "joined": 0, "deleted": 0}
+
+    def _has(arm, bone):
+        return arm.data.bones.get(bone) is not None
+
+    body_arms = [a for a in arms if _has(a, "hand_l") or _has(a, "LeftHand")]
+    face_arms = [a for a in arms
+                 if any(b.name.startswith("FACIAL_") for b in a.data.bones)
+                 and a not in body_arms]
+    if not body_arms:
+        _log("  armatures: NO full-body armature found (no hand_l) - cannot merge")
+        return {"keeper": "(none)", "retargeted": 0, "joined": 0, "deleted": 0}
+    keeper = max(body_arms, key=lambda a: len(a.data.bones))
+
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+
+    def _retarget(m, why):
+        for md in m.modifiers:
+            if md.type == "ARMATURE" and md.object is not None and md.object is not keeper:
+                md.object = keeper
+        world = m.matrix_world.copy()
+        m.parent = keeper
+        m.parent_type = "OBJECT"
+        m.matrix_parent_inverse = keeper.matrix_world.inverted()
+        m.matrix_world = world
+        _log(f"  armatures: {m.name} -> {keeper.name} ({why})")
+
+    # --- 1. body-skeleton COPIES: plain retarget, subset-guarded --------------
+    retargeted = 0
+    keeper_bones = {b.name for b in keeper.data.bones}
+    for a in body_arms:
+        if a is keeper:
+            continue
+        for m in meshes:
+            if any(md.type == "ARMATURE" and md.object is a for md in m.modifiers):
+                # Case reconciliation first: the outfit skeleton names its root
+                # 'Root' where the body says 'root' - same joint, different
+                # capitalisation, and glTF binding is case-sensitive. Rename
+                # the vertex group to the keeper's casing rather than refusing
+                # over a spelling.
+                keeper_ci = {b.lower(): b for b in keeper_bones}
+                for vg in m.vertex_groups:
+                    if vg.name not in keeper_bones and vg.name.lower() in keeper_ci:
+                        exact = keeper_ci[vg.name.lower()]
+                        _log(f"  armatures: {m.name} vgroup '{vg.name}' -> "
+                             f"'{exact}' (case reconciliation)")
+                        vg.name = exact
+                missing = [vg.name for vg in m.vertex_groups
+                           if vg.name not in keeper_bones]
+                if missing:
+                    _log(f"  armatures: {m.name} weights {len(missing)} group(s) "
+                         f"absent from keeper (e.g. {missing[:4]}) - NOT retargeted")
+                    continue
+                _retarget(m, "body-skeleton copy")
+                retargeted += 1
+
+    # --- 2. facial armatures: JOIN into the keeper ----------------------------
+    joined = 0
+    for fa in face_arms:
+        # Children (hair cards, un-skinned props) move to the keeper first -
+        # join deletes the source object and would orphan them.
+        for child in list(fa.children):
+            world = child.matrix_world.copy()
+            child.parent = keeper
+            child.parent_type = "OBJECT"
+            child.matrix_parent_inverse = keeper.matrix_world.inverted()
+            child.matrix_world = world
+        # Face meshes point their modifiers at the keeper; their vertex groups
+        # name base bones, which the keeper owns after the join.
+        for m in meshes:
+            if any(md.type == "ARMATURE" and md.object is fa for md in m.modifiers):
+                _retarget(m, "facial mesh")
+
+        before = {b.name for b in keeper.data.bones}
+        bpy.ops.object.select_all(action="DESELECT")
+        fa.select_set(True)
+        keeper.select_set(True)
+        bpy.context.view_layer.objects.active = keeper
+        bpy.ops.object.join()
+        gained = len(keeper.data.bones) - len(before)
+        _log(f"  armatures: joined facial armature -> {keeper.name} (+{gained} bones)")
+        joined += 1
+
+    # --- 3. dedupe connector bones the join suffixed --------------------------
+    # The facial skeleton repeats the torso chain; join renames those arrivals
+    # to <name>.001. Re-parent each duplicate's children onto the keeper's
+    # same-named bone, then delete the duplicate. FACIAL_* names are unique
+    # and survive unrenamed, so the whole facial subtree ends up under the
+    # real head bone.
+    bpy.context.view_layer.objects.active = keeper
+    bpy.ops.object.mode_set(mode="EDIT")
+    ebs = keeper.data.edit_bones
+    dup_rx = _re.compile(r"(.+)\.\d{3}$")
+
+    def _depth(eb):
+        d = 0
+        while eb.parent is not None:
+            d += 1
+            eb = eb.parent
+        return d
+
+    dupes = []
+    for eb in ebs:
+        m = dup_rx.match(eb.name)
+        if m and ebs.get(m.group(1)) is not None:
+            dupes.append((_depth(eb), eb.name))
+    removed = 0
+    for _d, name in sorted(dupes):
+        eb = ebs.get(name)
+        if eb is None:
+            continue
+        base = ebs.get(dup_rx.match(name).group(1))
+        for child in list(eb.children):
+            child.use_connect = False
+            child.parent = base
+        ebs.remove(eb)
+        removed += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    _log(f"  armatures: deduped {removed} connector bone(s) after join")
+
+    # --- 4. delete spares now unused ------------------------------------------
+    deleted = 0
+    for a in [o for o in bpy.data.objects if o.type == "ARMATURE"]:
+        if a is keeper:
+            continue
+        users = [m.name for m in bpy.data.objects if m.type == "MESH"
+                 and any(md.type == "ARMATURE" and md.object is a
+                         for md in m.modifiers)]
+        if users:
+            _log(f"  armatures: NOT deleting '{a.name}' - still used by {users}")
+            continue
+        for child in list(a.children):
+            world = child.matrix_world.copy()
+            child.parent = keeper
+            child.matrix_world = world
+        bpy.data.objects.remove(a, do_unlink=True)
+        deleted += 1
+
+    return {"keeper": keeper.name, "retargeted": retargeted,
+            "joined": joined, "deleted": deleted}
+
+
+def _apply_mesh_contract():
+    """Name the six contract meshes. Face is split; body is a rename."""
+    face = None
+    for o in bpy.data.objects:
+        if (o.type == "MESH" and "facemesh" in o.name.lower()
+                and "cardsmesh" not in o.name.lower()):
+            if face is None or len(o.data.vertices) > len(face.data.vertices):
+                face = o
+    made = _split_face_by_contract(face) if face is not None else []
+
+    for o in bpy.data.objects:
+        if o.type == "MESH" and "bodymesh" in o.name.lower():
+            o.name = "Body_Mesh"
+            o.data.name = "Body_Mesh"
+            made.append("Body_Mesh")
+            break
+
+    required = ("Head_Mesh", "Eye_Mesh", "EyeAO_Mesh",
+                "Eyelash_Mesh", "Teeth_Mesh", "Body_Mesh")
+    present = {o.name for o in bpy.data.objects if o.type == "MESH"}
+    gap = [r for r in required if r not in present]
+
+    # The lid-morph rule (07 §1) wants blink coverage on every eye-region mesh.
+    # Report it rather than assume the split delivered it.
+    for m in ("Head_Mesh", "EyeAO_Mesh", "Eyelash_Mesh"):
+        o = bpy.data.objects.get(m)
+        if o is None or o.data.shape_keys is None:
+            _log(f"  lids: {m} has NO shape keys")
+            continue
+        keys = o.data.shape_keys.key_blocks
+        have = [k for k in ("eyesClosed", "eyeBlinkLeft", "eyeBlinkRight")
+                if k in keys]
+        moved = 0
+        kb = keys.get("eyeBlinkLeft")
+        if kb is not None:
+            basis = keys[0]
+            moved = sum(1 for i in range(0, len(basis.data), 7)
+                        if (kb.data[i].co - basis.data[i].co).length > 1e-5)
+        _log(f"  lids: {m} has {have} (eyeBlinkLeft moves ~{moved * 7} verts)")
+
+    if gap:
+        _log(f"  mesh contract: GAP remains -> {gap}")
+    else:
+        _log("  mesh contract: all six meshes present")
+    return gap
+
+
+def _rename_contract_bones():
+    """Rename MetaHuman bones to the platform's Mixamo-family contract names."""
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+    renamed, already = 0, 0
+
+    for arm in armatures:
+        bones = arm.data.bones
+        skinned = [m for m in meshes
+                   if any(md.type == "ARMATURE" and md.object is arm
+                          for md in m.modifiers)]
+        for src, dst in CONTRACT_BONE_RENAMES:
+            if bones.get(dst) is not None:
+                already += 1
+                continue
+            b = bones.get(src)
+            if b is None:
+                continue
+            b.name = dst
+            renamed += 1
+            # Blender generally keeps vertex groups in step with a bone
+            # rename, but do it explicitly: a group left on the old name is a
+            # silently unweighted bone, which looks like a broken skin weeks
+            # later rather than a failed rename now.
+            for m in skinned:
+                vg = m.vertex_groups.get(src)
+                if vg is not None:
+                    vg.name = dst
+
+    present = set()
+    for arm in armatures:
+        present |= {b.name for b in arm.data.bones}
+    want = [dst for _, dst in CONTRACT_BONE_RENAMES]
+    missing = [w for w in want if w not in present]
+
+    _log(f"  bones: renamed {renamed} (already correct: {already})")
+    if missing:
+        _log(f"  bones: CONTRACT GAP remains -> {missing}")
+    else:
+        _log(f"  bones: all {len(want)} contract names present")
+    return renamed, missing
+
+
+def _parent_cards_to_head_bone():
+    """Bone-parent every groom card mesh to the contract Head bone.
+
+    Hair, brow, goatee and moustache cards were OBJECT-parented to the armature
+    - static geometry. Nothing ever noticed because nothing ever moved the head
+    bone in world space: face motion is morphs, and the head-look writes were
+    absorbed elsewhere. The first real body clip moved the head and the hair
+    stayed behind, floating where the character used to stand.
+
+    Runs AFTER _rename_contract_bones so the parent target is the final name
+    ('Head') - parent_bone is a string reference, and renaming a bone under an
+    existing string parent is exactly the kind of silent breakage this pipeline
+    collects. Assigning matrix_world back after re-parenting preserves the
+    card's world placement across the bone-tail origin change.
+    """
+    arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
+    if arm is None or arm.data.bones.get("Head") is None:
+        _log("  cards->Head: no armature with a 'Head' bone - NOT parented")
+        return 0
+    n = 0
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        nl = o.name.lower()
+        if "cardsmesh" not in nl and "cardmesh" not in nl:
+            continue
+        world = o.matrix_world.copy()
+        o.parent = arm
+        o.parent_type = "BONE"
+        o.parent_bone = "Head"
+        o.matrix_world = world
+        _log(f"  cards->Head: {o.name}")
+        n += 1
+    if n == 0:
+        _log("  cards->Head: found ZERO card meshes - a bald character or a miss")
+    return n
+
+
+def _compose_visemes(face_obj):
+    """Add the 15 contract visemes to the GLB face mesh."""
+    created, skipped = [], []
+    for name, recipe in VISEME_RECIPES:
+        ok, missing = _compose_shape_key(face_obj, name, recipe)
+        if ok:
+            created.append(name)
+        else:
+            skipped.append(f"{name} (missing {','.join(missing)})")
+
+    _log(f"  visemes: composed {len(created)}/15")
+    for s in skipped:
+        _log(f"  visemes: SKIPPED {s}")
+
+    if face_obj.data.shape_keys is not None:
+        have = set(face_obj.data.shape_keys.key_blocks.keys())
+        gap = [f"viseme_{v}" for v in
+               ("sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS",
+                "nn", "RR", "aa", "E", "I", "O", "U")
+               if f"viseme_{v}" not in have]
+        if gap:
+            _log(f"  visemes: CONTRACT GAP remains -> {gap}")
+    return len(created)
 
 
 def main():
@@ -1775,6 +2795,14 @@ def main():
 
     hidden = _hide_non_lod0()
     _log(f"hid {hidden} non-LOD0/collision meshes")
+
+    excluded = _hide_excluded_meshes(char_root)
+    _log(f"excluded {excluded} mesh(es) via manifest exclude_meshes")
+
+    merged = _merge_armatures()
+    _log(f"armatures: keeper '{merged['keeper']}' - retargeted "
+         f"{merged['retargeted']}, joined {merged.get('joined', 0)} facial, "
+         f"deleted {merged['deleted']} spare(s)")
 
     # ARKit shape-key bake from the Sequencer-baked LSE FBX (stage 01).
     # UE's Sequencer evaluates the AnimSequence through a live
@@ -1803,6 +2831,17 @@ def main():
             groom_keys = _apply_arkit_to_grooms(glb_face)
             _log(f"propagated ARKit shape keys onto groom card meshes "
                  f"({groom_keys} total keys created)")
+
+            # TELEGAMEZ: contract convenience shapes, composed AFTER groom
+            # propagation on purpose — the grooms keep the 46 ARKit-derived
+            # keys they were verified with, and only the face gains the
+            # merged ones. The eye-region slots the lid-morph rule cares
+            # about (eyeshell, lashes, lacrimal) are primitives of this same
+            # face mesh, so they share its shape keys.
+            n_conv = _compose_convenience_shapes(glb_face)
+            _log(f"composed {n_conv} convenience shape(s) onto the GLB face mesh")
+            n_vis = _compose_visemes(glb_face)
+            _log(f"composed {n_vis} viseme shape(s) onto the GLB face mesh")
     else:
         _log("no ARKit shape keys baked - LSE FBX missing or capture failed")
 
@@ -1881,6 +2920,31 @@ def main():
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")
+    # TELEGAMEZ: mesh contract. Runs after every step that looks the face up
+    # by its MetaHuman name (ARKit transfer, groom propagation, scalp
+    # darkening) — splitting earlier would leave those searching for a mesh
+    # that no longer exists.
+    mesh_gap = _apply_mesh_contract()
+    _log("applied the platform mesh contract"
+         + (f" - GAP: {mesh_gap}" if mesh_gap else " (all six present)"))
+
+    # TELEGAMEZ: rig contract bone names. Last thing before saving, so every
+    # earlier stage still sees the MetaHuman names it was written against
+    # (the groom parenting looks up "head", for one).
+    #
+    # NOTE FOR THE ANIMATION BAKE: MetaHuman-native state loops are authored
+    # against metahuman_base_skel, so the clip bake MUST apply this exact same
+    # mapping to its channels. Rename the model without renaming the clips and
+    # every one of these 16 joints goes unanimated — the body would move only
+    # on the intermediates and twist bones, which reads as a subtle stiffness
+    # rather than an obvious break.
+    n_bones, bone_gap = _rename_contract_bones()
+
+    n_cards = _parent_cards_to_head_bone()
+    _log(f"parented {n_cards} card mesh(es) to the Head bone")
+    _log(f"renamed {n_bones} bone(s) to the platform rig contract"
+         + (f" - GAP: {bone_gap}" if bone_gap else ""))
+
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
     _log(f"wrote {blend_path}")
 

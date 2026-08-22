@@ -1104,7 +1104,6 @@ function buildHairTunePanel(container, hairMats) {
       // Detect mode.
       const hasBlendClone = bld.length > 0;
       const cloneVisible = hasBlendClone && bld.some(m => {
-        // Find the mesh for this blend material.
         for (const pm of pri) {
           if (pm.userData?.blendClone?.mesh?.visible) return true;
         }

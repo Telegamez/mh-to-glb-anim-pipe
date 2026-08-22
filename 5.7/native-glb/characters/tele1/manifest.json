@@ -1,0 +1,59 @@
+{
+  "character_id": "tele1",
+  "source": "engine_mhc",
+  "ue_version": "5.7",
+  "mh_folder": "/Game/Tele1",
+  "output_name": "Tele1",
+  "stages": {
+    "00_unreal_assemble": {
+      "status": "done",
+      "started_at": "2026-08-17T01:04:37Z",
+      "completed_at": "2026-08-17T16:55:01Z",
+      "output_dir": null,
+      "errors": []
+    },
+    "01_unreal_glb_export": {
+      "status": "done",
+      "started_at": "2026-08-17T01:06:46Z",
+      "completed_at": "2026-08-17T16:57:02Z",
+      "output_dir": "01-glb/",
+      "errors": []
+    },
+    "02_blender_assemble": {
+      "status": "done",
+      "started_at": "2026-08-18T02:58:35Z",
+      "completed_at": "2026-08-18T02:58:35Z",
+      "output_dir": "02-blend/",
+      "errors": []
+    },
+    "03_glb_export": {
+      "status": "done",
+      "started_at": "2026-08-17T01:24:18Z",
+      "completed_at": "2026-08-19T15:35:36Z",
+      "output_dir": "03-glb/",
+      "errors": []
+    },
+    "04_webview_build": {
+      "status": "done",
+      "started_at": "2026-08-17T01:24:52Z",
+      "completed_at": "2026-08-18T22:30:30Z",
+      "output_dir": "../../docs/characters/",
+      "errors": []
+    }
+  },
+  "wardrobe_overrides": {
+    "Desert_Boots": {
+      "vectors": {
+        "Color1": [
+          0.6038269996643066,
+          0.40724000334739685,
+          0.2195259928703308
+        ]
+      }
+    }
+  },
+  "exclude_meshes": [
+    "Tele1_Outfits_2"
+  ],
+  "body": "male"
+}

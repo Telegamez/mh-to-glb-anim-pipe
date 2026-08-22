@@ -89,7 +89,17 @@ Write-Host "[stage01] workspace   : $Workspace"
 # produces GLBs with NO textures. -AllowCommandletRendering spins up
 # the Slate-less renderer so the bake can execute.
 $ScriptArg = "C:/tmp/mh/export_glb.py -- --char=$Char"
+# TELEGAMEZ: this file sets $ErrorActionPreference = "Stop", and PowerShell
+# converts a native command's stderr into an ErrorRecord whenever the CALLER
+# captures output. Benign chatter - OpenXR version warnings, Blender startup
+# noise - then terminates the launcher before the $LASTEXITCODE check below
+# ever runs. The stage works by hand and dies under a batch runner or CI.
+# Drop to "Continue" across the call so the exit code decides success, which
+# is what the check was written to do. See TELEGAMEZ.md.
+$PrevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $UECmd $UEProject -run=pythonscript "-script=$ScriptArg" -AllowCommandletRendering -unattended -nosplash
+$ErrorActionPreference = $PrevEap
 $code = $LASTEXITCODE
 Write-Host "[stage01] UE exit code: $code"
 

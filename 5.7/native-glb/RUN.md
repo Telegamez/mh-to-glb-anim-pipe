@@ -59,12 +59,22 @@ what `<id>` it derived. Use that `<id>` for the rest of this run.
 If the script exits 1 ("character already exists"), ask the operator
 whether to re-export. If yes, re-run with `--force`. If no, abort.
 
-## Step 2 — Dispatch stage 00 → 01 → 02 → 03 → 04
+## Step 2 — Dispatch stage 00 → 01 → 02 → **FBX reweight** → 03 → 04
 
 For each stage in order, spawn a sub-Haiku agent with the prompt below.
 **Wait for each sub-agent to complete before starting the next.** Read
 the manifest after each one; if `stages.<stage>.status != "done"`, abort
 and report which stage failed.
+
+**MANDATORY between stage 02 and stage 03** — run directly (no sub-agent):
+
+    pwsh -File tools/run_fbx_reweight.ps1 -Char <id>
+
+Unreal's glTF exporter corrupts skin weights (00-START-HERE §7.0 addendum);
+this replaces them from a parallel FBX export and re-solves. It also runs
+stage 03 itself, so after it succeeds, skip the separate stage 03 dispatch.
+A character baked without this step ships torn garments. If it fails, abort
+and report — do not fall back to plain stage 03.
 
 Use the Agent tool with `subagent_type: general-purpose` and
 `model: haiku`.

@@ -30,7 +30,20 @@ Write-Host "[run_export] workspace = $Workspace"
 Write-Host "[run_export] char      = $Char"
 Write-Host "[run_export] blend     = $Blend"
 
-& $BlenderExe --background $Blend --python $PyScript -- --char $Char --workspace $Workspace
+# TELEGAMEZ PATCH: --factory-startup, same reason as stage 02's launcher —
+# user addons must not participate in a reproducible bake, and a badly
+# behaved one can crash Blender outright.
+# TELEGAMEZ: this file sets $ErrorActionPreference = "Stop", and PowerShell
+# converts a native command's stderr into an ErrorRecord whenever the CALLER
+# captures output. Benign chatter - OpenXR version warnings, Blender startup
+# noise - then terminates the launcher before the $LASTEXITCODE check below
+# ever runs. The stage works by hand and dies under a batch runner or CI.
+# Drop to "Continue" across the call so the exit code decides success, which
+# is what the check was written to do. See TELEGAMEZ.md.
+$PrevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $BlenderExe --factory-startup --background $Blend --python-exit-code 1 --python $PyScript -- --char $Char --workspace $Workspace
+$ErrorActionPreference = $PrevEap
 $code = $LASTEXITCODE
 Write-Host "[run_export] exit code: $code"
 

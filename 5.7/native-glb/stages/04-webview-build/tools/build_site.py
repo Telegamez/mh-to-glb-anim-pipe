@@ -84,6 +84,56 @@ def _copy_tree(src: Path, dst: Path) -> int:
 # ---------------------------------------------------------------------------
 # Site builders
 
+
+# TELEGAMEZ: cap the size of PUBLISHED sidecar textures.
+#
+# Stage 03's _downsample_images only reaches images inside the GLB, because it
+# walks bpy.data.images. Sidecar PNGs are plain file copies and never enter
+# Blender, so nothing capped them. Outfit maps come out of UE at 4096x4096:
+# nine of those is ~576 MB of VRAM decoded, ~770 MB with mips, before hair and
+# face. That does not render - the tab thrashes or dies - so this is a
+# correctness fix, not a size optimisation.
+#
+# 03-glb/ keeps the full-resolution masters; only the published copy shrinks.
+SIDECAR_TEXTURE_CAP_PX = 2048
+
+
+def _cap_published_textures(tex_dir, cap_px=SIDECAR_TEXTURE_CAP_PX):
+    """Downscale published PNGs above `cap_px` on their longest edge."""
+    if not tex_dir.is_dir():
+        return 0
+    try:
+        from PIL import Image
+    except ImportError:
+        # Loud, not silent: shipping 4K maps looks like success right up
+        # until the viewer runs out of memory.
+        print(f"[stage04] WARNING: Pillow unavailable - publishing textures "
+              f"UNCAPPED (>{cap_px}px maps may fail to render)", flush=True)
+        return 0
+
+    resized = 0
+    for png in sorted(tex_dir.glob("*.png")):
+        try:
+            with Image.open(png) as im:
+                w, h = im.size
+                biggest = max(w, h)
+                if biggest <= cap_px:
+                    continue
+                factor = cap_px / biggest
+                new = (max(1, round(w * factor)), max(1, round(h * factor)))
+                out = im.resize(new, Image.LANCZOS)
+                out.save(png, format="PNG", optimize=True)
+            print(f"[stage04]   cap {png.name}: {w}x{h} -> {new[0]}x{new[1]}",
+                  flush=True)
+            resized += 1
+        except Exception as e:
+            print(f"[stage04]   cap {png.name} FAILED: {e}", flush=True)
+    if resized:
+        print(f"[stage04] capped {resized} published texture(s) at {cap_px}px",
+              flush=True)
+    return resized
+
+
 def _build_character_page(
     char_id: str,
     workspace: Path,
@@ -92,6 +142,7 @@ def _build_character_page(
     built_at: str,
 ) -> dict:
     """Copy GLB + mapping + textures and render per-character viewer."""
+    # (see _cap_published_textures for why the published copies are resized)
     char_dir = workspace / "characters" / char_id
     glb_src = char_dir / "03-glb" / f"{char_id}.glb"
     glb_manifest = _load_json(char_dir / "03-glb" / "glb_manifest.json")
@@ -108,6 +159,7 @@ def _build_character_page(
     if has_mapping:
         shutil.copy2(mapping_src, out_dir / "mh_materials.json")
     tex_count = _copy_tree(char_dir / "03-glb" / "textures", out_dir / "textures")
+    _cap_published_textures(out_dir / "textures")
 
     # Gallery thumbnail (static image, so the index page doesn't need to
     # load N GLBs simultaneously — mobile Safari OOMs on that). Stage 02

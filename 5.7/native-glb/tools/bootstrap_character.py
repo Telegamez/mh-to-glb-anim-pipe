@@ -118,6 +118,9 @@ def _parse_args():
     src.add_argument("--asset", help="UE asset path, e.g. /Game/Ada/MHC_Ada or /Game/Ada")
     src.add_argument("--id", help="Character id (will default mh_folder to /Game/<Id> capitalised)")
     p.add_argument("--workspace", help="Pipeline root (defaults to the directory containing this script's parent)")
+    p.add_argument("--body", choices=("female", "male"), required=True,
+                   help="Body archetype. Chooses the animation library at runtime; a wrong "
+                        "or missing value ships silently as female (telegamez#3285).")
     p.add_argument("--force", action="store_true", help="Overwrite existing character folder")
     return p.parse_args()
 
@@ -167,6 +170,9 @@ def main():
     manifest["character_id"] = char_id
     manifest["mh_folder"] = mh_folder
     manifest["output_name"] = output_name
+    # Required, and recorded here so it can never be left as the template's "".
+    # stage 02 refuses to bake a character whose archetype is unset.
+    manifest["body"] = args.body
     manifest["created_at"] = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
     # Reset every stage to a clean pending state.
     for stage_key, stage in manifest.get("stages", {}).items():

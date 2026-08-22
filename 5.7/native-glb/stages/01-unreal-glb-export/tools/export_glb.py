@@ -344,14 +344,42 @@ def _export_arkit_shape_sources(face_skm, out_dir):
     }
 
 
-def _export_sequencer_bake(face_skm, a_seq, fbx_out):
-    """Build a transient Level Sequence with the face SKM driven by the
-    ARKit AnimSequence, then FBX-export the whole scene. Output FBX
-    contains:
+def _source_frame_rate(a_seq, fallback=24):
+    """The AnimSequence's own frames-per-second, measured from the asset.
+
+    `get_num_frames` reports INTERVALS, not sample positions — the 66-pose
+    ARKit mapping reports 65 over 2.7083 s — so intervals / play length is the
+    rate. Measuring it beats assuming it: the display-rate trap below is about
+    the Level Sequence matching ITS SOURCE, and a hardcoded 24 is only correct
+    for a source that happens to be 24 fps. Baking a 30 fps sequence at 24
+    lands every pose between two frames — the exact failure the hardcode was
+    written to prevent.
+    """
+    try:
+        intervals = int(unreal.AnimationLibrary.get_num_frames(a_seq))
+        length = float(a_seq.get_play_length())
+        if intervals > 0 and length > 0:
+            rate = intervals / length
+            nearest = int(round(rate))
+            if abs(rate - nearest) < 0.01 and nearest > 0:
+                return nearest
+            _log(f"  frame rate {rate:.4f} is not an integer; using {fallback}")
+    except Exception as e:
+        _log(f"  could not measure frame rate ({e}); using {fallback}")
+    return fallback
+
+
+def _export_sequencer_bake(face_skm, a_seq, fbx_out, seq_name="LS_arkit_export"):
+    """Build a transient Level Sequence with the face SKM driven by the given
+    AnimSequence, then FBX-export the whole scene. Output FBX contains:
       - mesh + skeleton (rest pose)
       - per-frame bone keyframes resolved by RigLogic + correctives
     Returns True on success, False on failure (and the caller is free
-    to continue without the sequencer bake)."""
+    to continue without the sequencer bake).
+
+    `seq_name` keeps two bakes in one stage run from colliding on the same
+    transient asset path.
+    """
     try:
         world = unreal.EditorLevelLibrary.get_editor_world()
         if world is None:
@@ -364,12 +392,12 @@ def _export_sequencer_bake(face_skm, a_seq, fbx_out):
         smc.set_skeletal_mesh(face_skm)
         smc.set_skinned_asset_and_update(face_skm)
 
-        seq_path = "/Game/Temp/LS_arkit_export"
+        seq_path = f"/Game/Temp/{seq_name}"
         if unreal.EditorAssetLibrary.does_asset_exist(seq_path):
             unreal.EditorAssetLibrary.delete_asset(seq_path)
         factory = unreal.LevelSequenceFactoryNew()
         seq = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
-            asset_name="LS_arkit_export", package_path="/Game/Temp",
+            asset_name=seq_name, package_path="/Game/Temp",
             asset_class=unreal.LevelSequence, factory=factory)
         binding = seq.add_possessable(actor)
         anim_track = binding.add_track(unreal.MovieSceneSkeletalAnimationTrack)
@@ -384,9 +412,25 @@ def _export_sequencer_bake(face_skm, a_seq, fbx_out):
         # ~50% browDownLeft + 50% mouthUpperUpRight). Setting display
         # rate to match the source AS makes each integer bake frame
         # correspond to one source pose exactly, no interpolation.
-        fps = 24
+        fps = _source_frame_rate(a_seq)
         seq.set_display_rate(unreal.FrameRate(fps, 1))
-        length_frames = int(a_seq.get_play_length() * fps + 0.5)
+
+        # `play_length * fps` is the INTERVAL count; the samplable frames are
+        # 0..intervals, one more than that. The Sequencer's playback end is
+        # exclusive, so a range of `intervals` bakes 0..intervals-1 and the
+        # FINAL POSE IS SILENTLY DROPPED, replaced in the FBX by a rest-pose
+        # tail frame.
+        #
+        # This has always been true and was invisible: the ARKit mapping's last
+        # six poses are `Pose_12..Pose_17`, RigLogic correctives that stage 02
+        # filters out by name, so the pose that went missing was one nobody
+        # captured. It surfaced on a sequence whose last frame is a real pose:
+        # the authored asset carried 16 non-zero controls on that frame and the
+        # bake produced 0.00 mm of deformation.
+        #
+        # +1 so the last real pose is inside the range.
+        intervals = int(a_seq.get_play_length() * fps + 0.5)
+        length_frames = intervals + 1
         section.set_range(0, length_frames)
         seq.set_playback_start(0)
         seq.set_playback_end(length_frames)
@@ -409,7 +453,7 @@ def _export_sequencer_bake(face_skm, a_seq, fbx_out):
             return False
         _log(f"  + {os.path.basename(fbx_out)}  "
              f"({os.path.getsize(fbx_out)/1_000_000:.1f} MB) "
-             f"[Sequencer-baked AnimSequence at 30fps over {length_frames} frames]")
+             f"[Sequencer-baked AnimSequence at {fps}fps over {length_frames} frames]")
         # NOTE: not deleting the transient /Game/Temp/LS_arkit_export
         # uasset or destroying the SkeletalMeshActor — UE crashes on
         # delete_asset for an asset that's still referenced by an

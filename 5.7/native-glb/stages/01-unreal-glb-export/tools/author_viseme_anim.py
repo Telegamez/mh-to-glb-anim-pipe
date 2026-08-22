@@ -101,14 +101,30 @@ def _load_poses(path):
 
     poses = spec.get("poses") or []
     names = [p["name"] for p in poses]
-    missing = [n for n in CONTRACT_SHAPES if n not in names]
-    if missing:
-        raise RuntimeError(f"pose table is missing contract shapes: {missing}")
-    extra = [n for n in names if n not in CONTRACT_SHAPES]
-    if extra:
-        raise RuntimeError(f"pose table has shapes outside the contract: {extra}")
+
+    # The contract check belongs to the VISEME table, where the 16 names are the deliverable
+    # and a missing one is a shipped defect. It is the wrong gate for a table whose purpose is
+    # something else -- slice 5.0's 322-pose ground-truth table sweeps single controls and
+    # co-activation pairs, and has no reason to carry `viseme_sil`.
+    #
+    # Declared by the table rather than passed as a flag, and defaulting to "visemes", so the
+    # existing pose file keeps its gate untouched and a new table has to say what it is. A
+    # command-line opt-out would let the viseme table lose its contract check silently.
+    kind = spec.get("table_kind", "visemes")
+    if kind == "visemes":
+        missing = [n for n in CONTRACT_SHAPES if n not in names]
+        if missing:
+            raise RuntimeError(f"pose table is missing contract shapes: {missing}")
+        extra = [n for n in names if n not in CONTRACT_SHAPES]
+        if extra:
+            raise RuntimeError(f"pose table has shapes outside the contract: {extra}")
+    elif kind != "validation":
+        raise RuntimeError(f"unknown table_kind {kind!r}; expected 'visemes' or 'validation'")
+
     if len(set(names)) != len(names):
         raise RuntimeError("pose table has duplicate names")
+    if not poses:
+        raise RuntimeError("pose table is empty")
 
     for p in poses:
         for c, w in (p.get("controls") or {}).items():

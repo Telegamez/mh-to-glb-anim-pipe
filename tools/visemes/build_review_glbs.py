@@ -139,6 +139,117 @@ def bake_shapes(obj, basis, shapes, order):
     return made
 
 
+def isolate_tongue(obj):
+    """Delete every polygon that is not teeth/tongue.
+
+    Why this variant exists: the tongue-dependent visemes are the ones F2 is built for, and
+    NO exterior view can show them. A front view is blocked by the teeth and lips; a profile
+    is blocked by the cheek. `viseme_kk` is the extreme case -- velar constriction, zero lip
+    signature -- so baked and composed render identically from every outside angle while
+    measuring 1.3x apart internally.
+
+    Stripping the head away makes the articulation directly visible from any angle. It looks
+    alarming and it is not a deliverable; it is an inspection instrument.
+    """
+    import bmesh
+    teeth = {i for i, ms in enumerate(obj.material_slots)
+             if ms.material and any(k in ms.material.name.lower()
+                                    for k in ("teeth", "tongue", "saliva"))}
+    if not teeth:
+        log("  no teeth/tongue slot found; leaving mesh intact")
+        return 0
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    doomed = [f for f in bm.faces if f.material_index not in teeth]
+    bmesh.ops.delete(bm, geom=doomed, context="FACES")
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    log(f"  isolated teeth/tongue: kept {len(obj.data.polygons)} faces")
+    return len(obj.data.polygons)
+
+
+# The Sequencer FBX imports at world_scale 0.01, but `evaluated_get` returns mesh-local
+# positions in CENTIMETRES -- the same cm/m trap stage 02's ARKit transfer documents and
+# converts for. Exporting without converting produced review heads 31 x 39 x 22 units against
+# a published companion's whole body at 1.0 x 1.3 x 0.4, i.e. ~100x oversized: the harness
+# camera sat INSIDE the head and the model read as "not loading".
+CM_TO_M = 0.01
+
+
+def to_metres(obj):
+    """Scale the mesh AND its shape keys from centimetres to metres.
+
+    `transform_apply` writes the scale into the mesh data and every key block, so the morph
+    deltas convert with the basis rather than staying 100x. A node-level scale would also
+    render correctly but would leave the shape-key data in cm, which anything reading the
+    accessors directly (a measurement script, a downstream tool) would get wrong.
+    """
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    obj.scale = (CM_TO_M, CM_TO_M, CM_TO_M)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    d = obj.dimensions
+    log(f"  scaled to metres: {d.x:.3f} x {d.y:.3f} x {d.z:.3f} m")
+
+
+def strip_vertex_colours(obj):
+    """Remove COLOR_0 so the review mesh renders as plain geometry.
+
+    MetaHuman face meshes carry vertex colours as MASK channels -- the pipeline has
+    `verify_vertex_colours.cjs` precisely because they are load-bearing data, not decoration.
+    With materials stripped, three.js builds a default material, sees COLOR_0, and enables
+    `vertexColors`, so those masks render as albedo: a bright green face with cyan eye sockets
+    and blue lashes. Correct data, nonsensical picture, and impossible to judge a lip shape on.
+    """
+    removed = [a.name for a in list(obj.data.color_attributes)]
+    while obj.data.color_attributes:
+        obj.data.color_attributes.remove(obj.data.color_attributes[0])
+    if removed:
+        log(f"  stripped vertex colours: {removed}")
+    return removed
+
+
+def split_tongue_copy(obj):
+    """Duplicate the object and reduce the copy to teeth/tongue.
+
+    Must run BEFORE `apply_clay`, which clears the material slots -- and the teeth slot is how
+    `isolate_tongue` finds what to keep. Running it after silently produced full heads under
+    the tongue-only filenames: correct geometry, wrong content, and nothing failing.
+    """
+    copy = obj.copy()
+    copy.data = obj.data.copy()
+    bpy.context.scene.collection.objects.link(copy)
+    isolate_tongue(copy)
+    return copy
+
+
+def apply_clay(obj):
+    """Give the mesh one neutral clay material.
+
+    Exporting with no material at all leaves three.js to build its default, which renders
+    near-white under the harness's RoomEnvironment IBL. Form reads badly on white: the lip
+    margin, the philtrum and the aperture edge all wash out, which are precisely the features
+    a viseme review is judging. A mid-grey with moderate roughness is the standard clay-render
+    answer -- it holds shading gradients where white clips.
+
+    Deliberately NOT the MetaHuman skin shader. The point of these builds is that nothing but
+    geometry differs between them; a real material would bring textures, and a texture seam
+    misread as a lip crease is exactly the confusion this avoids.
+    """
+    mat = bpy.data.materials.new("TG_Review_Clay")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = (0.62, 0.60, 0.58, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.55
+        bsdf.inputs["Metallic"].default_value = 0.0
+    obj.data.materials.clear()
+    obj.data.materials.append(mat)
+    log("  applied neutral clay material")
+
+
 def export(path, obj):
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
@@ -147,7 +258,7 @@ def export(path, obj):
         filepath=path, export_format="GLB", use_selection=True,
         export_morph=True, export_morph_normal=True,
         export_skins=False, export_animations=False,
-        export_materials="NONE",
+        export_materials="EXPORT",
     )
     log(f"  -> {path} ({os.path.getsize(path)/1_000_000:.1f} MB)")
 
@@ -159,7 +270,12 @@ obj, basis, baked = capture(
     os.path.join(SRC, "LS_tg_visemes.fbx"),
     os.path.join(SRC, "tg_viseme_pose_names.json"), "baked")
 bake_shapes(obj, basis, baked, ORDER)
-export(os.path.join(OUT, f"{CHAR}-visemes-baked.glb"), obj)
+strip_vertex_colours(obj)
+tongue = split_tongue_copy(obj)
+for target, name in ((obj, f"{CHAR}-visemes-baked.glb"), (tongue, f"{CHAR}-tongue-baked.glb")):
+    apply_clay(target)
+    to_metres(target)
+    export(os.path.join(OUT, name), target)
 
 # ------------------------------------------------------------- composed ----
 obj, basis, arkit = capture(
@@ -179,6 +295,12 @@ for name, recipe in COMPOSED.items():
             positions[i] += (src_positions[i] - basis[i]) * weight
     composed[name] = positions
 bake_shapes(obj, basis, composed, ORDER)
-export(os.path.join(OUT, f"{CHAR}-visemes-composed.glb"), obj)
+strip_vertex_colours(obj)
+tongue = split_tongue_copy(obj)
+for target, name in ((obj, f"{CHAR}-visemes-composed.glb"),
+                     (tongue, f"{CHAR}-tongue-composed.glb")):
+    apply_clay(target)
+    to_metres(target)
+    export(os.path.join(OUT, name), target)
 
 log("done - load either with /dev/companion-harness?model=<url>")

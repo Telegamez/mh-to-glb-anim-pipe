@@ -21,15 +21,15 @@
     },
     "02_blender_assemble": {
       "status": "done",
-      "started_at": "2026-08-18T02:56:09Z",
-      "completed_at": "2026-08-18T02:56:09Z",
+      "started_at": "2026-08-22T01:08:03Z",
+      "completed_at": "2026-08-22T01:08:04Z",
       "output_dir": "02-blend/",
       "errors": []
     },
     "03_glb_export": {
       "status": "done",
       "started_at": "2026-08-17T00:47:26Z",
-      "completed_at": "2026-08-19T15:38:34Z",
+      "completed_at": "2026-08-22T01:11:22Z",
       "output_dir": "03-glb/",
       "errors": []
     },

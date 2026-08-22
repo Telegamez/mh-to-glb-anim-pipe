@@ -1251,6 +1251,26 @@ _GROOM_PREFIXES = (
     "Stubble_", "Sideburns_", "Fuzz_",
 )
 
+# Groom styles that sit ACROSS THE MOUTH are excluded from the assembly. Hair over
+# the lips enters the mouth during speech and the cause is still unresolved
+# (telegamez#3320) - two candidate mechanisms were measured and disproved - so the
+# roster ships clean-shaven rather than with a known visual defect. Eyebrows and
+# scalp hair are unaffected: they never overlap the mouth.
+#
+# Override with MH_GROOM_EXCLUDE: a comma-separated prefix list, or "none" to
+# assemble every groom the character has.
+_GROOM_EXCLUDE_DEFAULT = ("Goatee_", "Mustache_", "Moustache_", "Beard_", "Stubble_")
+
+
+def _groom_exclusions():
+    raw = os.environ.get("MH_GROOM_EXCLUDE")
+    if raw is None:
+        return _GROOM_EXCLUDE_DEFAULT
+    raw = raw.strip()
+    if not raw or raw.lower() == "none":
+        return ()
+    return tuple(p.strip() for p in raw.split(",") if p.strip())
+
 
 def _apply_arkit_to_grooms(face_obj):
     """Propagate the face mesh's ARKit shape keys onto every facial-groom
@@ -2853,8 +2873,19 @@ def main():
 
     _reset_scene()
 
+    groom_exclude = _groom_exclusions()
+    if groom_exclude:
+        _log(f"groom exclusions active: {', '.join(groom_exclude)} "
+             f"(set MH_GROOM_EXCLUDE=none to assemble every groom)")
+
     hair_names = set()
+    skipped_grooms = []
     for rec in mh["assets"]:
+        base = os.path.basename(rec["file_path"])
+        if groom_exclude and base.startswith(groom_exclude):
+            skipped_grooms.append(base)
+            _log(f"  SKIP groom over the mouth: {base}")
+            continue
         glb = os.path.join(in_root, rec["file_path"])
         _log(f"importing {glb}")
         _import_glb(glb)

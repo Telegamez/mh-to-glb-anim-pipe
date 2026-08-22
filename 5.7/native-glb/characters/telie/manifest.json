@@ -21,22 +21,22 @@
     },
     "02_blender_assemble": {
       "status": "done",
-      "started_at": "2026-08-22T01:08:03Z",
-      "completed_at": "2026-08-22T01:08:04Z",
+      "started_at": "2026-08-22T04:01:20Z",
+      "completed_at": "2026-08-22T04:01:20Z",
       "output_dir": "02-blend/",
       "errors": []
     },
     "03_glb_export": {
       "status": "done",
       "started_at": "2026-08-17T00:47:26Z",
-      "completed_at": "2026-08-22T01:11:22Z",
+      "completed_at": "2026-08-22T04:02:49Z",
       "output_dir": "03-glb/",
       "errors": []
     },
     "04_webview_build": {
       "status": "done",
       "started_at": "2026-08-17T00:47:35Z",
-      "completed_at": "2026-08-18T22:32:24Z",
+      "completed_at": "2026-08-22T04:04:08Z",
       "output_dir": "../../docs/characters/",
       "errors": []
     }

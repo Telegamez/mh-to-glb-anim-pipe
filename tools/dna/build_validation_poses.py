@@ -99,7 +99,12 @@ def main() -> int:
     if len(raw) != RAW_CONTROL_COUNT:
         print(f"warning: {len(raw)} raw controls, expected {RAW_CONTROL_COUNT}", file=sys.stderr)
 
-    visemes = json.load(open(ns.viseme_poses, encoding="utf-8"))["poses"]
+    viseme_spec = json.load(open(ns.viseme_poses, encoding="utf-8"))
+    visemes = viseme_spec["poses"]
+    skeleton = viseme_spec.get("skeleton") or ""
+    if not skeleton:
+        print("error: source pose file declares no skeleton", file=sys.stderr)
+        return 1
     authored = [v for v in visemes if v.get("controls")]
 
     poses = []
@@ -189,8 +194,13 @@ def main() -> int:
     out = {
         "$schema_note": ("Same schema as tg_viseme_poses.json, consumed by "
                          "author_viseme_anim.py. Built by tools/dna/build_validation_poses.py."),
+        # Declares itself NOT a viseme table, so author_viseme_anim.py applies the 16-name
+        # contract check to the viseme file and not to this one.
+        "table_kind": "validation",
         "asset_path": "/Game/TG_Face/AS_TG_Validation",
-        "skeleton": "",
+        # Inherited from the viseme pose file rather than hardcoded: the two tables must land
+        # on the SAME skeleton or the dump validates an evaluator against a different rig.
+        "skeleton": skeleton,
         "frame_rate": 30,
         "control_prefix": "ctrl_expressions_",
         "_purpose": ("Ground-truth table for slice 5.0/5.1. Bake through the post-process ABP "

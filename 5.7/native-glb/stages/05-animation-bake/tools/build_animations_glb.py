@@ -73,6 +73,38 @@ def _rewrite_action_paths(action):
     return n
 
 
+def _trim_loop_tail(action):
+    """Drop the final keyframe of every f-curve.
+
+    UE's glTF exporter samples an AnimSequence's range INCLUSIVELY, so a clip of N
+    frames ships N+1 samples. Measured across both published libraries, every clip
+    has exactly `round(duration * fps) + 1` keyframes.
+
+    For a LOOPING clip that extra sample is a defect, and a loud one. In the male
+    `Idle` the first keyframe and the SECOND-TO-LAST are identical to 0.000 deg -
+    the loop itself is clean - while the last sits 36.5 deg away. That is the
+    largest frame-to-frame step in the clip, worth 181 frames of normal motion, and
+    THREE.LoopRepeat replays it every cycle. It reads as a glitch rather than as
+    motion because it repeats on a fixed period (telegamez#3321).
+
+    Gestures are NOT trimmed. They play LoopOnce and their final frame is the pose
+    they hold: `Dismiss` measures 5.2 deg against its last frame and 13.4 deg
+    against its second-to-last, so dropping its tail would damage it.
+    """
+    trimmed = 0
+    for fc in action.fcurves:
+        kps = fc.keyframe_points
+        # Two keys is a constant channel; there is no tail to drop.
+        if len(kps) < 3:
+            continue
+        kps.remove(kps[len(kps) - 1])
+        trimmed += 1
+    for fc in action.fcurves:
+        fc.update()
+    return trimmed
+
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
@@ -83,6 +115,10 @@ def main():
 
     with open(args.animset, "r", encoding="utf-8") as f:
         cfg = json.load(f)
+    # `required` clips are the conversational STATES; the runtime plays them with
+    # THREE.LoopRepeat. `gestures` play LoopOnce. Only the former are trimmed, so
+    # the split has to survive here rather than being merged away.
+    looping = set((cfg.get("required") or {}).keys())
     clip_names = list((cfg.get("required") or {}).keys()) + \
                  list((cfg.get("gestures") or {}).keys())
 
@@ -140,6 +176,17 @@ def main():
             _log(f"  {clip}: ZERO contract renames — this clip was not authored "
                  f"against the MetaHuman skeleton and will bind nothing. Refusing.")
             sys.exit(1)
+        if clip in looping:
+            before_n = int(action.frame_range[1] - action.frame_range[0]) + 1
+            trimmed = _trim_loop_tail(action)
+            after_n = int(action.frame_range[1] - action.frame_range[0]) + 1
+            _log(f"  {clip}: loop tail trimmed on {trimmed} f-curves "
+                 f"({before_n} -> {after_n} frames)")
+            if after_n >= before_n:
+                _log(f"  {clip}: frame count did not shrink - the exporter may have "
+                     f"stopped emitting the inclusive extra sample. Re-measure before "
+                     f"assuming this is still needed.")
+
         actions_out.append(action)
 
         if keeper is None and arms:

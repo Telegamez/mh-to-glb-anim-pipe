@@ -1049,9 +1049,20 @@ def _bake_arkit_from_5_6(in_root, mh_manifest, char_id, char_root):
     return transferred
 
 
-def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
-    """Bake 52 ARKit shape keys onto the GLB face mesh by replaying the
-    Sequencer-baked AnimSequence and capturing per-pose deformed mesh.
+def _bake_arkit_from_lse_fbx(in_root, mh_manifest, sources_key="arkit_sources",
+                             label="arkit"):
+    """Bake shape keys onto the GLB face mesh by replaying a Sequencer-baked
+    AnimSequence and capturing the per-pose deformed mesh.
+
+    `sources_key` selects which manifest block to read, so the same capture
+    serves both the ARKit mapping (`arkit_sources`) and the TG viseme sequence
+    (`tg_viseme_sources`, face-fidelity-plan slice 2.3). The two differ only in
+    which AnimSequence stage 01 baked; the capture, the kdtree match and the
+    transfer are identical, and duplicating them would give the viseme path its
+    own copy of the coordinate-space conversion to get wrong.
+
+    Returns the list of shape-key NAMES transferred (callers need to know which
+    shapes the bake delivered so they can compose only the rest).
 
     Stage 01 produces `LS_arkit_full.fbx` via UE's Sequencer, which
     bakes the curve-driven AS_MetaHuman_ARKit_Mapping into a real
@@ -1070,18 +1081,19 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
     """
     import mathutils.kdtree as _kdtree
 
-    sources = (mh_manifest or {}).get("arkit_sources") or {}
+    sources = (mh_manifest or {}).get(sources_key) or {}
     lse_fbx_rel = sources.get("lse_fbx")
     pose_names_rel = sources.get("pose_names")
     if not lse_fbx_rel or not pose_names_rel:
-        _log("  arkit: lse_fbx or pose_names missing in manifest")
-        return 0
+        _log(f"  {label}: lse_fbx or pose_names missing in manifest "
+             f"({sources_key})")
+        return []
     lse_fbx = os.path.join(in_root, lse_fbx_rel)
     pose_names_json = os.path.join(in_root, pose_names_rel)
     if not os.path.isfile(lse_fbx) or not os.path.isfile(pose_names_json):
-        _log(f"  arkit: lse_fbx={os.path.isfile(lse_fbx)} "
+        _log(f"  {label}: lse_fbx={os.path.isfile(lse_fbx)} "
              f"pose_names={os.path.isfile(pose_names_json)}")
-        return 0
+        return []
 
     raw_pose_names = json.load(open(pose_names_json, encoding="utf-8"))
 
@@ -1106,9 +1118,9 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
     src_arm = next((bpy.data.objects[n] for n in new_objects
                     if bpy.data.objects[n].type == "ARMATURE"), None)
     if src_face is None or src_arm is None:
-        _log("  arkit: LSE FBX import missing mesh or armature")
-        return 0
-    _log(f"  arkit: imported LSE: face='{src_face.name}' "
+        _log(f"  {label}: LSE FBX import missing mesh or armature")
+        return []
+    _log(f"  {label}: imported LSE: face='{src_face.name}' "
          f"verts={len(src_face.data.vertices)} arm='{src_arm.name}' "
          f"action={src_arm.animation_data.action.name if src_arm.animation_data and src_arm.animation_data.action else None}")
 
@@ -1124,7 +1136,7 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
     else:
         f_start, f_end = 1, n_poses_total
     n_frames = f_end - f_start + 1
-    _log(f"  arkit: action frames {f_start}..{f_end} ({n_frames} frames), "
+    _log(f"  {label}: action frames {f_start}..{f_end} ({n_frames} frames), "
          f"poses {n_poses_total}")
 
     def _pose_idx_to_frame(pose_idx):
@@ -1156,7 +1168,7 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
         positions = [v.co.copy() for v in eval_obj.data.vertices]
         pose_shape_keys.append((pose_name, positions))
 
-    _log(f"  arkit: captured {len(pose_shape_keys)} ARKit pose meshes from LSE FBX")
+    _log(f"  {label}: captured {len(pose_shape_keys)} ARKit pose meshes from LSE FBX")
 
     # ---- 3) Find GLB face mesh ----
     tgt_face = None
@@ -1167,9 +1179,9 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
             if tgt_face is None or len(o.data.vertices) > len(tgt_face.data.vertices):
                 tgt_face = o
     if tgt_face is None:
-        _log("  arkit: no GLB face mesh found")
-        return 0
-    _log(f"  arkit: GLB target='{tgt_face.name}' verts={len(tgt_face.data.vertices)}")
+        _log(f"  {label}: no GLB face mesh found")
+        return []
+    _log(f"  {label}: GLB target='{tgt_face.name}' verts={len(tgt_face.data.vertices)}")
 
     # ---- 4) KDTree-match GLB face vertices to LSE source verts in
     # common metric space. LSE FBX import has world_scale=0.01 (cm->m),
@@ -1199,7 +1211,7 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
         if d > max_d:
             max_d = d
     avg_d = sum_d / n_tgt if n_tgt else 0.0
-    _log(f"  arkit: kdtree match max={max_d*1000:.2f}mm avg={avg_d*1000:.2f}mm")
+    _log(f"  {label}: kdtree match max={max_d*1000:.2f}mm avg={avg_d*1000:.2f}mm")
 
     # ---- 5) Transfer captured shape keys to GLB face. Source positions
     # are in cm (mesh-local), target is in m. Convert deltas accordingly. ----
@@ -1209,7 +1221,7 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
     tgt_basis_kb = tgt_keys.key_blocks[0]
     delta_scale = SRC_LOCAL_TO_M / TGT_LOCAL_TO_M
 
-    transferred = 0
+    transferred_names = []
     for name, src_positions in pose_shape_keys:
         existing = tgt_keys.key_blocks.get(name)
         if existing is not None:
@@ -1221,8 +1233,8 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
             tgt_delta_local = src_delta_local * delta_scale
             new_kb.data[ti].co = tgt_basis_kb.data[ti].co + tgt_delta_local
         new_kb.value = 0.0
-        transferred += 1
-    _log(f"  arkit: transferred {transferred} ARKit shape keys to GLB face")
+        transferred_names.append(name)
+    _log(f"  {label}: transferred {len(transferred_names)} shape keys to GLB face")
 
     # ---- 6) Cleanup: drop the LSE imports ----
     for n_ in new_objects:
@@ -1238,7 +1250,7 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
         if a is not None and a.users == 0:
             bpy.data.actions.remove(a, do_unlink=True)
     bpy.ops.outliner.orphans_purge(do_recursive=True)
-    return transferred
+    return transferred_names
 
 
 # Mesh-name prefixes for facial-groom card meshes that need to follow the
@@ -2298,8 +2310,14 @@ def _compose_shape_key(obj, name, recipe, partial_ok=False):
     return True, missing
 
 
-def _compose_convenience_shapes(face_obj):
-    """Add the contract's convenience shapes to the GLB face mesh."""
+def _compose_convenience_shapes(face_obj, already_baked=()):
+    """Add the contract's convenience shapes to the GLB face mesh.
+
+    `already_baked` carries the shapes the viseme Sequencer bake delivered. Only
+    `mouthClose` overlaps: the other five are merges of captured ARKit shapes
+    and have no baked counterpart.
+    """
+    already_baked = set(already_baked)
     created, skipped = [], []
     for name, recipe in CONVENIENCE_RECIPES:
         ok, missing = _compose_shape_key(face_obj, name, recipe)
@@ -2316,13 +2334,21 @@ def _compose_convenience_shapes(face_obj):
     # State the remaining contract gap explicitly. A silent partial result
     # here surfaces much later as a runtime morph lookup that quietly does
     # nothing, which is the failure mode this pipeline keeps producing.
-    # mouthClose: ARKit's own is absent from MetaHuman's mapping, so synthesise.
-    ok, missing = _compose_shape_key(face_obj, "mouthClose", MOUTHCLOSE_RECIPE)
-    if ok:
+    # mouthClose: ARKit's own is absent from MetaHuman's mapping. The viseme
+    # bake supplies the real pose (lips sealed independently of the jaw); the
+    # press/roll synthesis below is what stands in when it did not run.
+    if "mouthClose" in already_baked:
         created.append("mouthClose")
-        _log("  convenience: synthesised mouthClose (ARKit mapping omits it)")
+        _log("  convenience: mouthClose BAKED through RigLogic "
+             "(synthesis skipped)")
     else:
-        _log(f"  convenience: mouthClose FAILED - missing {','.join(missing)}")
+        ok, missing = _compose_shape_key(face_obj, "mouthClose", MOUTHCLOSE_RECIPE)
+        if ok:
+            created.append("mouthClose")
+            _log("  convenience: synthesised mouthClose (ARKit mapping omits "
+                 "it, and AS_TG_Visemes did not run)")
+        else:
+            _log(f"  convenience: mouthClose FAILED - missing {','.join(missing)}")
 
     if face_obj.data.shape_keys is not None:
         have = set(face_obj.data.shape_keys.key_blocks.keys())
@@ -2780,17 +2806,152 @@ def _parent_cards_to_head_bone():
     return n
 
 
-def _compose_visemes(face_obj):
-    """Add the 15 contract visemes to the GLB face mesh."""
-    created, skipped = [], []
+# Minimum displacement under `tongueOut` for a vertex to count as tongue.
+_TONGUE_PROBE_M = 0.001  # 1 mm
+
+
+def _tongue_vertex_indices(obj):
+    """Vertices that belong to the tongue, identified by probing the rig.
+
+    MetaHuman keeps the tongue inside the TEETH mesh — the DNA lists
+    `teeth_lod0_mesh` and no tongue mesh — so the obvious approach is to take
+    the teeth material slot. That slot is WRONG for this measurement: it holds
+    the teeth as well, and the teeth ride the jaw. Any jaw-heavy pose then
+    reports large "tongue" displacement that is really the lower teeth swinging,
+    which would let a viseme with no tongue articulation at all score well.
+
+    Instead, define the tongue by what the rig says moves when the tongue moves:
+    the vertices displaced by `tongueOut`, which is the one ARKit shape that is
+    purely lingual. Self-calibrating, needs no name matching, and cannot pick up
+    the teeth because `tongueOut` does not rotate the jaw.
+
+    Returns an empty set when `tongueOut` is absent, and callers must treat a
+    zero-length tongue set as "not measured" rather than as "no tongue motion".
+    """
+    keys = obj.data.shape_keys
+    if keys is None:
+        return set()
+    probe = keys.key_blocks.get("tongueOut")
+    if probe is None:
+        return set()
+    basis = keys.key_blocks[0]
+    return {i for i in range(len(basis.data))
+            if (probe.data[i].co - basis.data[i].co).length > _TONGUE_PROBE_M}
+
+
+def _measure_mouth_shapes(face_obj, baked_names=()):
+    """Per-shape displacement for every mouth shape, in millimetres.
+
+    This is slice 2.3's [A]: the claim "the visemes are baked with real tongue
+    articulation" is only worth anything if the artifact is measured. Recorded
+    per shape:
+
+      max_mm         largest vertex displacement anywhere on the face
+      tongue_max_mm  largest displacement restricted to the tongue/teeth slot
+
+    `tongue_max_mm` is the discriminating number, and the tongue set is derived
+    by probing `tongueOut` rather than by taking the teeth material slot — see
+    `_tongue_vertex_indices` for why the slot would flatter jaw-heavy poses.
+
+    A COMPOSED viseme_TH is built from `jawOpen` and `tongueOut` deltas and
+    moves the tongue only as far as those two ARKit shapes happen to carry it;
+    a BAKED one drives `tongueTipUp`/`tongueWide`/`tongueThin` through RigLogic.
+    Measured on Telly, baked vs composed: TH 13.1/9.9, DD 16.0/6.6, nn 19.1/5.2,
+    SS 8.8/1.6 mm. If a rebuild stops clearing those, F2 has regressed.
+
+    A shape reporting `tongue_max_mm` 0.0 with `tongue_verts` 0 was NOT
+    measured (no `tongueOut` on the mesh); one reporting 0.0 with a populated
+    tongue set genuinely does not move the tongue.
+
+    Units: the GLB face mesh is metres at this point (see the transfer above),
+    so x1000 is millimetres. The reference magnitude on record is jawOpen at
+    32.7 mm.
+    """
+    keys = face_obj.data.shape_keys
+    if keys is None:
+        return {}
+    basis = keys.key_blocks[0]
+    tongue_verts = _tongue_vertex_indices(face_obj)
+    baked = set(baked_names)
+
+    out = {}
+    for name in CONTRACT_MOUTH_SHAPES:
+        kb = keys.key_blocks.get(name)
+        if kb is None:
+            out[name] = {"present": False}
+            continue
+        max_d = 0.0
+        tongue_d = 0.0
+        for i in range(len(basis.data)):
+            d = (kb.data[i].co - basis.data[i].co).length
+            if d > max_d:
+                max_d = d
+            if i in tongue_verts and d > tongue_d:
+                tongue_d = d
+        out[name] = {
+            "present": True,
+            "provenance": "baked" if name in baked else "composed",
+            "max_mm": round(max_d * 1000.0, 2),
+            "tongue_max_mm": round(tongue_d * 1000.0, 2),
+        }
+    out["_tongue_verts_measured"] = len(tongue_verts)
+    dead = [n for n, v in out.items()
+            if isinstance(v, dict) and v.get("present")
+            and v.get("max_mm", 1.0) < 0.05]
+    if dead:
+        _log(f"  mouth-shapes: DEAD SHAPES (no deformation at all) -> {dead}. "
+             f"A zero-delta morph other than viseme_sil is a shape the runtime "
+             f"will drive to no effect.")
+
+    n_tongue = sum(1 for v in out.values()
+                   if isinstance(v, dict) and v.get("present")
+                   and v.get("tongue_max_mm", 0) > 0.5)
+    if not tongue_verts:
+        _log("  mouth-shapes: WARNING no `tongueOut` shape key — tongue "
+             "displacement NOT measured (reported zeros mean unmeasured)")
+    _log(f"  mouth-shapes: measured {len(out)} contract shapes "
+         f"({len(tongue_verts)} tongue/teeth verts; {n_tongue} shape(s) move "
+         f"the tongue >0.5mm)")
+    for name in ("viseme_TH", "viseme_DD", "viseme_nn", "viseme_kk", "mouthClose"):
+        m = out.get(name) or {}
+        if isinstance(m, dict) and m.get("present"):
+            _log(f"    {name:12s} {m['provenance']:8s} "
+                 f"max={m['max_mm']:6.2f}mm tongue={m['tongue_max_mm']:6.2f}mm")
+    return out
+
+
+def _compose_visemes(face_obj, already_baked=()):
+    """Add the contract visemes the bake did not already deliver.
+
+    `already_baked` names the shapes that arrived from `AS_TG_Visemes` through
+    the Sequencer (face-fidelity-plan F2). Those are real co-articulated poses
+    carrying RigLogic's correctives and genuine tongue articulation; recomposing
+    them from ARKit deltas would overwrite the good shape with the approximation
+    it exists to replace.
+
+    The recipes remain as the FALLBACK, not as dead code: a character baked in a
+    project without the viseme AnimSequence still meets the 72-morph contract.
+    Which path produced each shape is logged, because "the visemes are present"
+    and "the visemes are baked" are different facts and only one of them is what
+    F2 claims.
+    """
+    already_baked = set(already_baked)
+    created, skipped, inherited = [], [], []
     for name, recipe in VISEME_RECIPES:
+        if name in already_baked:
+            inherited.append(name)
+            continue
         ok, missing = _compose_shape_key(face_obj, name, recipe)
         if ok:
             created.append(name)
         else:
             skipped.append(f"{name} (missing {','.join(missing)})")
 
-    _log(f"  visemes: composed {len(created)}/15")
+    if inherited:
+        _log(f"  visemes: {len(inherited)} BAKED through RigLogic, recipes "
+             f"skipped -> {inherited}")
+    _log(f"  visemes: composed {len(created)}/15 from ARKit deltas"
+         + (" (fallback path)" if created and inherited else ""))
     for s in skipped:
         _log(f"  visemes: SKIPPED {s}")
 
@@ -2802,7 +2963,7 @@ def _compose_visemes(face_obj):
                if f"viseme_{v}" not in have]
         if gap:
             _log(f"  visemes: CONTRACT GAP remains -> {gap}")
-    return len(created)
+    return len(created) + len(inherited)
 
 
 def _compose_contract_shapes_on_grooms():
@@ -2912,8 +3073,10 @@ def main():
     # capture the deformed mesh per ARKit pose frame, and transfer to
     # the GLB face via kdtree position match.
     baked = _bake_arkit_from_lse_fbx(in_root, mh)
+    mouth_shape_report = {}
+    baked_viseme_names = []
     if baked:
-        _log(f"baked {baked} ARKit shape keys onto the GLB face mesh "
+        _log(f"baked {len(baked)} ARKit shape keys onto the GLB face mesh "
              f"(via Sequencer-baked LSE FBX)")
         # Propagate the face's ARKit shape keys onto facial-groom card
         # meshes (eyebrows, mustache, beard, stubble) so they follow the
@@ -2936,16 +3099,69 @@ def main():
             # groom's keys. The eye-region slots the lid-morph rule cares
             # about (eyeshell, lashes, lacrimal) are primitives of this same
             # face mesh, so they share its shape keys.
-            n_conv = _compose_convenience_shapes(glb_face)
+            # TELEGAMEZ F2 (face-fidelity-plan slice 2.3): the true viseme
+            # poses, captured from `AS_TG_Visemes` through the same Sequencer
+            # path as the ARKit shapes, so each one carries RigLogic's
+            # correctives, co-articulation and real tongue articulation.
+            #
+            # This runs BEFORE the composers so they can skip what it
+            # delivered, and AFTER the ARKit bake because it reuses the same
+            # import/kdtree machinery on the same target mesh.
+            #
+            # An absent `tg_viseme_sources` block returns [] and every shape
+            # below is composed exactly as before F2 — that is the rollback,
+            # and it needs no code change to take.
+            baked_viseme_names = _bake_arkit_from_lse_fbx(
+                in_root, mh, sources_key="tg_viseme_sources", label="visemes")
+            if baked_viseme_names:
+                _log(f"baked {len(baked_viseme_names)} TRUE viseme pose(s) "
+                     f"through RigLogic -> {baked_viseme_names}")
+            else:
+                _log("no baked viseme poses — falling back to composing "
+                     "VISEME_RECIPES from ARKit deltas (pre-F2 behaviour)")
+
+            n_conv = _compose_convenience_shapes(glb_face, baked_viseme_names)
             _log(f"composed {n_conv} convenience shape(s) onto the GLB face mesh")
-            n_vis = _compose_visemes(glb_face)
+            n_vis = _compose_visemes(glb_face, baked_viseme_names)
             _log(f"composed {n_vis} viseme shape(s) onto the GLB face mesh")
+
+            # Measure before the mesh contract splits the face apart: the
+            # tongue lives in the teeth material slot and is only reachable
+            # while that slot is still part of this mesh.
+            mouth_shape_report = _measure_mouth_shapes(
+                glb_face, baked_viseme_names)
 
             # The grooms were populated before those shapes existed, so they
             # carried the raw ARKit set and none of the composed one — a goatee
             # or mustache then held still through lipsync and pushed through the
-            # lip (telegamez#3320). Compose the same contract onto them now.
-            # This must stay AFTER both composers above.
+            # lip (telegamez#3320).
+            #
+            # With BAKED visemes the composition fix is no longer sufficient on
+            # its own, and this is the subtle part. `_compose_contract_shapes_on_grooms`
+            # rebuilds each viseme on the groom as the SAME weighted sum of ARKit
+            # deltas the face used to use. Once the face carries a real
+            # co-articulated pose instead, the two no longer describe the same
+            # motion: the lips would move by RigLogic's pose while the beard
+            # moved by the linear approximation of it. Same bug as #3320, new
+            # cause, and it would read as the beard lagging rather than as the
+            # beard standing still.
+            #
+            # So re-propagate from the face first. `_apply_arkit_to_grooms`
+            # wipes and rebuilds each groom from whatever the face carries at
+            # call time, so running it again now — with the baked visemes and
+            # composed convenience shapes present — gives every groom a sampled
+            # copy of the shape the face actually has, whatever produced it.
+            # The composer below then only fills genuine gaps.
+            regroomed = _apply_arkit_to_grooms(glb_face)
+            _log(f"re-propagated the full face shape set onto groom cards "
+                 f"({regroomed} keys) so grooms track BAKED visemes, not a "
+                 f"recomposition of them")
+
+            # Still runs, and must stay AFTER everything above: a groom that
+            # legitimately does not move for a phoneme gets a present zero-delta
+            # shape rather than an absent name. The runtime resolves morphs by
+            # name and an absent name is silently ignored — the exact silence
+            # that produced #3320.
             n_groom = _compose_contract_shapes_on_grooms()
             _log(f"composed {n_groom} contract shape(s) onto groom card meshes")
     else:
@@ -3055,6 +3271,17 @@ def main():
     _log(f"wrote {blend_path}")
 
     # Blend-side manifest for stage 03
+    # Viseme provenance and per-shape displacement, recorded before export so
+    # both ends can be compared. "the shapes are present" and "the shapes are
+    # baked" are different claims; only this block distinguishes them, and
+    # stage 03 forwards it into `glb_manifest.json`.
+    viseme_provenance = {
+        "source": "baked" if baked_viseme_names else "composed",
+        "baked_shapes": sorted(baked_viseme_names),
+        "tg_viseme_sources": (mh or {}).get("tg_viseme_sources"),
+        "mouth_shapes": mouth_shape_report,
+    }
+
     scene_info = {
         "imported": len(mh["assets"]),
         "mesh_names": sorted([o.name for o in bpy.data.objects
@@ -3067,7 +3294,8 @@ def main():
         json.dump({"character_id": args.char,
                    "pipeline": "native-glb",
                    "saved_at": _iso_now(),
-                   "scene": scene_info}, f, indent=2)
+                   "scene": scene_info,
+                   "visemes": viseme_provenance}, f, indent=2)
     _log(f"scene: {scene_info}")
 
     # Update character manifest

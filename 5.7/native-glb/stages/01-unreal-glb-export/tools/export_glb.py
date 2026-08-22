@@ -350,10 +350,11 @@ def _source_frame_rate(a_seq, fallback=24):
     `get_num_frames` reports INTERVALS, not sample positions — the 66-pose
     ARKit mapping reports 65 over 2.7083 s — so intervals / play length is the
     rate. Measuring it beats assuming it: the display-rate trap below is about
-    the Level Sequence matching ITS SOURCE, and a hardcoded 24 is only correct
-    for a source that happens to be 24 fps. Baking a 30 fps sequence at 24
-    lands every pose between two frames — the exact failure the hardcode was
-    written to prevent.
+    the Level Sequence matching ITS SOURCE, and a hardcoded 24 was only ever
+    correct because `AS_MetaHuman_ARKit_Mapping` happens to be 24 fps.
+    `AS_TG_Visemes` is 30 (a new AnimSequence cannot be retimed to 24), and
+    baking it at 24 would land every pose between two frames — the exact
+    failure the hardcode was written to prevent.
     """
     try:
         intervals = int(unreal.AnimationLibrary.get_num_frames(a_seq))
@@ -369,6 +370,97 @@ def _source_frame_rate(a_seq, fallback=24):
     return fallback
 
 
+TG_VISEME_ASSET = "/Game/TG_Face/AS_TG_Visemes"
+TG_VISEME_NAMES_JSON = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "config",
+    "tg_viseme_pose_names.json")
+
+
+def _export_tg_viseme_sources(face_skm, out_dir):
+    """Bake `AS_TG_Visemes` for stage 02 (face-fidelity-plan slice 2.2).
+
+    Emits, beside the ARKit sources:
+
+      LS_tg_visemes.fbx        the face SKM driven by the viseme sequence,
+                               one frame per pose, through the SAME transient
+                               Level Sequence path the ARKit mapping uses.
+      tg_viseme_pose_names.json ordered frame -> pose name, copied from the
+                               authoring config so the consumer never has to
+                               reach back into this repo's source tree.
+
+    Why this reuses `_export_sequencer_bake` rather than paralleling it: that
+    function is where the display-rate trap is solved, and a second copy would
+    be a second place to get it wrong. The one thing that had to change is that
+    the rate is now measured per sequence instead of hardcoded — see
+    `_source_frame_rate`.
+
+    Returns the manifest block, or None when the asset is absent.
+
+    ABSENCE IS NOT FAILURE, BUT IT IS LOUD. A character baked without the
+    viseme sequence still meets the morph contract, because stage 02 falls back
+    to composing `VISEME_RECIPES`. What must never happen is a silent skip: the
+    stage-01 silent skip (a manifest written, "0 warnings" reported, and the
+    entire ARKit bake missing) is this pipeline's recorded worst case, and it
+    was caused by exactly the lazy-registry hazard guarded against below.
+    """
+    try:
+        unreal.AssetRegistryHelpers.get_asset_registry().scan_paths_synchronous(
+            [TG_VISEME_ASSET.rsplit("/", 1)[0]], force_rescan=True)
+    except Exception as e:
+        _log(f"  scan_paths_synchronous(TG_Face) raised: {e}")
+
+    a_seq = unreal.EditorAssetLibrary.load_asset(TG_VISEME_ASSET)
+    if a_seq is None:
+        _log(f"  TG visemes: {TG_VISEME_ASSET} NOT FOUND — stage 02 will fall "
+             f"back to composing VISEME_RECIPES from ARKit deltas. Run "
+             f"tools/author_viseme_anim.py to create it.")
+        return None
+
+    names_src = os.path.abspath(TG_VISEME_NAMES_JSON)
+    if not os.path.isfile(names_src):
+        _log(f"  TG visemes: pose-names JSON missing at {names_src}; "
+             f"skipping the viseme bake rather than guessing frame order")
+        return None
+    with open(names_src, "r", encoding="utf-8") as f:
+        pose_names = json.load(f)
+
+    # The names file and the asset must agree about how many frames there are.
+    # If they drift, frame N is captured under pose N's name while carrying
+    # pose N+1's deformation — every viseme silently one place out, and nothing
+    # else fails. Refuse instead.
+    intervals = int(unreal.AnimationLibrary.get_num_frames(a_seq))
+    n_frames = intervals + 1
+    if n_frames != len(pose_names):
+        _log(f"  TG visemes: MISMATCH — asset has {n_frames} frames, names "
+             f"JSON has {len(pose_names)}. Refusing to bake; re-run "
+             f"author_viseme_anim.py so the two are written together.")
+        return None
+
+    names_out = os.path.join(out_dir, "tg_viseme_pose_names.json")
+    with open(names_out, "w", encoding="utf-8") as f:
+        json.dump(pose_names, f, indent=2)
+
+    fps = _source_frame_rate(a_seq)
+    _log(f"  TG visemes: {len(pose_names)} poses at {fps} fps "
+         f"({[str(n) for n in pose_names[:4]]}...)")
+
+    lse_fbx = os.path.join(out_dir, "LS_tg_visemes.fbx")
+    ok = _export_sequencer_bake(face_skm, a_seq, lse_fbx,
+                                seq_name="LS_tg_visemes_export")
+    if not ok:
+        _log("  TG visemes: Sequencer bake FAILED; stage 02 falls back to "
+             "composed recipes.")
+        return None
+
+    return {
+        "lse_fbx": os.path.basename(lse_fbx),
+        "pose_names": "tg_viseme_pose_names.json",
+        "pose_count": len(pose_names),
+        "frame_rate": fps,
+        "source_asset": TG_VISEME_ASSET,
+    }
+
+
 def _export_sequencer_bake(face_skm, a_seq, fbx_out, seq_name="LS_arkit_export"):
     """Build a transient Level Sequence with the face SKM driven by the given
     AnimSequence, then FBX-export the whole scene. Output FBX contains:
@@ -378,7 +470,8 @@ def _export_sequencer_bake(face_skm, a_seq, fbx_out, seq_name="LS_arkit_export")
     to continue without the sequencer bake).
 
     `seq_name` keeps two bakes in one stage run from colliding on the same
-    transient asset path.
+    transient asset path — the ARKit mapping and the TG viseme sequence both
+    come through here.
     """
     try:
         world = unreal.EditorLevelLibrary.get_editor_world()
@@ -421,12 +514,13 @@ def _export_sequencer_bake(face_skm, a_seq, fbx_out, seq_name="LS_arkit_export")
         # FINAL POSE IS SILENTLY DROPPED, replaced in the FBX by a rest-pose
         # tail frame.
         #
-        # This has always been true and was invisible: the ARKit mapping's last
-        # six poses are `Pose_12..Pose_17`, RigLogic correctives that stage 02
-        # filters out by name, so the pose that went missing was one nobody
-        # captured. It surfaced on a sequence whose last frame is a real pose:
-        # the authored asset carried 16 non-zero controls on that frame and the
-        # bake produced 0.00 mm of deformation.
+        # This has always been true here and was invisible: the ARKit mapping's
+        # last six poses are `Pose_12..Pose_17`, RigLogic correctives that stage
+        # 02 filters out by name, so the pose that went missing was one nobody
+        # captured. `AS_TG_Visemes` ends on `mouthClose` — a real, contract
+        # shape — and it baked to 0.00 mm of deformation, which is what surfaced
+        # this. Measured, not reasoned: the authored asset carried 16 non-zero
+        # controls on that frame and the bake produced none.
         #
         # +1 so the last real pose is inside the range.
         intervals = int(a_seq.get_play_length() * fps + 0.5)
@@ -1266,6 +1360,7 @@ def main():
     # ARKit poses as named shape keys. Find the face SkeletalMesh in
     # the export set and export those alongside the GLBs.
     arkit_sources = None
+    tg_viseme_sources = None
     face_skm = next((a for a in skm if "FaceMesh" in a.get_name()), None)
     if face_skm is not None:
         try:
@@ -1273,6 +1368,22 @@ def main():
         except Exception as e:
             _log(f"  ARKit source export failed: {e}")
             warnings.append(f"arkit_sources: {e}")
+
+        # TELEGAMEZ F2 (face-fidelity-plan slice 2.2): the true viseme poses,
+        # baked through RigLogic rather than composed from ARKit deltas after
+        # the fact. Absent asset => absent manifest key => stage 02 behaves
+        # exactly as it does today. That is the rollback, and it is why this
+        # cannot break an existing bake.
+        try:
+            tg_viseme_sources = _export_tg_viseme_sources(face_skm, out_dir)
+        except Exception as e:
+            _log(f"  TG viseme source export failed: {e}")
+            warnings.append(f"tg_viseme_sources: {e}")
+        if tg_viseme_sources is None:
+            warnings.append(
+                "tg_viseme_sources: absent — visemes will be COMPOSED from "
+                "ARKit deltas, not baked. This is the pre-F2 behaviour and is "
+                "valid, but it is not what a viseme-baked character looks like.")
 
     mh_manifest = {
         "character_id": args.char,
@@ -1285,6 +1396,7 @@ def main():
         "groom_materials": groom_materials,
         "clothing_materials": clothing_materials,
         "arkit_sources": arkit_sources,
+        "tg_viseme_sources": tg_viseme_sources,
         "warnings": warnings,
     }
     with open(os.path.join(out_dir, "mh_manifest.json"), "w", encoding="utf-8") as f:

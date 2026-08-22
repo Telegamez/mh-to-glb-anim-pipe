@@ -194,6 +194,23 @@ def to_metres(obj):
     log(f"  scaled to metres: {d.x:.3f} x {d.y:.3f} x {d.z:.3f} m")
 
 
+def strip_vertex_colours(obj):
+    """Remove COLOR_0 so the review mesh renders as plain geometry.
+
+    MetaHuman face meshes carry vertex colours as MASK channels -- the pipeline has
+    `verify_vertex_colours.cjs` precisely because they are load-bearing data, not decoration.
+    With materials stripped, three.js builds a default material, sees COLOR_0, and enables
+    `vertexColors`, so those masks render as albedo: a bright green face with cyan eye sockets
+    and blue lashes. Correct data, nonsensical picture, and impossible to judge a lip shape on.
+    """
+    removed = [a.name for a in list(obj.data.color_attributes)]
+    while obj.data.color_attributes:
+        obj.data.color_attributes.remove(obj.data.color_attributes[0])
+    if removed:
+        log(f"  stripped vertex colours: {removed}")
+    return removed
+
+
 def export(path, obj):
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
@@ -214,6 +231,7 @@ obj, basis, baked = capture(
     os.path.join(SRC, "LS_tg_visemes.fbx"),
     os.path.join(SRC, "tg_viseme_pose_names.json"), "baked")
 bake_shapes(obj, basis, baked, ORDER)
+strip_vertex_colours(obj)
 to_metres(obj)
 export(os.path.join(OUT, f"{CHAR}-visemes-baked.glb"), obj)
 isolate_tongue(obj)
@@ -237,6 +255,7 @@ for name, recipe in COMPOSED.items():
             positions[i] += (src_positions[i] - basis[i]) * weight
     composed[name] = positions
 bake_shapes(obj, basis, composed, ORDER)
+strip_vertex_colours(obj)
 to_metres(obj)
 export(os.path.join(OUT, f"{CHAR}-visemes-composed.glb"), obj)
 isolate_tongue(obj)

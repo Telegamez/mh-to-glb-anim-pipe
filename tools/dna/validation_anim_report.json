@@ -1,0 +1,620 @@
+{
+  "pose_file": "C:\\tmp\\mh\\tg_validation_poses.json",
+  "asset_path": "/Game/TG_Face/AS_TG_Validation",
+  "frame_rate": 30,
+  "errors": [],
+  "warnings": [],
+  "frame_rate_measured": 30.0,
+  "frames": 323,
+  "intervals": 322,
+  "curve_count": 263,
+  "play_length": 10.733333587646484,
+  "per_frame_nonzero_controls": {
+    "Default": 0,
+    "single__browDownL": 1,
+    "single__browDownR": 1,
+    "single__browLateralL": 1,
+    "single__browLateralR": 1,
+    "single__browRaiseInL": 1,
+    "single__browRaiseInR": 1,
+    "single__browRaiseOuterL": 1,
+    "single__browRaiseOuterR": 1,
+    "single__earUpL": 1,
+    "single__earUpR": 1,
+    "single__eyeBlinkL": 1,
+    "single__eyeBlinkR": 1,
+    "single__eyeLidPressL": 1,
+    "single__eyeLidPressR": 1,
+    "single__eyeWidenL": 1,
+    "single__eyeWidenR": 1,
+    "single__eyeSquintInnerL": 1,
+    "single__eyeSquintInnerR": 1,
+    "single__eyeCheekRaiseL": 1,
+    "single__eyeCheekRaiseR": 1,
+    "single__eyeFaceScrunchL": 1,
+    "single__eyeFaceScrunchR": 1,
+    "single__eyeUpperLidUpL": 1,
+    "single__eyeUpperLidUpR": 1,
+    "single__eyeRelaxL": 1,
+    "single__eyeRelaxR": 1,
+    "single__eyeLowerLidUpL": 1,
+    "single__eyeLowerLidUpR": 1,
+    "single__eyeLowerLidDownL": 1,
+    "single__eyeLowerLidDownR": 1,
+    "single__eyeLookUpL": 1,
+    "single__eyeLookUpR": 1,
+    "single__eyeLookDownL": 1,
+    "single__eyeLookDownR": 1,
+    "single__eyeLookLeftL": 1,
+    "single__eyeLookLeftR": 1,
+    "single__eyeLookRightL": 1,
+    "single__eyeLookRightR": 1,
+    "single__eyePupilWideL": 1,
+    "single__eyePupilWideR": 1,
+    "single__eyePupilNarrowL": 1,
+    "single__eyePupilNarrowR": 1,
+    "single__eyeParallelLookDirection": 1,
+    "single__eyelashesUpINL": 1,
+    "single__eyelashesUpINR": 1,
+    "single__eyelashesUpOUTL": 1,
+    "single__eyelashesUpOUTR": 1,
+    "single__eyelashesDownINL": 1,
+    "single__eyelashesDownINR": 1,
+    "single__eyelashesDownOUTL": 1,
+    "single__eyelashesDownOUTR": 1,
+    "single__noseWrinkleL": 1,
+    "single__noseWrinkleR": 1,
+    "single__noseWrinkleUpperL": 1,
+    "single__noseWrinkleUpperR": 1,
+    "single__noseNostrilDepressL": 1,
+    "single__noseNostrilDepressR": 1,
+    "single__noseNostrilDilateL": 1,
+    "single__noseNostrilDilateR": 1,
+    "single__noseNostrilCompressL": 1,
+    "single__noseNostrilCompressR": 1,
+    "single__noseNasolabialDeepenL": 1,
+    "single__noseNasolabialDeepenR": 1,
+    "single__mouthCheekSuckL": 1,
+    "single__mouthCheekSuckR": 1,
+    "single__mouthCheekBlowL": 1,
+    "single__mouthCheekBlowR": 1,
+    "single__mouthLipsBlowL": 1,
+    "single__mouthLipsBlowR": 1,
+    "single__mouthLeft": 1,
+    "single__mouthRight": 1,
+    "single__mouthUp": 1,
+    "single__mouthDown": 1,
+    "single__mouthUpperLipRaiseL": 1,
+    "single__mouthUpperLipRaiseR": 1,
+    "single__mouthLowerLipDepressL": 1,
+    "single__mouthLowerLipDepressR": 1,
+    "single__mouthCornerPullL": 1,
+    "single__mouthCornerPullR": 1,
+    "single__mouthStretchL": 1,
+    "single__mouthStretchR": 1,
+    "single__mouthStretchLipsCloseL": 1,
+    "single__mouthStretchLipsCloseR": 1,
+    "single__mouthDimpleL": 1,
+    "single__mouthDimpleR": 1,
+    "single__mouthCornerDepressL": 1,
+    "single__mouthCornerDepressR": 1,
+    "single__mouthPressUL": 1,
+    "single__mouthPressUR": 1,
+    "single__mouthPressDL": 1,
+    "single__mouthPressDR": 1,
+    "single__mouthLipsPurseUL": 1,
+    "single__mouthLipsPurseUR": 1,
+    "single__mouthLipsPurseDL": 1,
+    "single__mouthLipsPurseDR": 1,
+    "single__mouthLipsTowardsUL": 1,
+    "single__mouthLipsTowardsUR": 1,
+    "single__mouthLipsTowardsDL": 1,
+    "single__mouthLipsTowardsDR": 1,
+    "single__mouthFunnelUL": 1,
+    "single__mouthFunnelUR": 1,
+    "single__mouthFunnelDL": 1,
+    "single__mouthFunnelDR": 1,
+    "single__mouthLipsTogetherUL": 1,
+    "single__mouthLipsTogetherUR": 1,
+    "single__mouthLipsTogetherDL": 1,
+    "single__mouthLipsTogetherDR": 1,
+    "single__mouthUpperLipBiteL": 1,
+    "single__mouthUpperLipBiteR": 1,
+    "single__mouthLowerLipBiteL": 1,
+    "single__mouthLowerLipBiteR": 1,
+    "single__mouthLipsTightenUL": 1,
+    "single__mouthLipsTightenUR": 1,
+    "single__mouthLipsTightenDL": 1,
+    "single__mouthLipsTightenDR": 1,
+    "single__mouthLipsPressL": 1,
+    "single__mouthLipsPressR": 1,
+    "single__mouthSharpCornerPullL": 1,
+    "single__mouthSharpCornerPullR": 1,
+    "single__mouthStickyUC": 1,
+    "single__mouthStickyUINL": 1,
+    "single__mouthStickyUINR": 1,
+    "single__mouthStickyUOUTL": 1,
+    "single__mouthStickyUOUTR": 1,
+    "single__mouthStickyDC": 1,
+    "single__mouthStickyDINL": 1,
+    "single__mouthStickyDINR": 1,
+    "single__mouthStickyDOUTL": 1,
+    "single__mouthStickyDOUTR": 1,
+    "single__mouthLipsStickyLPh1": 1,
+    "single__mouthLipsStickyLPh2": 1,
+    "single__mouthLipsStickyLPh3": 1,
+    "single__mouthLipsStickyRPh1": 1,
+    "single__mouthLipsStickyRPh2": 1,
+    "single__mouthLipsStickyRPh3": 1,
+    "single__mouthLipsPushUL": 1,
+    "single__mouthLipsPushUR": 1,
+    "single__mouthLipsPushDL": 1,
+    "single__mouthLipsPushDR": 1,
+    "single__mouthLipsPullUL": 1,
+    "single__mouthLipsPullUR": 1,
+    "single__mouthLipsPullDL": 1,
+    "single__mouthLipsPullDR": 1,
+    "single__mouthLipsThinUL": 1,
+    "single__mouthLipsThinUR": 1,
+    "single__mouthLipsThinDL": 1,
+    "single__mouthLipsThinDR": 1,
+    "single__mouthLipsThickUL": 1,
+    "single__mouthLipsThickUR": 1,
+    "single__mouthLipsThickDL": 1,
+    "single__mouthLipsThickDR": 1,
+    "single__mouthLipsThinInwardUL": 1,
+    "single__mouthLipsThinInwardUR": 1,
+    "single__mouthLipsThinInwardDL": 1,
+    "single__mouthLipsThinInwardDR": 1,
+    "single__mouthLipsThickInwardUL": 1,
+    "single__mouthLipsThickInwardUR": 1,
+    "single__mouthLipsThickInwardDL": 1,
+    "single__mouthLipsThickInwardDR": 1,
+    "single__mouthCornerSharpenUL": 1,
+    "single__mouthCornerSharpenUR": 1,
+    "single__mouthCornerSharpenDL": 1,
+    "single__mouthCornerSharpenDR": 1,
+    "single__mouthCornerRounderUL": 1,
+    "single__mouthCornerRounderUR": 1,
+    "single__mouthCornerRounderDL": 1,
+    "single__mouthCornerRounderDR": 1,
+    "single__mouthUpperLipTowardsTeethL": 1,
+    "single__mouthUpperLipTowardsTeethR": 1,
+    "single__mouthLowerLipTowardsTeethL": 1,
+    "single__mouthLowerLipTowardsTeethR": 1,
+    "single__mouthUpperLipShiftLeft": 1,
+    "single__mouthUpperLipShiftRight": 1,
+    "single__mouthLowerLipShiftLeft": 1,
+    "single__mouthLowerLipShiftRight": 1,
+    "single__mouthUpperLipRollInL": 1,
+    "single__mouthUpperLipRollInR": 1,
+    "single__mouthUpperLipRollOutL": 1,
+    "single__mouthUpperLipRollOutR": 1,
+    "single__mouthLowerLipRollInL": 1,
+    "single__mouthLowerLipRollInR": 1,
+    "single__mouthLowerLipRollOutL": 1,
+    "single__mouthLowerLipRollOutR": 1,
+    "single__mouthCornerUpL": 1,
+    "single__mouthCornerUpR": 1,
+    "single__mouthCornerDownL": 1,
+    "single__mouthCornerDownR": 1,
+    "single__mouthCornerWideL": 1,
+    "single__mouthCornerWideR": 1,
+    "single__mouthCornerNarrowL": 1,
+    "single__mouthCornerNarrowR": 1,
+    "single__jawOpen": 1,
+    "single__jawLeft": 1,
+    "single__jawRight": 1,
+    "single__jawFwd": 1,
+    "single__jawBack": 1,
+    "single__jawClenchL": 1,
+    "single__jawClenchR": 1,
+    "single__jawChinRaiseDL": 1,
+    "single__jawChinRaiseDR": 1,
+    "single__jawChinRaiseUL": 1,
+    "single__jawChinRaiseUR": 1,
+    "single__jawChinCompressL": 1,
+    "single__jawChinCompressR": 1,
+    "single__jawOpenExtreme": 1,
+    "single__neckStretchL": 1,
+    "single__neckStretchR": 1,
+    "single__neckSwallowPh1": 1,
+    "single__neckSwallowPh2": 1,
+    "single__neckSwallowPh3": 1,
+    "single__neckSwallowPh4": 1,
+    "single__neckMastoidContractL": 1,
+    "single__neckMastoidContractR": 1,
+    "single__neckThroatDown": 1,
+    "single__neckThroatUp": 1,
+    "single__neckDigastricDown": 1,
+    "single__neckDigastricUp": 1,
+    "single__neckThroatExhale": 1,
+    "single__neckThroatInhale": 1,
+    "single__teethUpU": 1,
+    "single__teethUpD": 1,
+    "single__teethDownU": 1,
+    "single__teethDownD": 1,
+    "single__teethLeftU": 1,
+    "single__teethLeftD": 1,
+    "single__teethRightU": 1,
+    "single__teethRightD": 1,
+    "single__teethFwdU": 1,
+    "single__teethFwdD": 1,
+    "single__teethBackU": 1,
+    "single__teethBackD": 1,
+    "single__tongueUp": 1,
+    "single__tongueDown": 1,
+    "single__tongueLeft": 1,
+    "single__tongueRight": 1,
+    "single__tongueOut": 1,
+    "single__tongueIn": 1,
+    "single__tongueBendUp": 1,
+    "single__tongueBendDown": 1,
+    "single__tongueTwistLeft": 1,
+    "single__tongueTwistRight": 1,
+    "single__tongueTipUp": 1,
+    "single__tongueTipDown": 1,
+    "single__tongueTipLeft": 1,
+    "single__tongueTipRight": 1,
+    "single__tongueWide": 1,
+    "single__tongueNarrow": 1,
+    "single__tonguePress": 1,
+    "single__tongueRoll": 1,
+    "single__tongueThick": 1,
+    "single__tongueThin": 1,
+    "single__neck_01.qx": 1,
+    "single__neck_01.qy": 1,
+    "single__neck_01.qz": 1,
+    "single__neck_01.qw": 1,
+    "single__neck_02.qx": 1,
+    "single__neck_02.qy": 1,
+    "single__neck_02.qz": 1,
+    "single__neck_02.qw": 1,
+    "single__head.qx": 1,
+    "single__head.qy": 1,
+    "single__head.qz": 1,
+    "single__head.qw": 1,
+    "viseme__viseme_PP": 16,
+    "viseme__viseme_FF": 7,
+    "viseme__viseme_TH": 5,
+    "viseme__viseme_DD": 5,
+    "viseme__viseme_kk": 5,
+    "viseme__viseme_CH": 13,
+    "viseme__viseme_SS": 8,
+    "viseme__viseme_nn": 4,
+    "viseme__viseme_RR": 10,
+    "viseme__viseme_aa": 4,
+    "viseme__viseme_E": 4,
+    "viseme__viseme_I": 7,
+    "viseme__viseme_O": 12,
+    "viseme__viseme_U": 13,
+    "viseme__mouthClose": 16,
+    "pair__viseme_PP__viseme_CH": 29,
+    "pair__viseme_PP__viseme_O": 28,
+    "pair__viseme_PP__viseme_U": 29,
+    "pair__viseme_CH__mouthClose": 29,
+    "pair__viseme_O__mouthClose": 28,
+    "pair__viseme_U__mouthClose": 29,
+    "pair__viseme_SS__viseme_U": 20,
+    "pair__viseme_I__viseme_U": 19,
+    "pair__viseme_CH__viseme_SS": 18,
+    "pair__viseme_CH__viseme_I": 18,
+    "pair__viseme_SS__viseme_O": 19,
+    "pair__viseme_I__viseme_O": 18,
+    "pair__viseme_FF__viseme_CH": 19,
+    "pair__viseme_FF__viseme_O": 18,
+    "pair__viseme_FF__viseme_U": 19,
+    "pair__viseme_PP__viseme_RR": 26,
+    "pair__viseme_RR__mouthClose": 26,
+    "pair__viseme_PP__viseme_FF": 21,
+    "pair__viseme_FF__mouthClose": 21,
+    "pair__viseme_TH__viseme_U": 17,
+    "pair__viseme_TH__viseme_CH": 16,
+    "pair__viseme_TH__viseme_O": 16,
+    "pair__viseme_DD__viseme_U": 16,
+    "pair__viseme_kk__viseme_CH": 17,
+    "upper__viseme_PP__browRaise": 20,
+    "upper__viseme_PP__browFurrow": 20,
+    "upper__viseme_PP__squint": 20,
+    "upper__viseme_PP__eyeWide": 18,
+    "upper__viseme_CH__browRaise": 17,
+    "upper__viseme_CH__browFurrow": 17,
+    "upper__viseme_CH__squint": 17,
+    "upper__viseme_CH__eyeWide": 15,
+    "upper__viseme_aa__browRaise": 8,
+    "upper__viseme_aa__browFurrow": 8,
+    "upper__viseme_aa__squint": 8,
+    "upper__viseme_aa__eyeWide": 6,
+    "upper__viseme_E__browRaise": 8,
+    "upper__viseme_E__browFurrow": 8,
+    "upper__viseme_E__squint": 8,
+    "upper__viseme_E__eyeWide": 6,
+    "upper__viseme_O__browRaise": 16,
+    "upper__viseme_O__browFurrow": 16,
+    "upper__viseme_O__squint": 16,
+    "upper__viseme_O__eyeWide": 14
+  },
+  "tongue_controls_per_frame": {
+    "single__tongueUp": [
+      "ctrl_expressions_tongueup"
+    ],
+    "single__tongueDown": [
+      "ctrl_expressions_tonguedown"
+    ],
+    "single__tongueLeft": [
+      "ctrl_expressions_tongueleft"
+    ],
+    "single__tongueRight": [
+      "ctrl_expressions_tongueright"
+    ],
+    "single__tongueOut": [
+      "ctrl_expressions_tongueout"
+    ],
+    "single__tongueIn": [
+      "ctrl_expressions_tonguein"
+    ],
+    "single__tongueBendUp": [
+      "ctrl_expressions_tonguebendup"
+    ],
+    "single__tongueBendDown": [
+      "ctrl_expressions_tonguebenddown"
+    ],
+    "single__tongueTwistLeft": [
+      "ctrl_expressions_tonguetwistleft"
+    ],
+    "single__tongueTwistRight": [
+      "ctrl_expressions_tonguetwistright"
+    ],
+    "single__tongueTipUp": [
+      "ctrl_expressions_tonguetipup"
+    ],
+    "single__tongueTipDown": [
+      "ctrl_expressions_tonguetipdown"
+    ],
+    "single__tongueTipLeft": [
+      "ctrl_expressions_tonguetipleft"
+    ],
+    "single__tongueTipRight": [
+      "ctrl_expressions_tonguetipright"
+    ],
+    "single__tongueWide": [
+      "ctrl_expressions_tonguewide"
+    ],
+    "single__tongueNarrow": [
+      "ctrl_expressions_tonguenarrow"
+    ],
+    "single__tonguePress": [
+      "ctrl_expressions_tonguepress"
+    ],
+    "single__tongueRoll": [
+      "ctrl_expressions_tongueroll"
+    ],
+    "single__tongueThick": [
+      "ctrl_expressions_tonguethick"
+    ],
+    "single__tongueThin": [
+      "ctrl_expressions_tonguethin"
+    ],
+    "viseme__viseme_TH": [
+      "ctrl_expressions_tongueout",
+      "ctrl_expressions_tonguethin",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tonguewide"
+    ],
+    "viseme__viseme_DD": [
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguepress",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "viseme__viseme_kk": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguethick",
+      "ctrl_expressions_tonguetipdown"
+    ],
+    "viseme__viseme_CH": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "viseme__viseme_SS": [
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "viseme__viseme_nn": [
+      "ctrl_expressions_tonguepress",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "viseme__viseme_RR": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguetipup"
+    ],
+    "viseme__viseme_aa": [
+      "ctrl_expressions_tonguedown"
+    ],
+    "viseme__viseme_E": [
+      "ctrl_expressions_tongueup"
+    ],
+    "viseme__viseme_I": [
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tongueup"
+    ],
+    "viseme__viseme_O": [
+      "ctrl_expressions_tonguein"
+    ],
+    "viseme__viseme_U": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein"
+    ],
+    "pair__viseme_PP__viseme_CH": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_PP__viseme_O": [
+      "ctrl_expressions_tonguein"
+    ],
+    "pair__viseme_PP__viseme_U": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein"
+    ],
+    "pair__viseme_CH__mouthClose": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_O__mouthClose": [
+      "ctrl_expressions_tonguein"
+    ],
+    "pair__viseme_U__mouthClose": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein"
+    ],
+    "pair__viseme_SS__viseme_U": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_I__viseme_U": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_CH__viseme_SS": [
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_CH__viseme_I": [
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_SS__viseme_O": [
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_I__viseme_O": [
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguenarrow",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_FF__viseme_CH": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_FF__viseme_O": [
+      "ctrl_expressions_tonguein"
+    ],
+    "pair__viseme_FF__viseme_U": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein"
+    ],
+    "pair__viseme_PP__viseme_RR": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguetipup"
+    ],
+    "pair__viseme_RR__mouthClose": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguetipup"
+    ],
+    "pair__viseme_TH__viseme_U": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tongueout",
+      "ctrl_expressions_tonguethin",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tonguewide"
+    ],
+    "pair__viseme_TH__viseme_CH": [
+      "ctrl_expressions_tongueout",
+      "ctrl_expressions_tonguethin",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup",
+      "ctrl_expressions_tonguewide"
+    ],
+    "pair__viseme_TH__viseme_O": [
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tongueout",
+      "ctrl_expressions_tonguethin",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tonguewide"
+    ],
+    "pair__viseme_DD__viseme_U": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguepress",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "pair__viseme_kk__viseme_CH": [
+      "ctrl_expressions_tonguebendup",
+      "ctrl_expressions_tonguein",
+      "ctrl_expressions_tonguethick",
+      "ctrl_expressions_tonguetipdown",
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_CH__browRaise": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_CH__browFurrow": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_CH__squint": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_CH__eyeWide": [
+      "ctrl_expressions_tonguetipup",
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_aa__browRaise": [
+      "ctrl_expressions_tonguedown"
+    ],
+    "upper__viseme_aa__browFurrow": [
+      "ctrl_expressions_tonguedown"
+    ],
+    "upper__viseme_aa__squint": [
+      "ctrl_expressions_tonguedown"
+    ],
+    "upper__viseme_aa__eyeWide": [
+      "ctrl_expressions_tonguedown"
+    ],
+    "upper__viseme_E__browRaise": [
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_E__browFurrow": [
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_E__squint": [
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_E__eyeWide": [
+      "ctrl_expressions_tongueup"
+    ],
+    "upper__viseme_O__browRaise": [
+      "ctrl_expressions_tonguein"
+    ],
+    "upper__viseme_O__browFurrow": [
+      "ctrl_expressions_tonguein"
+    ],
+    "upper__viseme_O__squint": [
+      "ctrl_expressions_tonguein"
+    ],
+    "upper__viseme_O__eyeWide": [
+      "ctrl_expressions_tonguein"
+    ]
+  },
+  "pose_names_json": "C:\\tmp\\mh\\tg_viseme_pose_names.json"
+}

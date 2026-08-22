@@ -1251,6 +1251,26 @@ _GROOM_PREFIXES = (
     "Stubble_", "Sideburns_", "Fuzz_",
 )
 
+# Groom styles that sit ACROSS THE MOUTH are excluded from the assembly. Hair over
+# the lips enters the mouth during speech and the cause is still unresolved
+# (telegamez#3320) - two candidate mechanisms were measured and disproved - so the
+# roster ships clean-shaven rather than with a known visual defect. Eyebrows and
+# scalp hair are unaffected: they never overlap the mouth.
+#
+# Override with MH_GROOM_EXCLUDE: a comma-separated prefix list, or "none" to
+# assemble every groom the character has.
+_GROOM_EXCLUDE_DEFAULT = ("Goatee_", "Mustache_", "Moustache_", "Beard_", "Stubble_")
+
+
+def _groom_exclusions():
+    raw = os.environ.get("MH_GROOM_EXCLUDE")
+    if raw is None:
+        return _GROOM_EXCLUDE_DEFAULT
+    raw = raw.strip()
+    if not raw or raw.lower() == "none":
+        return ()
+    return tuple(p.strip() for p in raw.split(",") if p.strip())
+
 
 def _apply_arkit_to_grooms(face_obj):
     """Propagate the face mesh's ARKit shape keys onto every facial-groom
@@ -2225,8 +2245,14 @@ VISEME_RECIPES = (
 MOUTHCLOSE_RECIPE = (("mouthPressLeft", 0.45), ("mouthPressRight", 0.45),
                      ("mouthRollLower", 0.20), ("mouthRollUpper", 0.20))
 
+# The shapes lipsync drives. Any mesh that overlaps the mouth must carry all of
+# them or it holds still while the lips move (telegamez#3320).
+CONTRACT_MOUTH_SHAPES = ("mouthOpen", "mouthClose", "mouthSmile") + tuple(
+    f"viseme_{v}" for v in ("sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS",
+                            "nn", "RR", "aa", "E", "I", "O", "U"))
 
-def _compose_shape_key(obj, name, recipe):
+
+def _compose_shape_key(obj, name, recipe, partial_ok=False):
     """Create shape key `name` as a weighted sum of existing keys' deltas.
 
     Composed by direct vertex math rather than `shape_key_add(from_mix=True)`.
@@ -2235,7 +2261,13 @@ def _compose_shape_key(obj, name, recipe):
     invariant that is easy to break silently later. Summing deltas explicitly
     is deterministic and matches how the ARKit transfer above builds keys.
 
-    Returns (created, missing_sources).
+    `partial_ok` treats a missing source as a ZERO contribution rather than
+    refusing the whole shape. Off for the face, which must carry every
+    ingredient; on for groom cards, which legitimately lack the sources that do
+    not move them — a goatee has no `tongueOut`.
+
+    Returns (created, missing_sources). With `partial_ok` the second element is
+    what was dropped, and the caller is expected to log it.
     """
     keys = obj.data.shape_keys
     if keys is None:
@@ -2243,7 +2275,7 @@ def _compose_shape_key(obj, name, recipe):
     basis = keys.key_blocks[0]
 
     missing = [s for s, _ in recipe if keys.key_blocks.get(s) is None]
-    if missing:
+    if missing and not partial_ok:
         return False, missing
 
     existing = keys.key_blocks.get(name)
@@ -2251,7 +2283,8 @@ def _compose_shape_key(obj, name, recipe):
         obj.shape_key_remove(existing)
     new_kb = obj.shape_key_add(name=name, from_mix=False)
 
-    sources = [(keys.key_blocks[s], w) for s, w in recipe]
+    sources = [(keys.key_blocks[s], w) for s, w in recipe
+               if keys.key_blocks.get(s) is not None]
     for i in range(len(basis.data)):
         base_co = basis.data[i].co
         x = y = z = 0.0
@@ -2262,7 +2295,7 @@ def _compose_shape_key(obj, name, recipe):
             z += d.z * w
         new_kb.data[i].co = (base_co.x + x, base_co.y + y, base_co.z + z)
     new_kb.value = 0.0
-    return True, []
+    return True, missing
 
 
 def _compose_convenience_shapes(face_obj):
@@ -2772,6 +2805,61 @@ def _compose_visemes(face_obj):
     return len(created)
 
 
+def _compose_contract_shapes_on_grooms():
+    """Compose the contract's convenience shapes and visemes onto every facial
+    groom card mesh.
+
+    Runs AFTER `_apply_arkit_to_grooms`, which wipes each groom's shape keys and
+    rebuilds them from whatever the face carries at that moment. The composed
+    shapes do not exist on the face yet at that point, so the grooms never
+    received them: a goatee or mustache over the mouth held still through every
+    viseme while the lips moved, and the cards ended up inside the mouth
+    (telegamez#3320). Composing here, rather than reordering the transfer, leaves
+    the verified ARKit propagation untouched.
+
+    A missing ingredient contributes ZERO instead of skipping the shape. The
+    runtime resolves morphs BY NAME (`mesh.morphTargetDictionary[name]`), so an
+    absent name is silently ignored — the exact silence that produced the bug. A
+    present zero-delta shape states honestly that this mesh does not move for
+    that phoneme, at the cost of one flat target.
+    """
+    grooms = [o for o in bpy.data.objects
+              if o.type == "MESH"
+              and any(o.name.startswith(p) for p in _GROOM_PREFIXES)]
+    if not grooms:
+        _log("  groom-shapes: no card meshes found")
+        return 0
+
+    recipes = (list(CONVENIENCE_RECIPES)
+               + [("mouthClose", MOUTHCLOSE_RECIPE)]
+               + list(VISEME_RECIPES))
+
+    total = 0
+    for groom in grooms:
+        if groom.data.shape_keys is None:
+            _log(f"  groom-shapes: {groom.name} has no shape keys — the ARKit "
+                 f"propagation did not reach it; skipping")
+            continue
+        created, degraded = 0, []
+        for name, recipe in recipes:
+            ok, missing = _compose_shape_key(groom, name, recipe,
+                                             partial_ok=True)
+            if ok:
+                created += 1
+                if missing:
+                    degraded.append(f"{name}<-{'+'.join(missing)}")
+        total += created
+        _log(f"  groom-shapes: {groom.name} composed {created}/{len(recipes)}"
+             + (f" (zero-filled: {'; '.join(degraded)})" if degraded else ""))
+
+        have = set(groom.data.shape_keys.key_blocks.keys())
+        gap = [n for n in CONTRACT_MOUTH_SHAPES if n not in have]
+        if gap:
+            _log(f"  groom-shapes: CONTRACT GAP on {groom.name} -> {gap}")
+
+    return total
+
+
 def main():
     args = _parse()
     ws = os.path.abspath(args.workspace)
@@ -2785,8 +2873,19 @@ def main():
 
     _reset_scene()
 
+    groom_exclude = _groom_exclusions()
+    if groom_exclude:
+        _log(f"groom exclusions active: {', '.join(groom_exclude)} "
+             f"(set MH_GROOM_EXCLUDE=none to assemble every groom)")
+
     hair_names = set()
+    skipped_grooms = []
     for rec in mh["assets"]:
+        base = os.path.basename(rec["file_path"])
+        if groom_exclude and base.startswith(groom_exclude):
+            skipped_grooms.append(base)
+            _log(f"  SKIP groom over the mouth: {base}")
+            continue
         glb = os.path.join(in_root, rec["file_path"])
         _log(f"importing {glb}")
         _import_glb(glb)
@@ -2833,15 +2932,22 @@ def main():
                  f"({groom_keys} total keys created)")
 
             # TELEGAMEZ: contract convenience shapes, composed AFTER groom
-            # propagation on purpose — the grooms keep the 46 ARKit-derived
-            # keys they were verified with, and only the face gains the
-            # merged ones. The eye-region slots the lid-morph rule cares
+            # propagation because the propagation wipes and rebuilds each
+            # groom's keys. The eye-region slots the lid-morph rule cares
             # about (eyeshell, lashes, lacrimal) are primitives of this same
             # face mesh, so they share its shape keys.
             n_conv = _compose_convenience_shapes(glb_face)
             _log(f"composed {n_conv} convenience shape(s) onto the GLB face mesh")
             n_vis = _compose_visemes(glb_face)
             _log(f"composed {n_vis} viseme shape(s) onto the GLB face mesh")
+
+            # The grooms were populated before those shapes existed, so they
+            # carried the raw ARKit set and none of the composed one — a goatee
+            # or mustache then held still through lipsync and pushed through the
+            # lip (telegamez#3320). Compose the same contract onto them now.
+            # This must stay AFTER both composers above.
+            n_groom = _compose_contract_shapes_on_grooms()
+            _log(f"composed {n_groom} contract shape(s) onto groom card meshes")
     else:
         _log("no ARKit shape keys baked - LSE FBX missing or capture failed")
 

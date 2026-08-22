@@ -1,9 +1,9 @@
 {
-  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking and the remaining gestures are unchanged from the single shared set and still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed. Those four slots are the ones still awaiting gendered replacements.",
+  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking is Thinking_AN_Idle_70_Waiting, supplied by the owner 2026-08-21 from the gendered pack and shared between the sets; it replaced TG-Anim_Deep_Breath_Sad, which was never loop-authored and failed the stage-05 loop-seam gate at 3.318 deg (#3269, #3321). The four remaining gestures - Nod, HeadShake, Dismiss, Angry - still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed, and are the slots still awaiting replacements.",
   "required": {
     "Idle": "/Game/Animations/female_AN_Idle_37_Female",
     "Listening": "/Game/Animations/female_AN_Idle_40_Female",
-    "Thinking": "/Game/TG-Animations/TG-Anim_Deep_Breath_Sad",
+    "Thinking": "/Game/Animations/Thinking_AN_Idle_70_Waiting",
     "Focused": "/Game/Animations/FocusHandFemale_AN_Idle_42_Female",
     "Speaking": "/Game/Animations/female_AN_Idle_32_Female"
   },

@@ -13,8 +13,16 @@
 
   Not per-character: one file serves the roster (clips bind by node name).
 
+  A loop-seam gate stands between the build and the publish: every looping clip
+  is measured first-keyframe against last, and a library that snaps is refused
+  rather than copied. See -MaxSeamDeg.
+
   Refuses to run while animset.json has unsourced clips — the D7 Fab pack must
   be installed in the UE project and its asset paths filled in first.
+
+.PARAMETER MaxSeamDeg
+  Largest tolerated first-to-last bone rotation, in degrees, on a looping clip.
+  Default 2.0. Raising it is an explicit, logged decision to ship a seam.
 
 .PARAMETER PublishTo
   Optional directory to copy the finished GLB into (e.g. the web app's
@@ -29,7 +37,11 @@ param(
   [string] $PublishTo,
   # Which clip set to bake. The roster is split by gender (issue #3214), so this
   # runs once per set; the file names the output GLB, so two runs cannot collide.
-  [string] $AnimSet = 'animset.json'
+  [string] $AnimSet = 'animset.json',
+  # Largest tolerated first-to-last bone rotation on a LOOPING clip. The gate
+  # below is hard - there is no switch to skip it - but the threshold is a knob,
+  # because it is a judgement about what reads as a snap and not a constant.
+  [double] $MaxSeamDeg = 2.0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -115,6 +127,24 @@ $OutGlb = Join-Path $Workspace "docs\animations\$($cfg.output)"
 & $BlenderExe --factory-startup --background --python-exit-code 1 --python (Join-Path $ToolsDir 'build_animations_glb.py') `
   -- --glb-dir $GlbDir --animset $animset --out $OutGlb
 if ($LASTEXITCODE -ne 0) { Write-Host "[run_animbake] Blender build failed ($LASTEXITCODE)"; exit 1 }
+
+# --- loop-seam gate — a snapping library must not reach a room ---------------
+# UE's glTF exporter samples an AnimSequence's range INCLUSIVELY, so an N-frame
+# clip ships N+1 samples; the duplicate tail is what THREE.LoopRepeat jumps
+# across every cycle, and it shipped as a 36 deg snap on every looping clip
+# (telegamez#3321). build_animations_glb.py trims it — this proves the trim
+# worked on THIS build, before the copy rather than after someone notices.
+#
+# Deliberately hard, and deliberately BEFORE the publish: a failed gate leaves
+# the built GLB in docs/animations for inspection but never copies it onward.
+$SeamCheck = Join-Path $ToolsDir 'check_loop_seams.py'
+Write-Host "[run_animbake] loop-seam gate (max $MaxSeamDeg deg):"
+& python $SeamCheck $OutGlb --max-deg $MaxSeamDeg
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "[run_animbake] LOOP SEAM GATE FAILED — refusing to publish $($cfg.output)."
+  Write-Host "[run_animbake] the build is at $OutGlb for inspection; it was NOT copied."
+  exit 1
+}
 
 # --- optional publish, hash-verified -----------------------------------------
 if ($PublishTo) {

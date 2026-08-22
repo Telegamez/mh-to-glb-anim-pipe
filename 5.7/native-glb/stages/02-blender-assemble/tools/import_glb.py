@@ -791,12 +791,24 @@ def _emit_material_spec(out_root, mh_manifest):
                    "saved_at": _iso_now(),
                    "materials": materials}
         body = _manifest_body(char_id)
-        if body:
-            payload = {"character": char_id, "body": body,
-                       "saved_at": payload["saved_at"], "materials": materials}
-        else:
-            _log(f"  WARNING no 'body' in manifest for {char_id} — sidecar will "
-                 f"carry no archetype and the runtime will assume female")
+        if not body:
+            # HARD FAIL, not a warning.
+            #
+            # A sidecar with no `body` does not fail visibly: the runtime falls back
+            # to the female animation library, so a male character ships animating
+            # female and nothing says so. Two characters reached production that way
+            # (mh-tele and mh-tele2, telegamez#3285) - though via a WRONG value
+            # rather than a missing one, which this check cannot catch.
+            #
+            # The archetype is a fact about the character that the operator knows at
+            # bootstrap. Guessing it silently is worse than refusing to bake.
+            raise SystemExit(
+                f"[stage02-glb] FATAL: characters/{char_id}/manifest.json has no valid "
+                f"'body' (expected 'female' or 'male'). The animation library is chosen "
+                f"from this value; a wrong or missing archetype ships silently."
+            )
+        payload = {"character": char_id, "body": body,
+                   "saved_at": payload["saved_at"], "materials": materials}
         json.dump(payload, f, indent=2)
     return materials
 

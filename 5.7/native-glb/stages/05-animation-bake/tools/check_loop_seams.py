@@ -76,6 +76,17 @@ def main():
     nodes = gltf.get("nodes", [])
     failures = []
 
+    # A clip that is absent is not a clip that passed. Without this the gate
+    # reports success on a GLB containing none of the clips it meant to check -
+    # a rename or a half-finished bake would sail straight through it.
+    present = {a.get("name") for a in gltf.get("animations", [])}
+    absent = [c for c in wanted if c not in present]
+    if absent:
+        print(f"  FAIL {len(absent)} expected looping clip(s) missing from the GLB: "
+              f"{', '.join(absent)}")
+        print(f"       present: {', '.join(sorted(present)) or '(none)'}")
+        sys.exit(1)
+
     for anim in gltf.get("animations", []):
         name = anim.get("name")
         if name not in wanted:

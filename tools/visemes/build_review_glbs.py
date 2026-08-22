@@ -211,6 +211,45 @@ def strip_vertex_colours(obj):
     return removed
 
 
+def split_tongue_copy(obj):
+    """Duplicate the object and reduce the copy to teeth/tongue.
+
+    Must run BEFORE `apply_clay`, which clears the material slots -- and the teeth slot is how
+    `isolate_tongue` finds what to keep. Running it after silently produced full heads under
+    the tongue-only filenames: correct geometry, wrong content, and nothing failing.
+    """
+    copy = obj.copy()
+    copy.data = obj.data.copy()
+    bpy.context.scene.collection.objects.link(copy)
+    isolate_tongue(copy)
+    return copy
+
+
+def apply_clay(obj):
+    """Give the mesh one neutral clay material.
+
+    Exporting with no material at all leaves three.js to build its default, which renders
+    near-white under the harness's RoomEnvironment IBL. Form reads badly on white: the lip
+    margin, the philtrum and the aperture edge all wash out, which are precisely the features
+    a viseme review is judging. A mid-grey with moderate roughness is the standard clay-render
+    answer -- it holds shading gradients where white clips.
+
+    Deliberately NOT the MetaHuman skin shader. The point of these builds is that nothing but
+    geometry differs between them; a real material would bring textures, and a texture seam
+    misread as a lip crease is exactly the confusion this avoids.
+    """
+    mat = bpy.data.materials.new("TG_Review_Clay")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = (0.62, 0.60, 0.58, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.55
+        bsdf.inputs["Metallic"].default_value = 0.0
+    obj.data.materials.clear()
+    obj.data.materials.append(mat)
+    log("  applied neutral clay material")
+
+
 def export(path, obj):
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
@@ -219,7 +258,7 @@ def export(path, obj):
         filepath=path, export_format="GLB", use_selection=True,
         export_morph=True, export_morph_normal=True,
         export_skins=False, export_animations=False,
-        export_materials="NONE",
+        export_materials="EXPORT",
     )
     log(f"  -> {path} ({os.path.getsize(path)/1_000_000:.1f} MB)")
 
@@ -232,10 +271,11 @@ obj, basis, baked = capture(
     os.path.join(SRC, "tg_viseme_pose_names.json"), "baked")
 bake_shapes(obj, basis, baked, ORDER)
 strip_vertex_colours(obj)
-to_metres(obj)
-export(os.path.join(OUT, f"{CHAR}-visemes-baked.glb"), obj)
-isolate_tongue(obj)
-export(os.path.join(OUT, f"{CHAR}-tongue-baked.glb"), obj)
+tongue = split_tongue_copy(obj)
+for target, name in ((obj, f"{CHAR}-visemes-baked.glb"), (tongue, f"{CHAR}-tongue-baked.glb")):
+    apply_clay(target)
+    to_metres(target)
+    export(os.path.join(OUT, name), target)
 
 # ------------------------------------------------------------- composed ----
 obj, basis, arkit = capture(
@@ -256,9 +296,11 @@ for name, recipe in COMPOSED.items():
     composed[name] = positions
 bake_shapes(obj, basis, composed, ORDER)
 strip_vertex_colours(obj)
-to_metres(obj)
-export(os.path.join(OUT, f"{CHAR}-visemes-composed.glb"), obj)
-isolate_tongue(obj)
-export(os.path.join(OUT, f"{CHAR}-tongue-composed.glb"), obj)
+tongue = split_tongue_copy(obj)
+for target, name in ((obj, f"{CHAR}-visemes-composed.glb"),
+                     (tongue, f"{CHAR}-tongue-composed.glb")):
+    apply_clay(target)
+    to_metres(target)
+    export(os.path.join(OUT, name), target)
 
 log("done - load either with /dev/companion-harness?model=<url>")

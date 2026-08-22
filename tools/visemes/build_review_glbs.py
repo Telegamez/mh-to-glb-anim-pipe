@@ -139,6 +139,61 @@ def bake_shapes(obj, basis, shapes, order):
     return made
 
 
+def isolate_tongue(obj):
+    """Delete every polygon that is not teeth/tongue.
+
+    Why this variant exists: the tongue-dependent visemes are the ones F2 is built for, and
+    NO exterior view can show them. A front view is blocked by the teeth and lips; a profile
+    is blocked by the cheek. `viseme_kk` is the extreme case -- velar constriction, zero lip
+    signature -- so baked and composed render identically from every outside angle while
+    measuring 1.3x apart internally.
+
+    Stripping the head away makes the articulation directly visible from any angle. It looks
+    alarming and it is not a deliverable; it is an inspection instrument.
+    """
+    import bmesh
+    teeth = {i for i, ms in enumerate(obj.material_slots)
+             if ms.material and any(k in ms.material.name.lower()
+                                    for k in ("teeth", "tongue", "saliva"))}
+    if not teeth:
+        log("  no teeth/tongue slot found; leaving mesh intact")
+        return 0
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    doomed = [f for f in bm.faces if f.material_index not in teeth]
+    bmesh.ops.delete(bm, geom=doomed, context="FACES")
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    log(f"  isolated teeth/tongue: kept {len(obj.data.polygons)} faces")
+    return len(obj.data.polygons)
+
+
+# The Sequencer FBX imports at world_scale 0.01, but `evaluated_get` returns mesh-local
+# positions in CENTIMETRES -- the same cm/m trap stage 02's ARKit transfer documents and
+# converts for. Exporting without converting produced review heads 31 x 39 x 22 units against
+# a published companion's whole body at 1.0 x 1.3 x 0.4, i.e. ~100x oversized: the harness
+# camera sat INSIDE the head and the model read as "not loading".
+CM_TO_M = 0.01
+
+
+def to_metres(obj):
+    """Scale the mesh AND its shape keys from centimetres to metres.
+
+    `transform_apply` writes the scale into the mesh data and every key block, so the morph
+    deltas convert with the basis rather than staying 100x. A node-level scale would also
+    render correctly but would leave the shape-key data in cm, which anything reading the
+    accessors directly (a measurement script, a downstream tool) would get wrong.
+    """
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    obj.scale = (CM_TO_M, CM_TO_M, CM_TO_M)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    d = obj.dimensions
+    log(f"  scaled to metres: {d.x:.3f} x {d.y:.3f} x {d.z:.3f} m")
+
+
 def export(path, obj):
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
@@ -159,7 +214,10 @@ obj, basis, baked = capture(
     os.path.join(SRC, "LS_tg_visemes.fbx"),
     os.path.join(SRC, "tg_viseme_pose_names.json"), "baked")
 bake_shapes(obj, basis, baked, ORDER)
+to_metres(obj)
 export(os.path.join(OUT, f"{CHAR}-visemes-baked.glb"), obj)
+isolate_tongue(obj)
+export(os.path.join(OUT, f"{CHAR}-tongue-baked.glb"), obj)
 
 # ------------------------------------------------------------- composed ----
 obj, basis, arkit = capture(
@@ -179,6 +237,9 @@ for name, recipe in COMPOSED.items():
             positions[i] += (src_positions[i] - basis[i]) * weight
     composed[name] = positions
 bake_shapes(obj, basis, composed, ORDER)
+to_metres(obj)
 export(os.path.join(OUT, f"{CHAR}-visemes-composed.glb"), obj)
+isolate_tongue(obj)
+export(os.path.join(OUT, f"{CHAR}-tongue-composed.glb"), obj)
 
 log("done - load either with /dev/companion-harness?model=<url>")

@@ -140,19 +140,21 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
         return None
 
     length = float(anim.get_editor_property("sequence_length"))
-    # A Level Sequence's playback end is EXCLUSIVE, so round(length * fps) is the INTERVAL
-    # count and baking that many frames drops the last pose. This is the same defect as #3341,
-    # which was fixed in stage 01's _export_sequencer_bake and left standing here.
+    # `round(length * fps)` is the INTERVAL count, and for THIS API that is exactly what
+    # set_playback_end / set_range want: SequencerTools.export_anim_sequence produces
+    # end - start + 1 samples, so a playback end of 322 yields 323 frames.
     #
-    # It hid in stage 01 because the ARKit mapping's last six poses are Pose_12..Pose_17
-    # correctives that stage 02 filters out, so the dropped frame was never one anybody looked
-    # at. A pose table has no such buffer: every frame is a test pose, and the last one is as
-    # real as the first.
+    # This was briefly "fixed" by adding 1, on the theory that it was #3341 (stage 01's
+    # _export_sequencer_bake dropping the final pose) left standing here. It is not the same
+    # defect. The assertion below caught the over-correction on its first run — asked for 323,
+    # baked 324 — which is the whole reason the assertion exists rather than a comment claiming
+    # the arithmetic is right.
     #
-    # For a looping body clip the extra frame is the seam, which the loop-seam gate (#3321)
-    # already checks; for a pose sequence it is a distinct pose that was simply missing.
-    intervals = max(1, int(round(length * BAKE_FPS)))
-    frames = intervals + 1
+    # The two scripts differ because they use different export calls with different range
+    # conventions. Same-looking expression, same-looking variable, opposite correct answer;
+    # hence the naming here says which quantity is which.
+    playback_end = max(1, int(round(length * BAKE_FPS)))
+    expected_frames = playback_end + 1
 
     actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
         unreal.SkeletalMeshActor, unreal.Vector(0, 0, 0), unreal.Rotator(0, 0, 0),
@@ -167,12 +169,12 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
     )
     sequence.set_display_rate(unreal.FrameRate(BAKE_FPS, 1))
     sequence.set_playback_start(0)
-    sequence.set_playback_end(frames)
+    sequence.set_playback_end(playback_end)
 
     binding = sequence.add_possessable(actor)
     track = binding.add_track(unreal.MovieSceneSkeletalAnimationTrack)
     section = track.add_section()
-    section.set_range(0, frames)
+    section.set_range(0, playback_end)
     params = section.get_editor_property("params")
     _set(params, "animation", anim)
     _set(section, "params", params)
@@ -197,18 +199,22 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
     if not ok:
         _log(f"  {clip_name}: export_anim_sequence returned False")
         return None
-    # Prove the fix above rather than trusting it. get_num_frames returns INTERVALS, not
-    # sample positions, so the identity to check is intervals == frames - 1. Asserting the
-    # count here is what makes a future regression fail loudly instead of silently shortening
-    # every bake by one pose again.
+    # Check the count rather than trust the arithmetic. get_num_frames returns INTERVALS, not
+    # sample positions, so the identity is baked_intervals + 1 == expected_frames.
+    #
+    # This is not decoration. On its first run it caught an over-correction — a +1 added on the
+    # assumption that this script carried #3341 — by reporting 324 frames where 323 were asked
+    # for. An assertion that can only ever agree with the code above it proves nothing; this one
+    # disagreed, and was right to.
     baked_intervals = unreal.AnimationLibrary.get_num_frames(baked)
     baked_frames = baked_intervals + 1
-    if baked_frames != frames:
+    if baked_frames != expected_frames:
         raise RuntimeError(
-            f"{clip_name}: asked for {frames} frames, baked sequence carries {baked_frames} "
-            f"({baked_intervals} intervals). The playback-end off-by-one is back.")
-    _log(f"  {clip_name}: baked {frames} frames ({baked_intervals} intervals, {length:.2f}s) "
-         f"-> {baked.get_path_name()}")
+            f"{clip_name}: expected {expected_frames} frames from playback_end={playback_end}, "
+            f"baked sequence carries {baked_frames} ({baked_intervals} intervals). The "
+            f"playback-range convention has changed.")
+    _log(f"  {clip_name}: baked {expected_frames} frames ({baked_intervals} intervals, "
+         f"{length:.2f}s) -> {baked.get_path_name()}")
     return baked
 
 

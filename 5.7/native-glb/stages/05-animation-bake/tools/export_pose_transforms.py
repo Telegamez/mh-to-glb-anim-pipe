@@ -116,6 +116,10 @@ def _arg(name, default=None):
     return default
 
 
+def _flag(name):
+    return any(a == f"--{name}" for a in sys.argv)
+
+
 def _pack(transform):
     t, r, s = transform.translation, transform.rotation, transform.scale3d
     return [t.x, t.y, t.z, r.x, r.y, r.z, r.w, s.x, s.y, s.z]
@@ -126,8 +130,25 @@ def main():
     anim_path = _arg("anim")
     out_path = _arg("out")
     fps = float(_arg("fps", "30"))
+    raw_only = _flag("raw-only")
+    run_id = _arg("run-id")
     if not (mesh_path and anim_path and out_path):
         raise RuntimeError("need --mesh= --anim= --out=")
+
+    # --raw-only reads the sequence with get_anim_pose_at_time ALONE and never calls
+    # evaluate_animation_blueprint_with_input_pose, which aborts in-engine on the face mesh.
+    # Point it at an evaluated BAKE and its raw pose IS the ABP's output.
+    #
+    # That moves gate 3 out of this process and into a comparison between two dumps, which
+    # creates a failure this file cannot see: re-run one side and not the other and the
+    # comparator silently compares mismatched runs. So a pair MUST share --run-id, and the
+    # comparator refuses to compare two dumps whose run ids differ. Required, not optional:
+    # a defaulted or absent id would make the check vacuous exactly when it matters.
+    if raw_only and not run_id:
+        raise RuntimeError(
+            "--raw-only requires --run-id=<id>, shared by both dumps of a pair. Gate 3 becomes "
+            "a comparison across two files, and without a shared id nothing stops a stale dump "
+            "from being compared against a fresh one.")
 
     mesh = unreal.EditorAssetLibrary.load_asset(mesh_path)
     anim = unreal.EditorAssetLibrary.load_asset(anim_path)
@@ -175,10 +196,13 @@ def main():
         raw_pose = ape.get_anim_pose_at_time(anim, t, options)
         if not ape.is_valid(raw_pose):
             raise RuntimeError(f"invalid pose at t={t:.3f}")
-        evaluated = ape.evaluate_animation_blueprint_with_input_pose(
-            raw_pose, mesh, abp_asset)
-        if not ape.is_valid(evaluated):
-            raise RuntimeError(f"ABP evaluation produced an invalid pose at t={t:.3f}")
+        if raw_only:
+            evaluated = raw_pose
+        else:
+            evaluated = ape.evaluate_animation_blueprint_with_input_pose(
+                raw_pose, mesh, abp_asset)
+            if not ape.is_valid(evaluated):
+                raise RuntimeError(f"ABP evaluation produced an invalid pose at t={t:.3f}")
 
         if bone_names is None:
             bone_names = [str(b) for b in ape.get_bone_names(evaluated)]
@@ -207,13 +231,23 @@ def main():
             "refusing to write a static file that would be mistaken for ground truth.")
 
     # GATE 3 — the ABP must have contributed, or rig logic did not run.
-    if abp_delta_max < 1e-4:
-        raise RuntimeError(
-            f"GATE 3 FAILED: the evaluated pose is identical to the raw AnimSequence pose "
-            f"(max delta {abp_delta_max:.6f}cm). The post-process ABP did not contribute, so "
-            f"this is not MetaHuman's deformation.")
-    _log(f"GATES PASSED: frames vary, and the ABP moves bones by up to {abp_delta_max:.2f}cm "
-         f"against the raw sequence")
+    if raw_only:
+        # Deferred, not skipped. In --raw-only there is only one pose per frame, so there is
+        # nothing here to compare; the check moves to compare_pose_dumps.py, which diffs the
+        # evaluated-bake dump against the original-sequence dump. Saying so out loud matters:
+        # a run that printed "GATES PASSED" while only checking two of three would be the
+        # exact failure this file's gates exist to prevent.
+        _log(f"GATE 2 PASSED: frames vary. GATE 1 PASSED: post-process ABP present on the mesh.")
+        _log(f"GATE 3 DEFERRED: --raw-only writes one pose per frame. Run "
+             f"compare_pose_dumps.py over this dump and its pair (run_id={run_id}) to close it.")
+    else:
+        if abp_delta_max < 1e-4:
+            raise RuntimeError(
+                f"GATE 3 FAILED: the evaluated pose is identical to the raw AnimSequence pose "
+                f"(max delta {abp_delta_max:.6f}cm). The post-process ABP did not contribute, so "
+                f"this is not MetaHuman's deformation.")
+        _log(f"GATES PASSED: frames vary, and the ABP moves bones by up to {abp_delta_max:.2f}cm "
+             f"against the raw sequence")
 
     import numpy as np
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -228,6 +262,9 @@ def main():
             "mesh": mesh_path, "anim": anim_path, "abp": asset_path, "length": length,
             "fps": fps, "units": "centimetres, Unreal component space",
             "abp_delta_max_cm": abp_delta_max, "diagnostics": DIAG,
+            # Provenance for the split gate 3. run_id is shared across a pair; source_anim is
+            # what distinguishes them. The comparator refuses a run_id mismatch.
+            "run_id": run_id, "raw_only": raw_only, "source_anim": anim_path,
         })], dtype=object),
     )
     _log(f"wrote {out_path} ({os.path.getsize(out_path)/1e6:.2f} MB)")

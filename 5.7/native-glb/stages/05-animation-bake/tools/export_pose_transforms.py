@@ -30,6 +30,46 @@ end and each cost a cycle to discover:
   * `convert_actors` returns without producing a mesh for a skeletal actor.
   * Alembic is import-only in Unreal's Python; there is no exporter.
 
+## STATUS 2026-08-22: the ABP-evaluation call crashes on the FACE mesh
+
+`evaluate_animation_blueprint_with_input_pose` aborts inside the engine's own C++ when the
+mesh is `SKM_Telly_FaceMesh` and the ABP is `ABP_Face_PostProcess`:
+
+    Script Stack (1 frames):
+    /Script/AnimationBlueprintLibrary.AnimPoseExtensions.EvaluateAnimationBlueprintWithInputPose
+    Assertion failed: (Index >= 0) & (Index < ArrayNum)
+    Array index out of bounds: 737 into an array of size 737
+
+Gate 1 passes first — the ABP is found and logged — and the clip loads. The crash is one frame
+deep in engine code, in compact-pose bookkeeping we do not control.
+
+**Scope, established by control experiment rather than by argument.** The same command was run
+against `AS_TG_Visemes` (17 frames, 45 curves) instead of `AS_TG_Validation` (323 frames, 263
+curves). Identical crash, identical numbers. So it is structural, not data, and not a function
+of sequence size.
+
+**What is NOT established: whether this is a UE 5.8 regression or has always been true of the
+face path.** The intended control — the same call against a BODY mesh and a body clip, which
+is reported to have worked on 2026-08-18 — could not be run: the clip paths in
+`stages/05-animation-bake/animset.json` (e.g. `/Game/Animations/Shrug_Anim_Don_t_Know`) do not
+resolve through `EditorAssetLibrary.load_asset` on this machine, and a registry-scanning lister
+run to find valid paths produced no output. Four commandlet runs were spent; the question was
+left open rather than answered by guessing. **737 matches no bone set on this character** —
+1185 merged, 841 `FACIAL_*`, 344 body — so it is internal to the face SKM's own skeleton or to
+the ABP.
+
+**Do not debug this to use this tool.** Phase 5 needs the transforms, not this API, and a
+proven mechanism produces the same bytes: `bake_evaluated_anims.py` records an ABP-evaluated
+pose through the Sequencer, which is the mechanism behind every trusted artifact on this
+project — all 51 ARKit shapes on six characters, the stage-05 body bakes, and the viseme bake.
+Bake the sequence with `--anim=`, then read the BAKED sequence here with `--raw-only`, which
+uses `get_anim_pose_at_time` alone and never touches the crashing call. The raw pose of an
+evaluated bake IS the evaluated pose of the original.
+
+Gate 3 then becomes a comparison between two dumps rather than a check inside one process, so
+both carry `run_id` and `source_anim` in `meta` and the comparator refuses a mismatch — a gate
+split across two files is a gate that a re-run of one side can silently defeat.
+
 ## The gates
 
 Three, because the failures above were all silent and each produced a plausible-looking file:

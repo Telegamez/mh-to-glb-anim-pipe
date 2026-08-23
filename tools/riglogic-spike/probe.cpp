@@ -40,6 +40,8 @@ namespace {
 struct Args {
     const char* dna = nullptr;
     const char* json = nullptr;
+    const char* controls = nullptr;
+    const char* outputs = nullptr;
     int frames = 0;
     int lod = 0;
 };
@@ -53,6 +55,10 @@ Args parseArgs(int argc, char** argv) {
             a.lod = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--json") == 0 && i + 1 < argc) {
             a.json = argv[++i];
+        } else if (std::strcmp(argv[i], "--controls") == 0 && i + 1 < argc) {
+            a.controls = argv[++i];
+        } else if (std::strcmp(argv[i], "--outputs") == 0 && i + 1 < argc) {
+            a.outputs = argv[++i];
         } else if (a.dna == nullptr) {
             a.dna = argv[i];
         }
@@ -208,6 +214,74 @@ int main(int argc, char** argv) {
     if (nonZeroJoints == 0) {
         std::fprintf(stderr, "\nFAIL: every joint output is zero — the rig did not evaluate.\n");
         return 3;
+    }
+
+    // ---- batch evaluation against a supplied control table -------------------------------
+    //
+    // This is the comparison that needs no frame of reference at all. The Python oracle and
+    // this, Epic's own library, both emit in RigLogic's OWN output space — joint attribute
+    // rows and blendshape weights, straight out of calculate(). No axis convention, no bone
+    // hierarchy, no placement, none of the three things that produced three wrong tables when
+    // comparing against Unreal's posed skeleton.
+    //
+    // Formats are deliberately dumb binary so neither side can disagree about parsing:
+    //   controls: u32 poseCount, u32 controlCount, then poseCount*controlCount float32
+    //   outputs:  u32 poseCount, u32 jointRows, u32 shapeCount,
+    //             then per pose jointRows float32 followed by shapeCount float32
+    if (args.controls != nullptr && args.outputs != nullptr) {
+        std::FILE* cf = std::fopen(args.controls, "rb");
+        if (cf == nullptr) {
+            std::fprintf(stderr, "could not open %s\n", args.controls);
+            return 1;
+        }
+        std::uint32_t poseCount = 0, controlCount = 0;
+        if (std::fread(&poseCount, 4, 1, cf) != 1 || std::fread(&controlCount, 4, 1, cf) != 1) {
+            std::fprintf(stderr, "short header in %s\n", args.controls);
+            std::fclose(cf);
+            return 1;
+        }
+        if (controlCount != rawCount) {
+            std::fprintf(stderr,
+                         "control table has %u controls, rig has %u raw controls. Refusing: a "
+                         "silent truncation here would compare two different rigs.\n",
+                         controlCount, rawCount);
+            std::fclose(cf);
+            return 1;
+        }
+
+        std::FILE* of = std::fopen(args.outputs, "wb");
+        if (of == nullptr) {
+            std::fprintf(stderr, "could not open %s for writing\n", args.outputs);
+            std::fclose(cf);
+            return 1;
+        }
+        const std::uint32_t jointRows = static_cast<std::uint32_t>(joints.size());
+        const std::uint32_t shapeCount = static_cast<std::uint32_t>(shapes.size());
+        std::fwrite(&poseCount, 4, 1, of);
+        std::fwrite(&jointRows, 4, 1, of);
+        std::fwrite(&shapeCount, 4, 1, of);
+
+        std::vector<float> row(controlCount);
+        for (std::uint32_t p = 0; p < poseCount; ++p) {
+            if (std::fread(row.data(), 4, controlCount, cf) != controlCount) {
+                std::fprintf(stderr, "control table ended at pose %u of %u\n", p, poseCount);
+                std::fclose(cf);
+                std::fclose(of);
+                return 1;
+            }
+            for (std::uint16_t i = 0; i < rawCount; ++i) {
+                instance->setRawControl(i, row[i]);
+            }
+            rigLogic->calculate(instance);
+            const auto j = instance->getJointOutputs();
+            const auto s = instance->getBlendShapeOutputs();
+            std::fwrite(j.data(), 4, j.size(), of);
+            std::fwrite(s.data(), 4, s.size(), of);
+        }
+        std::fclose(cf);
+        std::fclose(of);
+        std::printf("\n  evaluated %u poses -> %s (%u joint rows, %u shapes each)\n",
+                    poseCount, args.outputs, jointRows, shapeCount);
     }
 
     // ---- steady-state cost -------------------------------------------------------------

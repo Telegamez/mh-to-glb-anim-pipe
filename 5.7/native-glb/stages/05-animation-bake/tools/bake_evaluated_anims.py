@@ -215,6 +215,23 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
             f"playback-range convention has changed.")
     _log(f"  {clip_name}: baked {expected_frames} frames ({baked_intervals} intervals, "
          f"{length:.2f}s) -> {baked.get_path_name()}")
+
+    # Opt-in, because stage 05 does not need it and should not start writing assets into the
+    # project as a side effect. This script normally bakes AND exports to glTF in ONE process,
+    # so the AnimSequence never had to outlive it and was never saved — Content/_animbake/ has
+    # only ever held BakeMap.umap.
+    #
+    # The F5 dump splits that across two processes: bake here, read it back with
+    # export_pose_transforms.py --raw-only. The second process cannot see an asset that exists
+    # only in the first one's memory, which is exactly how this presented — "could not be found
+    # in the Asset Registry" for a bake that had just reported success.
+    if "--save" in sys.argv:
+        saved = unreal.EditorAssetLibrary.save_loaded_asset(baked, only_if_is_dirty=False)
+        _log(f"  {clip_name}: saved to disk: {saved} ({baked.get_path_name()})")
+        if not saved:
+            raise RuntimeError(
+                f"{clip_name}: --save was requested but save_loaded_asset returned False. A "
+                f"later process would find nothing and report a missing asset.")
     return baked
 
 

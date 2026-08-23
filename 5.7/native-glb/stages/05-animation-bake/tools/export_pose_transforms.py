@@ -181,6 +181,18 @@ def main():
         except Exception as e:  # noqa: BLE001
             _log(f"  option {prop}: {e}")
 
+    # WORLD is the default for compatibility with the body-mesh dumps, but LOCAL is what a
+    # RigLogic comparison needs. RigLogic emits per-joint deltas that UE's AnimNode adds to
+    # each bone's REFERENCE LOCAL transform, so the quantity the evaluator produces is local.
+    # In world space a parent's rotation propagates into every descendant, and a diff would
+    # then disagree on hundreds of joints that the evaluator got exactly right.
+    space_name = (_arg("space", "world") or "world").lower()
+    if space_name not in ("world", "local"):
+        raise RuntimeError(f"--space must be world or local, got {space_name!r}")
+    SPACE = (unreal.AnimPoseSpaces.LOCAL if space_name == "local"
+             else unreal.AnimPoseSpaces.WORLD)
+    _log(f"space={space_name}")
+
     ape = unreal.AnimPoseExtensions
     length = float(anim.get_editor_property("sequence_length"))
     frames = max(2, int(round(length * fps)) + 1)
@@ -206,13 +218,13 @@ def main():
 
         if bone_names is None:
             bone_names = [str(b) for b in ape.get_bone_names(evaluated)]
-            ref = [_pack(ape.get_ref_bone_pose(evaluated, b, unreal.AnimPoseSpaces.WORLD))
+            ref = [_pack(ape.get_ref_bone_pose(evaluated, b, SPACE))
                    for b in bone_names]
             _log(f"{len(bone_names)} bones")
 
-        raw = [_pack(ape.get_bone_pose(raw_pose, b, unreal.AnimPoseSpaces.WORLD))
+        raw = [_pack(ape.get_bone_pose(raw_pose, b, SPACE))
                for b in bone_names]
-        ev = [_pack(ape.get_bone_pose(evaluated, b, unreal.AnimPoseSpaces.WORLD))
+        ev = [_pack(ape.get_bone_pose(evaluated, b, SPACE))
               for b in bone_names]
         for a, b in zip(raw, ev):
             for x, y in zip(a[:3], b[:3]):
@@ -281,7 +293,7 @@ def main():
         evaluated=np.array(eval_rows, dtype=np.float32),
         meta=np.array([json.dumps({
             "mesh": mesh_path, "anim": anim_path, "abp": asset_path, "length": length,
-            "fps": fps, "units": "centimetres, Unreal component space",
+            "fps": fps, "units": f"centimetres, Unreal {space_name} space", "space": space_name,
             "abp_delta_max_cm": abp_delta_max, "diagnostics": DIAG,
             # Provenance for the split gate 3. run_id is shared across a pair; source_anim is
             # what distinguishes them. The comparator refuses a run_id mismatch.

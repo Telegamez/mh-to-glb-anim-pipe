@@ -1382,6 +1382,29 @@ def main():
     glb_path = out_dir / f"{args.char}{_variant_suffix()}.glb"
     manifest_path = out_dir / f"glb_manifest{_variant_suffix()}.json"
 
+    # Refuse to overwrite a build of a DIFFERENT variant.
+    #
+    # The separate filename already makes the normal collision impossible; this catches the
+    # case it cannot — a variant flag changing between runs that target the same name, or a
+    # rename that moves one build onto another's path. The incident this exists for destroyed
+    # a deliverable and was only discoverable afterwards, from a manifest field.
+    #
+    # Refusal rather than a warning, because the artifact is gone by the time anyone reads a
+    # warning.
+    if manifest_path.exists():
+        try:
+            prior = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            prior = {}
+        prior_kind = (prior.get("variant") or {}).get("kind") if prior.get("variant") else None
+        this_kind = "research" if IS_RESEARCH_VARIANT else None
+        if prior_kind != this_kind:
+            raise SystemExit(
+                f"[stage03] REFUSING to overwrite {glb_path.name}: its manifest declares "
+                f"variant {prior_kind!r} and this run produces {this_kind!r}. Delete or move "
+                f"the existing pair deliberately if that is what you mean. A deliverable was "
+                f"destroyed this way once, and the manifest only said so afterwards.")
+
     constraints = _read_glb_constraints(workspace)
     max_px = int(constraints.get("max_texture_px", 1024))
     draco = bool(constraints.get("draco_compression", True))

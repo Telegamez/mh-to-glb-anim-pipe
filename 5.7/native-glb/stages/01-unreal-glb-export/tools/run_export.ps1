@@ -70,6 +70,14 @@ if (-not (Test-Path "C:\tmp\mh")) { New-Item -ItemType Directory -Path "C:\tmp\m
 $PyScript = Join-Path $ToolsDir "export_glb.py"
 Copy-Item -Force $PyScript "C:\tmp\mh\export_glb.py"
 
+# export_glb.py resolves TG_VISEME_NAMES_JSON as <script dir>/../config/. Staging the
+# script to C:\tmp\mh makes that C:\tmp\config, not the repo's config folder, so the
+# viseme bake skipped with 'pose-names JSON missing' and stage 02 silently fell back to
+# COMPOSED visemes. The manifest recorded it as a warning; the launcher exited 0. Stage
+# the config beside the script so the relative path resolves to real files.
+if (-not (Test-Path "C:\tmp\config")) { New-Item -ItemType Directory -Path "C:\tmp\config" | Out-Null }
+Copy-Item -Force (Join-Path $ToolsDir "..\config\*.json") "C:\tmp\config\"
+
 $env:MH_PIPELINE_WORKSPACE = $Workspace
 
 Write-Host "[stage01] UE version  : $PipelineVer"

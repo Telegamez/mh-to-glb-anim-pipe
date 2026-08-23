@@ -48,15 +48,25 @@ against `AS_TG_Visemes` (17 frames, 45 curves) instead of `AS_TG_Validation` (32
 curves). Identical crash, identical numbers. So it is structural, not data, and not a function
 of sequence size.
 
-**What is NOT established: whether this is a UE 5.8 regression or has always been true of the
-face path.** The intended control — the same call against a BODY mesh and a body clip, which
-is reported to have worked on 2026-08-18 — could not be run: the clip paths in
-`stages/05-animation-bake/animset.json` (e.g. `/Game/Animations/Shrug_Anim_Don_t_Know`) do not
-resolve through `EditorAssetLibrary.load_asset` on this machine, and a registry-scanning lister
-run to find valid paths produced no output. Four commandlet runs were spent; the question was
-left open rather than answered by guessing. **737 matches no bone set on this character** —
-1185 merged, 841 `FACIAL_*`, 344 body — so it is internal to the face SKM's own skeleton or to
-the ABP.
+**It is FACE-SPECIFIC, not a UE 5.8 regression.** The control was run and passed:
+
+    mesh=/Game/Unpacked/Telly/Body/SKM_Telly_BodyMesh
+    anim=/Game/Animations/male_AN_Idle_13
+    post-process ABP=/MetaHumanCharacter/Body/ABP_Body_PostProcess
+    342 bones, 256 frames
+    GATES PASSED: frames vary, and the ABP moves bones by up to 3.75cm against the raw sequence
+    wrote telly_body_control.npz (4.53 MB)
+
+Same call, same engine, same day. The body ABP evaluates fine; the face ABP aborts. So this
+tool is not broken in general — it is unusable for the FACE path, which is the only path
+Phase 5 needs. **737 matches no bone set on this character** (1185 merged, 841 `FACIAL_*`, 344
+body — and the working body dump carries exactly 342), so it is internal to the face SKM's own
+skeleton or to the ABP.
+
+The first attempt at this control was abandoned after four runs because it used
+`animset.json`, which is the stale pre-gendered clip set — its paths moved to
+`/Game/Animations/previousPack/` when the gendered packs landed. The live sets are
+`animset.male.json` / `animset.female.json`, selected by `MH_ANIMSET`. Filed as #3397.
 
 **Do not debug this to use this tool.** Phase 5 needs the transforms, not this API, and a
 proven mechanism produces the same bytes: `bake_evaluated_anims.py` records an ABP-evaluated

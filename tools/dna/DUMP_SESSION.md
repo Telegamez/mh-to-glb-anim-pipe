@@ -55,6 +55,13 @@ $ErrorActionPreference = "Continue"   # see note below
 Write-Host "UE exit code: $LASTEXITCODE"
 ```
 
+> **Read `G:\ue\telegames\Saved\Logs\telegames.log`, not your redirect.** The commandlet's
+> log verbosity swallows `LogPython` Display lines from a shell redirect entirely. A run can
+> exit 0, write its artifact correctly, and show you nothing -- that is exactly what the body
+> control test did, and its gate lines were sitting in `telegames.log` the whole time.
+> `bake_evaluated_anims.py`'s own `_log` comment records the same trap: it prints AND
+> `unreal.log`s with flush for this reason. Never conclude "no output" from the redirect alone.
+
 > `$ErrorActionPreference = "Continue"` is deliberate. With `Stop`, PowerShell turns benign
 > native stderr (OpenXR warnings, D3D12 chatter) into a terminating error and kills the
 > launcher before the exit code is ever read. `run_export.ps1` carries the same note.

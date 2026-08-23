@@ -218,6 +218,18 @@ def main():
 
         if bone_names is None:
             bone_names = [str(b) for b in ape.get_bone_names(evaluated)]
+            # The mesh's REFERENCE pose, in both spaces, carried in the dump itself.
+            #
+            # This is what makes the dump self-describing. The UE->DNA coordinate map is
+            # solved from these by a similarity fit, so no consumer has to know or guess
+            # Unreal's axis convention, handedness or units — and no consumer has to borrow a
+            # hierarchy from somewhere else. Borrowing one is what went wrong before: the
+            # stage-02 skin dump's armature is MERGED, so its parenting is not Unreal's, and
+            # deriving parent-relative transforms from it turned a real 1.1 cm lip motion into
+            # a 99 cm "disagreement" across 229 of 263 controls.
+            ref_local = [_pack(ape.get_ref_bone_pose(evaluated, b, unreal.AnimPoseSpaces.LOCAL))
+                         for b in bone_names]
+            _log(f"reference pose captured in both spaces ({len(bone_names)} bones)")
             ref = [_pack(ape.get_ref_bone_pose(evaluated, b, SPACE))
                    for b in bone_names]
             _log(f"{len(bone_names)} bones")
@@ -288,6 +300,7 @@ def main():
         out_path,
         bone_names=np.array(bone_names, dtype=object),
         ref=np.array(ref, dtype=np.float32),
+        ref_local=np.array(ref_local, dtype=np.float32),
         times=np.array(times, dtype=np.float32),
         raw=np.array(raw_rows, dtype=np.float32),
         evaluated=np.array(eval_rows, dtype=np.float32),

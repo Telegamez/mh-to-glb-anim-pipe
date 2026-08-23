@@ -140,7 +140,19 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
         return None
 
     length = float(anim.get_editor_property("sequence_length"))
-    frames = max(2, int(round(length * BAKE_FPS)))
+    # A Level Sequence's playback end is EXCLUSIVE, so round(length * fps) is the INTERVAL
+    # count and baking that many frames drops the last pose. This is the same defect as #3341,
+    # which was fixed in stage 01's _export_sequencer_bake and left standing here.
+    #
+    # It hid in stage 01 because the ARKit mapping's last six poses are Pose_12..Pose_17
+    # correctives that stage 02 filters out, so the dropped frame was never one anybody looked
+    # at. A pose table has no such buffer: every frame is a test pose, and the last one is as
+    # real as the first.
+    #
+    # For a looping body clip the extra frame is the seam, which the loop-seam gate (#3321)
+    # already checks; for a pose sequence it is a distinct pose that was simply missing.
+    intervals = max(1, int(round(length * BAKE_FPS)))
+    frames = intervals + 1
 
     actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
         unreal.SkeletalMeshActor, unreal.Vector(0, 0, 0), unreal.Rotator(0, 0, 0),
@@ -185,7 +197,18 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
     if not ok:
         _log(f"  {clip_name}: export_anim_sequence returned False")
         return None
-    _log(f"  {clip_name}: baked {frames} frames ({length:.2f}s) -> {baked.get_path_name()}")
+    # Prove the fix above rather than trusting it. get_num_frames returns INTERVALS, not
+    # sample positions, so the identity to check is intervals == frames - 1. Asserting the
+    # count here is what makes a future regression fail loudly instead of silently shortening
+    # every bake by one pose again.
+    baked_intervals = unreal.AnimationLibrary.get_num_frames(baked)
+    baked_frames = baked_intervals + 1
+    if baked_frames != frames:
+        raise RuntimeError(
+            f"{clip_name}: asked for {frames} frames, baked sequence carries {baked_frames} "
+            f"({baked_intervals} intervals). The playback-end off-by-one is back.")
+    _log(f"  {clip_name}: baked {frames} frames ({baked_intervals} intervals, {length:.2f}s) "
+         f"-> {baked.get_path_name()}")
     return baked
 
 
@@ -228,7 +251,15 @@ def main():
     only = None
     explicit_mesh = None
     out_dir = GLB_DIR
+    explicit_anim = None
     for arg in sys.argv:
+        if arg.startswith("--anim="):
+            # Bake ONE named AnimSequence that is not in any animset.
+            #
+            # The animset is the shipped clip library; a validation or pose table is neither
+            # shipped nor a clip, and adding it there to get it baked would put test data in
+            # the runtime's state map. This flag keeps the mechanism and skips the registry.
+            explicit_anim = arg.split("=", 1)[1]
         if arg.startswith("--only="):
             only = arg.split("=", 1)[1]
         if arg.startswith("--mesh="):
@@ -239,7 +270,11 @@ def main():
         if arg.startswith("--out-dir="):
             out_dir = arg.split("=", 1)[1]
     globals()["GLB_DIR"] = out_dir
-    if only:
+    if explicit_anim:
+        name = explicit_anim.rstrip("/").split("/")[-1].split(".")[0]
+        clips = {name: explicit_anim}
+        _log(f"--anim={explicit_anim}: baking as '{name}', animset ignored")
+    elif only:
         clips = {k: v for k, v in clips.items() if k == only}
         _log(f"--only={only}: {len(clips)} clip(s)")
 

@@ -1,0 +1,331 @@
+{
+  "poses": {
+    "EyeBlinkLeft": {
+      "eyeblinkl": 1.0
+    },
+    "EyeLookDownLeft": {
+      "eyelookdownl": 1.0
+    },
+    "EyeLookInLeft": {
+      "eyelookrightl": 1.0
+    },
+    "EyeLookOutLeft": {
+      "eyelookleftl": 1.0
+    },
+    "EyeLookUpLeft": {
+      "eyelookupl": 1.0
+    },
+    "EyeSquintLeft": {
+      "eyesquintinnerl": 1.0
+    },
+    "EyeWideLeft": {
+      "eyewidenl": 1.0
+    },
+    "EyeBlinkRight": {
+      "eyeblinkr": 1.0
+    },
+    "EyeLookDownRight": {
+      "eyelookdownr": 1.0
+    },
+    "EyeLookInRight": {
+      "eyelookleftr": 1.0
+    },
+    "EyeLookOutRight": {
+      "eyelookrightr": 1.0
+    },
+    "EyeLookUpRight": {
+      "eyelookupr": 1.0
+    },
+    "EyeSquintRight": {
+      "eyesquintinnerr": 1.0
+    },
+    "EyeWideRight": {
+      "eyewidenr": 1.0
+    },
+    "JawForward": {
+      "jawfwd": 0.999
+    },
+    "JawLeft": {
+      "jawleft": 1.0
+    },
+    "JawRight": {
+      "jawright": 1.0
+    },
+    "JawOpen": {
+      "jawopen": 1.0
+    },
+    "MouthFunnel": {
+      "mouthfunnelul": 1.0,
+      "mouthfunnelur": 1.0,
+      "mouthfunneldl": 1.0,
+      "mouthfunneldr": 1.0
+    },
+    "MouthPucker": {
+      "mouthlipspurseul": 1.0,
+      "mouthlipspurseur": 1.0,
+      "mouthlipspursedl": 1.0,
+      "mouthlipspursedr": 1.0,
+      "mouthlipstowardsul": 0.412,
+      "mouthlipstowardsur": 0.412,
+      "mouthlipstowardsdl": 0.412,
+      "mouthlipstowardsdr": 0.412,
+      "mouthfunnelul": 0.752,
+      "mouthfunnelur": 0.752,
+      "mouthfunneldl": 0.752,
+      "mouthfunneldr": 0.752
+    },
+    "MouthLeft": {
+      "mouthleft": 1.0
+    },
+    "MouthRight": {
+      "mouthright": 1.0
+    },
+    "MouthSmileLeft": {
+      "mouthcornerpulll": 1.0
+    },
+    "MouthSmileRight": {
+      "mouthcornerpullr": 1.0,
+      "mouthdimpler": 0.003
+    },
+    "MouthFrownLeft": {
+      "mouthcornerdepressl": 1.0
+    },
+    "MouthFrownRight": {
+      "mouthcornerdepressr": 1.0
+    },
+    "MouthDimpleLeft": {
+      "mouthdimplel": 1.0
+    },
+    "MouthDimpleRight": {
+      "mouthdimpler": 1.0
+    },
+    "MouthStretchLeft": {
+      "mouthstretchl": 1.0
+    },
+    "MouthStretchRight": {
+      "mouthstretchr": 1.0
+    },
+    "MouthRollLower": {
+      "mouthupperliprollinl": 0.499,
+      "mouthupperliprollinr": 0.499,
+      "mouthlowerliprollinl": 1.0,
+      "mouthlowerliprollinr": 1.0
+    },
+    "MouthRollUpper": {
+      "mouthupperliprollinl": 0.998,
+      "mouthupperliprollinr": 0.998
+    },
+    "MouthShrugLower": {
+      "jawchinraisedl": 1.0,
+      "jawchinraisedr": 1.0
+    },
+    "MouthShrugUpper": {
+      "jawchinraiseul": 1.0,
+      "jawchinraiseur": 1.0
+    },
+    "MouthPressLeft": {
+      "mouthpressul": 1.0,
+      "mouthpressdl": 1.0
+    },
+    "MouthPressRight": {
+      "mouthpressur": 1.0,
+      "mouthpressdr": 1.0
+    },
+    "MouthLowerDownLeft": {
+      "mouthlowerlipdepressl": 1.0
+    },
+    "MouthLowerDownRight": {
+      "mouthlowerlipdepressr": 1.0
+    },
+    "MouthUpperUpLeft": {
+      "mouthupperlipraisel": 1.0
+    },
+    "MouthUpperUpRight": {
+      "mouthupperlipraiser": 1.0
+    },
+    "BrowDownLeft": {
+      "browdownl": 1.0,
+      "browlaterall": 0.031
+    },
+    "BrowDownRight": {
+      "browdownr": 1.0,
+      "browlaterall": 0.031
+    },
+    "BrowInnerUp": {
+      "browlaterall": 1.0,
+      "browlateralr": 1.0,
+      "browraiseinl": 1.0,
+      "browraiseinr": 1.0
+    },
+    "BrowOuterUpLeft": {
+      "browlaterall": 0.031,
+      "browraiseinl": 1.0,
+      "browraiseouterl": 1.0
+    },
+    "BrowOuterUpRight": {
+      "browlaterall": 0.031,
+      "browraiseinr": 1.0,
+      "browraiseouterr": 1.0
+    },
+    "CheekPuff": {
+      "browlaterall": 0.031,
+      "mouthcheekblowl": 1.0,
+      "mouthcheekblowr": 1.0,
+      "mouthlipsblowl": 1.0,
+      "mouthlipsblowr": 1.0
+    },
+    "CheekSquintLeft": {
+      "browlaterall": 0.031,
+      "eyecheekraisel": 1.0
+    },
+    "CheekSquintRight": {
+      "browlaterall": 0.031,
+      "eyecheekraiser": 1.0
+    },
+    "NoseSneerLeft": {
+      "browlaterall": 0.031,
+      "nosewrinklel": 1.0,
+      "tonguerolldown": -0.00489
+    },
+    "NoseSneerRight": {
+      "browlaterall": 0.031,
+      "nosewrinkler": 1.0
+    },
+    "TongueOut": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguerolldown": 0.247319,
+      "tonguewide": 0.628
+    },
+    "Pose_4": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguerolldown": 0.173557,
+      "tonguewide": 0.628
+    },
+    "Pose_5": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguerolldown": 0.044086,
+      "tonguewide": 0.628
+    },
+    "Pose_6": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguerolldown": -0.015237,
+      "tonguewide": 0.628
+    },
+    "Pose_7": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguerolldown": -0.012819,
+      "tonguewide": 0.628
+    },
+    "Pose_8": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguerolldown": -0.000114,
+      "tonguewide": 0.628
+    },
+    "Pose_9": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_10": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_11": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_12": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_13": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_14": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_15": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_16": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    },
+    "Pose_17": {
+      "browlaterall": 0.031,
+      "tonguedown": 0.826,
+      "tongueright": 0.07,
+      "tongueout": 0.769,
+      "tonguewide": 0.628
+    }
+  },
+  "diagnostics": {
+    "source": "arkit_pose_curves.json",
+    "arkit_poses": 65,
+    "distinct_controls": 77,
+    "dropped_output_namespaces": [
+      "cartilage",
+      "ctrl",
+      "head",
+      "teeth"
+    ],
+    "constant_controls_dropped": [
+      {
+        "control": "nosewrinkleupperl",
+        "value": 1.0
+      },
+      {
+        "control": "nosewrinkleupperr",
+        "value": 1.0
+      }
+    ],
+    "default_pose_residual": {},
+    "controls_not_in_dna": [
+      "tonguerolldown"
+    ]
+  }
+}

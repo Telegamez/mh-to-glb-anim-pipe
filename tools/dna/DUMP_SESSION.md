@@ -154,6 +154,28 @@ against it first, then the compiled RigLogic library.
 
 ---
 
+## Two facts about this dump, established 2026-08-23
+
+**Stage 02's merged armature was never Unreal's hierarchy.** Do not derive parent-relative
+transforms from `characters/<id>/_solve/skin_dump.npz`. Stage 02 merges armatures, so its
+parenting is not UE's — deriving from it turned a real 1.1 cm lip motion into a 99 cm
+"disagreement" across 229 of 263 controls. The authoritative hierarchy is the DNA's own, read
+by `tools/dna/parse_defn.py`, and the dump now carries UE's reference pose in both spaces so
+the question does not need answering from a second tool at all.
+
+**120 forehead/hair joints are excluded from the UE fit, on the dump side only.** They sit at
+exactly 166.37 cm from the facial root — one repeated value across all 120, which is head
+height rather than a distance — and they are the same bones that make UE's two LOCAL accessors
+disagree. The bake reports them without resolving against their parent.
+
+These are brow-region joints and expression *does* drive them, so it matters that the exclusion
+is on the UE side only: their oracle values are already bitwise against Epic's own library, so
+rung-2 coverage of the brow is intact. Do not chase the accessor. If 5.2b ever needs UE ground
+truth on these specific bones, resolve them against their parent by hand using the DNA
+hierarchy the dump now carries.
+
+---
+
 ## If a gate fails
 
 - **Gate 1** — the face SKM has no post-process ABP. Check the mesh path; `SKM_Telly_FaceMesh`

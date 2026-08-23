@@ -542,6 +542,101 @@ GARMENT_FORBIDDEN_BONE = re.compile(r"^(FACIAL_|jaw|tongue|teeth)", re.IGNORECAS
 # reshaping the garment's weight map (342 groups -> 87, influences dropped on ~11k verts).
 WEIGHT_COMPENSATION = os.environ.get("MH_WEIGHT_COMP", "full").strip().lower()
 
+# ---- research variant (slice 5.2a) ---------------------------------------------------
+#
+# TWO flags, deliberately independent. Neither implies the other, because the failure they
+# guard against is different in each direction:
+#
+#   MH_FACIAL_JOINTS_LIVE=1  keep FACIAL_* weights on the FACE meshes through the fold
+#   MH_NO_FOLD=1             disable the fold entirely, every mesh
+#
+# Setting the first does NOT set the second. Body and garment weights stay on the fold/solve
+# path §7.0 settled, or the tearing work reopens: top-4 truncation discarded a median 21.9%
+# of weight before the fold, p90 45.4%, with 69% of outfit vertices losing more than 10%.
+#
+# The published GLBs cannot serve as the rung-2 asset and this is why: live_bones.json has 311
+# entries and zero FACIAL_*, so the fold sends every facial joint's weight to its nearest live
+# ancestor, which for all of them is Head. The joints survive in the skin — telly.glb carries
+# 841 of them — and the weights do not. Driving them moves nothing and raises nothing.
+RESEARCH_FACIAL_LIVE = os.environ.get("MH_FACIAL_JOINTS_LIVE", "0").strip() == "1"
+RESEARCH_NO_FOLD = os.environ.get("MH_NO_FOLD", "0").strip() == "1"
+IS_RESEARCH_VARIANT = RESEARCH_FACIAL_LIVE or RESEARCH_NO_FOLD
+
+# The meshes the facial rig drives. Body_Mesh and the outfit are deliberately absent: this is
+# what makes "face mesh only" a restriction rather than a global switch.
+FACE_MESH_NAMES = {
+    "Head_Mesh", "Teeth_Mesh", "Eye_Mesh", "EyeAO_Mesh",
+    "Eyelash_Mesh", "Lacrimal_Mesh", "Hide_Mesh",
+}
+
+
+def _is_face_mesh(name):
+    """Blender suffixes duplicates (`Head_Mesh.001`), so match on the stem."""
+    return name.split(".")[0] in FACE_MESH_NAMES
+
+
+def _variant_suffix():
+    """Research builds get their own filename. They must never overwrite the deliverable.
+
+    Learned the hard way on the first run: the variant wrote to `<char>.glb`, the same path
+    stage 03 always uses, and destroyed the 2.3 rebake that slice 2.4's A/B depends on. The
+    manifest said `variant: research` afterwards, which is exactly the wrong time to find out.
+    A separate name makes the two artifacts unable to collide rather than merely labelled.
+    """
+    return "-research" if IS_RESEARCH_VARIANT else ""
+
+
+def _assert_facial_weights_survive(min_frac=0.5):
+    """FIRST assertion of the research variant: JOINTS_0 will reference FACIAL_* with weight.
+
+    Checked BEFORE anything is driven, because the failure it guards against is silent by
+    construction. The published GLBs already contain 841 FACIAL_* joints in the skin with no
+    weight on any of them: driving those joints moves nothing and raises nothing, so a research
+    variant that shipped the same way would look wired up and do exactly nothing.
+
+    "The joints are present" is NOT the assertion — that is already true today and is precisely
+    what makes the current failure invisible. The assertion is that they carry weight, and that
+    the weight survives the exporter's top-4 truncation, since glTF keeps only the four largest
+    influences per vertex and renormalises. Simulating that truncation here is the difference
+    between checking the vertex groups and checking what JOINTS_0 will actually hold.
+    """
+    checked = []
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or not _is_face_mesh(obj.name) or not obj.vertex_groups:
+            continue
+        index_to_name = {vg.index: vg.name for vg in obj.vertex_groups}
+        total = with_facial = 0
+        for vert in obj.data.vertices:
+            weights = [(g.weight, index_to_name.get(g.group, "")) for g in vert.groups
+                       if g.weight > 0.0]
+            if not weights:
+                continue
+            total += 1
+            top4 = sorted(weights, reverse=True)[:4]
+            if any(n.upper().startswith("FACIAL") for _, n in top4):
+                with_facial += 1
+        if total:
+            frac = with_facial / total
+            checked.append((obj.name, total, with_facial, frac))
+
+    if not checked:
+        raise RuntimeError(
+            "research variant: no face mesh found to assert on. Expected one of "
+            f"{sorted(FACE_MESH_NAMES)}.")
+
+    failed = [c for c in checked if c[3] < min_frac]
+    for name, total, with_facial, frac in checked:
+        _log(f"  facial-weight assert: {name} {with_facial}/{total} verts "
+             f"({frac*100:.1f}%) keep a FACIAL_* bone in their top-4")
+    if failed:
+        worst = ", ".join(f"{n} at {f*100:.1f}%" for n, _, _, f in failed)
+        raise RuntimeError(
+            f"RESEARCH VARIANT ASSERTION FAILED: {worst}. Fewer than {min_frac*100:.0f}% of "
+            f"vertices keep a FACIAL_* bone among their four largest influences, so JOINTS_0 "
+            f"will not reference the facial rig with any usable weight. Exporting this would "
+            f"produce the same silently-inert asset the published GLBs already are.")
+    return checked
+
 IMPLAUSIBLE_DISTANCE_RATIO = 2.5
 WEIGHT_SMOOTH_FACTOR = 0.5
 WEIGHT_SMOOTH_REPEAT = 4
@@ -1134,14 +1229,39 @@ def _fold_frozen_bones(workspace):
         _log("fold: no armature, skipping")
         return {}
 
-    # bone -> nearest ancestor that is live (itself if it is live)
-    alias = {}
-    for arm in armatures:
-        for bone in arm.data.bones:
-            node = bone
-            while node is not None and node.name not in live:
-                node = node.parent
-            alias[bone.name] = node.name if node is not None else bone.name
+    # ---- research variant: facial joints live, FACE MESHES ONLY -------------------------
+    #
+    # Two flags, and the first must NOT imply the second. `facial joints live` changes which
+    # bones survive the fold on the face; `no fold` disables the fold outright. A single
+    # "research variant" switch that quietly did both would put the garments back on the raw
+    # top-4 path that §7.0 measured at a median 21.9% of weight discarded and 69% of outfit
+    # vertices losing more than 10% — a regression on a mesh nobody would be looking at.
+    #
+    # FACIAL_* are added as CONTRACT bones, not derived. They can never be derived: the face
+    # is driven at runtime by lipsync and expression, not by clips, so `derive_live_bones.py`
+    # reads the animation library and finds them motionless no matter how good the bake is.
+    # That is the same mechanism that keeps LeftEye/RightEye alive.
+    facial_live = set()
+    if RESEARCH_FACIAL_LIVE:
+        for arm in armatures:
+            facial_live |= {b.name for b in arm.data.bones
+                            if b.name.upper().startswith("FACIAL")}
+        _log(f"research: {len(facial_live)} FACIAL_* bones added as contract bones, "
+             f"face meshes only ({', '.join(sorted(FACE_MESH_NAMES))})")
+
+    def _alias_map(extra_live):
+        live_set = live | extra_live
+        out = {}
+        for arm in armatures:
+            for bone in arm.data.bones:
+                node = bone
+                while node is not None and node.name not in live_set:
+                    node = node.parent
+                out[bone.name] = node.name if node is not None else bone.name
+        return out
+
+    alias = _alias_map(set())
+    alias_face = _alias_map(facial_live) if facial_live else alias
 
     # Bind-space segment of every live bone, for the plausibility filter.
     bone_span = {}
@@ -1160,9 +1280,13 @@ def _fold_frozen_bones(workspace):
             continue
 
         is_garment = bool(GARMENT_MESH.search(obj.name))
+        # THE restriction. A face mesh gets the alias map in which FACIAL_* are live; every
+        # other mesh gets the shipped one, unchanged. This is the line that keeps the garments
+        # on §7.0's path while the face keeps its joints.
+        mesh_alias = alias_face if _is_face_mesh(obj.name) else alias
         index_to_name = {vg.index: vg.name for vg in obj.vertex_groups}
         # Groups that are not bones (shape masks and the like) are left exactly as they are.
-        bone_indices = {i for i, n in index_to_name.items() if n in alias}
+        bone_indices = {i for i, n in index_to_name.items() if n in mesh_alias}
         if not bone_indices:
             continue
 
@@ -1181,7 +1305,7 @@ def _fold_frozen_bones(workspace):
                     continue
                 if g.group in bone_indices:
                     distinct_before += 1
-                    target = alias[name]
+                    target = mesh_alias[name]
                     if is_garment:
                         target = GARMENT_BONE_REMAP.get(target, target)
                         if GARMENT_FORBIDDEN_BONE.match(target):
@@ -1255,8 +1379,8 @@ def main():
     char_dir = workspace / "characters" / args.char
     out_dir = char_dir / "03-glb"
     out_dir.mkdir(parents=True, exist_ok=True)
-    glb_path = out_dir / f"{args.char}.glb"
-    manifest_path = out_dir / "glb_manifest.json"
+    glb_path = out_dir / f"{args.char}{_variant_suffix()}.glb"
+    manifest_path = out_dir / f"glb_manifest{_variant_suffix()}.json"
 
     constraints = _read_glb_constraints(workspace)
     max_px = int(constraints.get("max_texture_px", 1024))
@@ -1270,10 +1394,33 @@ def main():
         # hide-body deletes geometry, so running it first shifts every index past the first
         # deletion and the stale-solve guard (correctly) refuses the file. Containment is a
         # ray-cast against bind geometry and does not read weights, so the order is free.
+        if IS_RESEARCH_VARIANT:
+            _log(f"RESEARCH VARIANT: facial_joints_live={RESEARCH_FACIAL_LIVE} "
+                 f"no_fold={RESEARCH_NO_FOLD}")
+            _log("  this artifact is NOT publishable — see the manifest's variant field")
+
         _log(f"weight compensation: {WEIGHT_COMPENSATION}")
-        if WEIGHT_COMPENSATION == "none":
+        if RESEARCH_NO_FOLD:
+            _log("research: fold DISABLED for every mesh (MH_NO_FOLD=1)")
+            WEIGHT_PROVENANCE.update(path="none", reason="MH_NO_FOLD=1 (research variant)")
+        elif WEIGHT_COMPENSATION == "none":
             _log("weight compensation: DISABLED - raw MetaHuman weights, exporter takes top 4")
             WEIGHT_PROVENANCE.update(path="none", reason="MH_WEIGHT_COMP=none")
+        elif RESEARCH_FACIAL_LIVE:
+            # The solve is bypassed here, and that is not an oversight.
+            #
+            # `_apply_solved_weights` replaces weights on every mesh in skin_solved.npz, face
+            # meshes included, and that solve is a skinning decomposition fitted against the
+            # shipped ANIMATION LIBRARY — body clips. The face does not move in any of them,
+            # so the solved face weights carry no facial influence to keep, and applying them
+            # would silently undo the whole point of this variant before the fold ever ran.
+            #
+            # The fold with FACIAL_* live is the path that preserves them. Body and garment
+            # meshes still go through it with the shipped live set, so §7.0's result stands.
+            _log("research: bypassing the solve — it is fitted against body clips and carries "
+                 "no facial influence; folding with FACIAL_* live instead")
+            fold_stats = _fold_frozen_bones(workspace)
+            WEIGHT_PROVENANCE.update(path="fold", reason="research variant, facial joints live")
         elif not _apply_solved_weights(workspace, args.char):
             fold_stats = _fold_frozen_bones(workspace)
 
@@ -1303,6 +1450,13 @@ def main():
         for o in bpy.data.objects:
             if o.type in ("MESH", "ARMATURE"):
                 o.select_set(True)
+
+        # The research variant's FIRST assertion, before the file is written and before
+        # anything is driven. It fails the stage rather than producing an asset that looks
+        # correct and moves nothing.
+        facial_assert = None
+        if RESEARCH_FACIAL_LIVE:
+            facial_assert = _assert_facial_weights_survive()
 
         _log(f"exporting {glb_path} (draco={draco})")
         bpy.ops.export_scene.gltf(
@@ -1407,6 +1561,27 @@ def main():
             "flattened_card_materials": flattened,
             "draco": draco,
             "weights": WEIGHT_PROVENANCE,
+            # Recorded, not refused. audit_models.py is EXPECTED to fail this artifact — it
+            # asserts the published contract (retargeted bone names, the shipped morph set),
+            # and a research variant deliberately carries UE names and a live facial rig. A
+            # stage that refused to emit it would make the variant unbuildable; a stage that
+            # emitted it unlabelled would let it be mistaken for a deliverable. So it says
+            # what it is, in the manifest, and the audit's failure is then the expected
+            # result rather than a surprise.
+            "variant": ({
+                "kind": "research",
+                "facial_joints_live": RESEARCH_FACIAL_LIVE,
+                "fold_disabled": RESEARCH_NO_FOLD,
+                "face_meshes": sorted(FACE_MESH_NAMES),
+                "facial_weight_assertion": [
+                    {"mesh": n, "verts": t, "verts_with_facial_in_top4": w,
+                     "fraction": round(f, 4)}
+                    for n, t, w, f in (facial_assert or [])
+                ],
+                "publishable": False,
+                "audit_models_expected": "FAIL on UE bone names — this variant is not the "
+                                         "published contract",
+            } if IS_RESEARCH_VARIANT else None),
             "body_tuck": tuck_stats,
             # What the vertex colours looked like going in. Compare against the
             # GLB if the scalp ever reads bright through the hair again.

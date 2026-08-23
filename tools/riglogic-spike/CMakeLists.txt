@@ -148,4 +148,27 @@ if(EMSCRIPTEN)
   # 4 MB of behaviour layer plus RigLogic's working set needs the heap to grow.
   set_target_properties(riglogic_probe PROPERTIES
     LINK_FLAGS "-sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -O2")
+
+  # ---- the library the browser worker loads (slice 5.2b) ------------------------------
+  #
+  # Separate target from the probe on purpose. The probe is a command-line harness with a
+  # filesystem and an exit code; the worker gets no filesystem, never exits, and receives its
+  # DNA as bytes over postMessage. Sharing one target would drag NODERAWFS into the browser
+  # build and give the page a filesystem shim it has no use for.
+  #
+  # MODULARIZE + EXPORT_ES6 so the worker can `import` it rather than relying on a global,
+  # and ENVIRONMENT=worker so emscripten does not emit node or shell branches the bundler
+  # would then have to reason about.
+  add_executable(riglogic_wasm riglogic_wasm.cpp)
+  target_link_libraries(riglogic_wasm PRIVATE riglogic)
+  set_target_properties(riglogic_wasm PROPERTIES
+    OUTPUT_NAME "riglogic"
+    SUFFIX ".mjs"
+    LINK_FLAGS
+      "-O3 -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=worker,web \
+       -sALLOW_MEMORY_GROWTH=1 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPF32','HEAPU8'] \
+       -sEXPORTED_FUNCTIONS=['_malloc','_free','_rl_init','_rl_raw_control_count',\
+'_rl_joint_output_count','_rl_blend_shape_count','_rl_lod_count','_rl_set_lod',\
+'_rl_set_raw_control','_rl_set_raw_controls','_rl_calculate','_rl_joint_outputs_ptr',\
+'_rl_blend_shape_outputs_ptr','_rl_shutdown']")
 endif()

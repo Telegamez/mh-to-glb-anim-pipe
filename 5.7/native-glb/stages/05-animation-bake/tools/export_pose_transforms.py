@@ -224,8 +224,29 @@ def main():
             _log(f"  frame {k}/{frames} t={t:.2f}s")
 
     # GATE 2 — the pose must actually change between frames.
+    #
+    # --expect-static INVERTS this gate; it does not disable it. A curve-driven AnimSequence
+    # carries float curves and no bone tracks, so its BONE poses are the reference pose at
+    # every frame and gate 2 fires — correctly. AS_TG_Validation is exactly that: 263
+    # CTRL_expressions curves, zero transform tracks, because RigLogic is what turns curves
+    # into joint motion.
+    #
+    # Such a sequence is still needed as the raw half of the split gate 3, so the flag lets it
+    # be written — but only by asserting the opposite property just as hard. The tool never
+    # writes a file whose motion content it has not checked; it just checks for the motion the
+    # caller declared. Declaring "static" for a sequence that moves is as loud a failure as the
+    # original gate.
     varied = any(eval_rows[i] != eval_rows[0] for i in range(1, len(eval_rows)))
-    if not varied:
+    expect_static = _flag("expect-static")
+    if expect_static:
+        if varied:
+            raise RuntimeError(
+                "GATE 2 FAILED (inverted): --expect-static was given, but frames DIFFER. This "
+                "sequence drives bones directly, so it is not the curve-only raw half of a "
+                "gate-3 pair and something about the pairing is wrong.")
+        _log("GATE 2 PASSED (inverted): every frame is identical, as --expect-static declared. "
+             "This is a curve-driven sequence with no bone tracks.")
+    elif not varied:
         raise RuntimeError(
             "GATE 2 FAILED: every sampled frame is identical. The animation was not driven; "
             "refusing to write a static file that would be mistaken for ground truth.")

@@ -99,9 +99,34 @@ def main() -> int:
     facial = [i for i, n in enumerate(ev_names) if n.upper().startswith("FACIAL")]
     facial_moved = int((per_bone[facial] > GATE3_MIN_CM).sum()) if facial else 0
 
-    print(f"\nmax |evaluated - original|   {max_cm:.4f} cm")
-    print(f"bones that differ            {moved}/{len(ev_names)}")
-    print(f"  of which FACIAL_*          {facial_moved}/{len(facial)}")
+    # Two different quantities, and conflating them is how a pass means the wrong thing.
+    #
+    #   PLACEMENT  |evaluated - original|, dominated by the ABP putting the facial hierarchy
+    #              where it belongs. On telly this is ~156 cm, because the face SKM's reference
+    #              pose holds FACIAL_C_FacialRoot at z=147 and the evaluated pose puts it at
+    #              z=166. Body bones (root, pelvis, spine_01) are identical, so it is not a
+    #              space mismatch — it is real, and it is not expression.
+    #
+    #   MOTION     how much the evaluated pose changes ACROSS FRAMES. This is what RigLogic
+    #              produced from the curves, and the only half that validates an evaluator.
+    #
+    # A gate-3 that reported only the first would announce a 156 cm "ABP contribution" for a
+    # face whose expressions move a few millimetres. Both are printed, and the motion figure
+    # is checked separately below.
+    motion = np.abs(a - a[0]).max(axis=(0, 2))
+    motion_moved = int((motion > GATE3_MIN_CM).sum())
+    motion_facial = int((motion[facial] > GATE3_MIN_CM).sum()) if facial else 0
+    orig_motion = float(np.abs(b - b[0]).max())
+
+    print(f"\nPLACEMENT — |evaluated - original|")
+    print(f"  max                        {max_cm:.4f} cm")
+    print(f"  bones that differ          {moved}/{len(ev_names)}")
+    print(f"    of which FACIAL_*        {facial_moved}/{len(facial)}")
+    print(f"\nMOTION — evaluated across frames (what RigLogic produced)")
+    print(f"  max                        {motion.max():.4f} cm")
+    print(f"  bones that move            {motion_moved}/{len(ev_names)}")
+    print(f"    of which FACIAL_*        {motion_facial}/{len(facial)}")
+    print(f"  original's own motion      {orig_motion:.4f} cm  (curve-driven: expect 0)")
 
     if max_cm < GATE3_MIN_CM:
         print(f"\nGATE 3 FAILED: the evaluated bake is identical to the original sequence "
@@ -117,13 +142,31 @@ def main() -> int:
               f"bones does. Something moved; the face did not.", file=sys.stderr)
         return 1
 
-    print(f"\nGATE 3 PASSED: the evaluated bake differs from the original sequence by up to "
-          f"{max_cm:.2f} cm, across {facial_moved} FACIAL_* bones.")
+    # The placement delta alone would pass for a rig that never expressed anything. A dump
+    # whose face is correctly positioned and completely still is exactly the artifact this
+    # programme keeps producing, so motion is checked on its own terms.
+    if motion_facial == 0:
+        print(f"\nGATE 3 FAILED: the facial hierarchy is placed ({facial_moved} FACIAL_* bones "
+              f"differ from the original) but NOTHING MOVES across the {ev['raw'].shape[0]} "
+              f"frames. RigLogic produced no expression.", file=sys.stderr)
+        return 1
+
+    print(f"\nGATE 3 PASSED")
+    print(f"  the ABP placed the facial rig ({facial_moved}/{len(facial)} FACIAL_* bones differ "
+          f"from the original by up to {max_cm:.2f} cm)")
+    print(f"  and RigLogic drove it ({motion_facial} FACIAL_* bones move, up to "
+          f"{motion.max():.2f} cm across the sequence, against an original that moves "
+          f"{orig_motion:.2f} cm)")
 
     if ns.json:
         with open(ns.json, "w", encoding="utf-8") as f:
-            json.dump({"run_id": ev_run, "max_delta_cm": max_cm, "bones_moved": moved,
-                       "facial_moved": facial_moved, "facial_total": len(facial),
+            json.dump({"run_id": ev_run,
+                       "placement_max_cm": max_cm, "placement_bones": moved,
+                       "placement_facial": facial_moved,
+                       "motion_max_cm": float(motion.max()), "motion_bones": motion_moved,
+                       "motion_facial": motion_facial,
+                       "original_motion_cm": orig_motion,
+                       "facial_total": len(facial),
                        "frames": int(ev["raw"].shape[0]), "bones": len(ev_names),
                        "evaluated_source": ev_meta.get("source_anim"),
                        "original_source": or_meta.get("source_anim"),

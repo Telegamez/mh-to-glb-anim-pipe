@@ -111,17 +111,41 @@ if ($Token) {
 
 $content = [System.Net.Http.MultipartFormDataContent]::new()
 $streams = @()
+
+<#
+  Every part's Content-Disposition is set EXPLICITLY, with quoted values and no `filename*`.
+
+  `MultipartFormDataContent.Add()` writes RFC 2388-style unquoted parameters -
+  `form-data; name=files; filename=x.glb; filename*=utf-8''x.glb` - and the API's
+  `request.formData()` is undici, which follows RFC 7578 strictly and rejects an unquoted
+  `name`. Every request failed with "Failed to parse body as FormData", at any size: a 32-byte
+  body failed exactly as a 100 MB one did, while the identical request from curl (which quotes)
+  reached validation and was refused properly.
+
+  This is why the tool had never worked against undici. The 19 August publish that the
+  replacement plan calls the "operator path" was actually a Node client with a session cookie -
+  the admin activity log shows user_agent=node and 45-char auto-session keys.
+#>
+function Add-QuotedPart {
+  param($Container, $Part, [string]$Name, [string]$FileName)
+  $cd = [System.Net.Http.Headers.ContentDispositionHeaderValue]::new('form-data')
+  $cd.Name = '"' + $Name + '"'
+  if ($FileName) { $cd.FileName = '"' + $FileName + '"' }   # FileNameStar left unset on purpose
+  $Part.Headers.ContentDisposition = $cd
+  $Container.Add($Part)
+}
+
 try {
-  $content.Add([System.Net.Http.StringContent]::new($BakeHash), 'bakeHash')
-  $content.Add([System.Net.Http.StringContent]::new($model), 'modelPath')
+  Add-QuotedPart $content ([System.Net.Http.StringContent]::new($BakeHash)) 'bakeHash'
+  Add-QuotedPart $content ([System.Net.Http.StringContent]::new($model)) 'modelPath'
 
   foreach ($f in $files) {
     # Streamed, not read into memory: a single GLB is up to 70 MB and the roster is ~330 MB.
     $stream = [System.IO.File]::OpenRead($f.FullName)
     $streams += $stream
     $part = [System.Net.Http.StreamContent]::new($stream)
-    # The part NAME carries the relative path; the API uses it as the key suffix.
-    $content.Add($part, 'files', $f.Relative)
+    # The part FILENAME carries the relative path; the API uses it as the key suffix.
+    Add-QuotedPart $content $part 'files' $f.Relative
   }
 
   $url = "$($ApiBase.TrimEnd('/'))/api/admin/avatars/$AvatarId/companion-directory"

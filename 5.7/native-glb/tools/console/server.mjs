@@ -431,7 +431,7 @@ function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, prev
   // placeholder is not one, so the FIRST time a character goes live there is nothing to go back
   // to through this door. That is a real limit, and saying so here is better than printing a
   // call that would be refused at the moment somebody needed it to work.
-  const restorable = previous && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(previous);
+  const restorable = previous && /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(previous);
   out.push('To put it back:');
   out.push('```');
   if (restorable) {
@@ -759,7 +759,14 @@ const server = http.createServer(async (req, res) => {
             row && ['thumbnailUrl', 'imagePreviewUrl', 'videoPreviewUrl']
               .every((f) => typeof row[f] === 'string' && row[f].includes('/avatars/') && !/\/(thumbnail|preview)\.(png|mp4|jpg)$/i.test(row[f])),
           ),
-          published: Boolean(row && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\//i.test(row.modelPath || '')),
+          // Not anchored, deliberately. The column stores the relative key that was written
+          // to it, but the admin LIST endpoint formats it into a full CDN URL on the way out
+          // — so a row that is genuinely live comes back as
+          // `https://<bucket>.s3.../avatars/<id>/<hash>/<file>.glb`. Anchoring at `^avatars/`
+          // reported every live avatar as unpublished. Searching for the published segment
+          // anywhere still excludes the seeded placeholder, which is `models/<id>/<id>.glb`
+          // in either form.
+          published: /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(row?.modelPath || ''),
         };
       });
       // What each row points at *now*, kept for the journal. A publish overwrites this value,

@@ -31,17 +31,27 @@ const connected = () => Boolean(CONFIG && CONFIG.hasToken);
 // State: one row per character, one cell per step.
 
 /**
- * Upload is the one step with no direct evidence. Bytes on the CDN leave no database trace —
- * that separation is deliberate — so it is known from what this session published, or implied
- * by the row being live, which cannot be true unless the bytes are there.
+ * Upload is the one step with no direct evidence.
+ *
+ * Bytes on the CDN leave no database trace — publishing deliberately touches no row — and this
+ * console cannot list the bucket. So it is knowable in exactly two ways: this session did it,
+ * or the row points at a published key, which cannot be true unless the bytes are there.
+ *
+ * Any other case is genuinely UNKNOWN, and says so. Drawing it as "not done" would assert
+ * something false: the six were uploaded to panda hours before this console existed, and a grid
+ * claiming otherwise would send an operator to re-upload work that is already there — or worse,
+ * be believed when it says a step is missing that is not.
  */
 function steps(c) {
   const row = ROWS[c.id];
-  const live = Boolean(row && row.published && row.status === 'active');
+  const publishedKey = Boolean(row && row.published);
+  const live = Boolean(publishedKey && row.status === 'active');
   return {
     bake: c.ready ? 'ok' : 'warn',
     previews: c.previews ? 'ok' : 'no',
-    upload: !connected() ? 'unknown' : (UPLOADED[c.id] || live) ? 'ok' : 'no',
+    upload: !connected() ? 'unknown'
+      : (UPLOADED[c.id] || publishedKey) ? 'ok'
+      : 'unknown',
     assets: !connected() ? 'unknown' : row && row.previewsPublished ? 'ok' : 'no',
     live: !connected() ? 'unknown' : live ? 'ok' : 'no',
   };
@@ -72,8 +82,8 @@ function renderGrid() {
     const who = document.createElement('td');
     who.innerHTML = `<div class="row" style="gap:9px">
         ${c.previews ? `<img src="/api/asset?char=${encodeURIComponent(c.id)}&file=thumbnail.png&root=${encodeURIComponent(ROOT)}"
-             width="34" height="34" style="border-radius:4px;background:#0d1b2e" alt="">`
-          : '<div style="width:34px;height:34px;border-radius:4px;background:#0d1b2e"></div>'}
+             width="46" height="46" style="border-radius:5px;background:#0d1b2e" alt="">`
+          : '<div style="width:46px;height:46px;border-radius:5px;background:#0d1b2e"></div>'}
         <div><div class="who">${c.id}</div><div class="sub">${c.mb} MB${c.body ? ' · ' + c.body : ''}</div></div>
       </div>`;
 
@@ -160,6 +170,8 @@ function envChanged() {
   CONFIG.hasToken = false;
   $('conn').textContent = 'not connected';
   $('token').value = '';
+  const err = $('connErr');
+  if (err) err.hidden = true;
   const e = target();
   $('prodWarn').innerHTML = e && e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
@@ -178,16 +190,17 @@ async function scan() {
 }
 
 async function resolveAll() {
-  if (!connected() || !CHARS.length) return;
+  if (!connected() || !CHARS.length) return { ok: true };
   const r = await fetch('/api/resolve', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ env: env(), characters: CHARS.map((c) => c.id) }),
   });
-  const body = await r.json();
-  if (!r.ok) { log((body.error || 'resolve failed') + '\n'); return; }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) return { ok: false, error: body.error || ('resolve failed (' + r.status + ')') };
   ROWS = {};
   for (const row of body.resolved) ROWS[row.char] = row;
   renderGrid();
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -195,17 +208,44 @@ async function resolveAll() {
 
 $('getCookie').onclick = (ev) => { ev.preventDefault(); window.open(target().apiBase + '/api/auth/signin', '_blank'); };
 
+/**
+ * Connecting means the environment answered, not that a value was typed.
+ *
+ * Storing a token and reporting success are not the same thing: an expired cookie, or one from
+ * another environment, is accepted by the field and refused by the API. Saying "connected" at
+ * that point leaves the operator looking at enabled buttons with the refusal buried in the log.
+ * So the cookie is proved by asking the environment to resolve, and only a real answer counts.
+ */
 $('connect').onclick = async () => {
   const v = $('token').value.trim();
   if (!v) return;
+  $('connErr').hidden = true;
+  $('conn').textContent = 'checking...';
+
   await fetch('/api/token', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ token: v }),
   });
-  $('token').value = '';
   CONFIG.hasToken = true;
+
+  const r = await resolveAll();
+  if (!r.ok) {
+    // Clear it again, so nothing downstream believes this console is connected.
+    await fetch('/api/token', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: '' }),
+    });
+    CONFIG.hasToken = false;
+    $('conn').textContent = 'not connected';
+    $('connErr').textContent = r.error;
+    $('connErr').hidden = false;
+    refreshButtons();
+    return;
+  }
+
+  $('token').value = '';
   $('conn').textContent = 'connected to ' + env();
-  await resolveAll();
+  refreshButtons();
 };
 
 // ---------------------------------------------------------------------------------------

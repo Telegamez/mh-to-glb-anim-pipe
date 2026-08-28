@@ -134,3 +134,12 @@ docs/animations/
 # Stage 05 per-clip GLB scratch. One directory per animation set; regenerated on
 # every bake and only meaningful between the UE half and the Blender half.
 5.7/native-glb/stages/05-animation-bake/_work/
+
+# CMake build trees from the riglogic spike. Never tracked on any branch, ~876 MB, and left
+# on disk when a branch that has them is swapped out — so they turn up as untracked in front
+# of whoever is about to stage everything. The spike's sources under tools/dna/ stay tracked.
+tools/riglogic-spike/bt*/
+tools/riglogic-spike/build-native/
+
+# Stage 01's viseme authoring report — generated per run, like every other stage output.
+5.7/native-glb/stages/01-unreal-glb-export/config/tg_viseme_authoring_report.json

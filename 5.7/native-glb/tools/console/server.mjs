@@ -317,6 +317,16 @@ function scanRoot(root) {
   return { root, characters };
 }
 
+/** Bytes under a directory, so a delete can report what it actually freed. */
+function dirBytes(dir) {
+  let total = 0;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    try { total += e.isDirectory() ? dirBytes(p) : fs.statSync(p).size; } catch { /* vanished mid-walk */ }
+  }
+  return total;
+}
+
 // ---------------------------------------------------------------------------------------
 
 function send(res, code, body, type = 'application/json') {
@@ -793,20 +803,39 @@ const server = http.createServer(async (req, res) => {
       if (!session.token) return send(res, 400, { error: 'no token set' });
       if (!char || !name) return send(res, 400, { error: 'char and name are required' });
 
+      // 'human', because the database says so. chk_avatar_category allows exactly
+      // human | fantasy | robot | animal | abstract | other, and 'metahuman' is not one of
+      // them - it violated the constraint on every attempt. The metahuman marker belongs in
+      // tags, which carries no constraint and is what the six existing rows are found by.
+      const payload = {
+        name,
+        slug: `mh-${char}`,
+        category: category || 'human',
+        gender: gender || undefined,
+        description: description || undefined,
+        tags: ['metahuman'],
+      };
+
       const r = await fetch(`${target.apiBase}/api/admin/avatars`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          slug: `mh-${char}`,
-          category: category || 'metahuman',
-          gender: gender || undefined,
-          description: description || undefined,
-          tags: ['metahuman'],
-        }),
+        body: JSON.stringify(payload),
       });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok) return send(res, 502, { error: out.error || `create failed (${r.status})` });
+
+      // Read as text first: a failure that is not JSON still has something to say, and
+      // .json() would swallow it.
+      const raw = await r.text();
+      let out = {};
+      try { out = raw ? JSON.parse(raw) : {}; } catch { /* not JSON - the text is the message */ }
+
+      if (!r.ok) {
+        // The admin API special-cases a duplicate slug and collapses everything else into one
+        // sentence, with the reason left in its own log. "Failed to create avatar" alone
+        // cannot be told apart from a rejected field, a constraint violation or a database
+        // that is down - so carry the status and the payload that caused it.
+        const said = out.error || out.message || raw.slice(0, 300) || '(empty body)';
+        return send(res, 502, { error: `admin API ${r.status}: ${said}`, sent: payload });
+      }
       return send(res, 200, { avatarId: out.id || out.avatar?.id || null, raw: out });
     }
 
@@ -904,7 +933,13 @@ const server = http.createServer(async (req, res) => {
 
       // The bake suffix is already in the key, so the record lands in the same file as the
       // publish it completes rather than needing the page to carry it back here.
-      const suffix = String(modelKey).split('/')[2] ?? 'unknown';
+      //
+      // The key's segment is `<char>-<suffix>`, because publish passes -BakeHash that way, but
+      // publish names its file from the bare suffix. Taking the segment whole put every go-live
+      // in a file of its own beside the publish it belonged to - which is how the original six
+      // ended up as panda-tele-*, panda-tele1-* and so on, apart from their publishes.
+      const segment = String(modelKey).split('/')[2] ?? 'unknown';
+      const suffix = segment.startsWith(`${char}-`) ? segment.slice(char.length + 1) : segment;
       const previous = body?.data?.previousModelPath ?? null;
       const recorded = recordGoLive({
         env, apiBase: target.apiBase, char, avatarId,
@@ -967,6 +1002,69 @@ const server = http.createServer(async (req, res) => {
       return undefined;
     }
 
+
+    /**
+     * Remove a character from this machine, so a re-bake starts from nothing.
+     *
+     * Three directories hold one character, and leaving any of them is a way to get a bake that
+     * looks fresh and is not:
+     *
+     *   <root>/<id>            the finished package — what the publisher browses
+     *   characters/<id>        the pipeline working copy — what makes bootstrap refuse a re-bake
+     *   docs/characters/<id>   stage 04's output, and what the package is COPIED FROM. Stage 04
+     *                          writes into it without clearing it first, so a file the new bake
+     *                          does not produce survives there and is copied forward — past the
+     *                          package's own rm, which only clears what it is about to write.
+     *
+     * Local only, and deliberately so. A character that has been published stays published and
+     * stays live: the bytes are on the CDN and the row still points at them. Nothing here can
+     * reach an environment, and the page says so before it asks.
+     */
+    if (url.pathname === '/api/delete' && req.method === 'POST') {
+      const { ids } = await readBody(req);
+      if (!Array.isArray(ids) || !ids.length) return send(res, 400, { error: 'nothing selected' });
+      // The stages read and write these same directories. Removing one mid-bake is how a
+      // character becomes something nobody can explain afterwards.
+      if (busy) return send(res, 409, { error: `${busy} is baking — one at a time` });
+
+      const where = path.resolve(url.searchParams.get('root') || DEFAULT_ROOT);
+      // Ids are checked against the folders that actually exist rather than pattern-matched, so
+      // nothing here can be talked into removing a path of the caller's choosing.
+      const known = new Set(scanRoot(where).characters.map((c) => c.id));
+      const unknown = ids.filter((id) => !known.has(id));
+      if (unknown.length) return send(res, 400, { error: `not characters in ${where}: ${unknown.join(', ')}` });
+
+      // Belt and braces on top of the id check: a target that is not directly inside the parent
+      // it was built from is not removed, whatever the id turned out to be.
+      const contains = (parent, child) => {
+        const rel = path.relative(parent, child);
+        return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+      };
+
+      const removed = [];
+      let freed = 0;
+      for (const id of ids) {
+        for (const [what, parent] of [
+          ['package', where],
+          ['working copy', path.join(PIPELINE_ROOT, 'characters')],
+          ['viewer copy', STAGE_OUT],
+        ]) {
+          const dir = path.join(parent, id);
+          if (!contains(parent, dir) || !fs.existsSync(dir)) continue;
+          const bytes = dirBytes(dir);
+          try {
+            fs.rmSync(dir, { recursive: true, force: true });
+          } catch (e) {
+            // Report what did go before stopping: a half-finished delete the operator cannot
+            // see is worse than one they can finish by hand.
+            return send(res, 500, { error: `could not remove ${dir}: ${e.message}`, removed, freed });
+          }
+          removed.push({ id, what, dir, bytes });
+          freed += bytes;
+        }
+      }
+      return send(res, 200, { removed, freed });
+    }
 
     /**
      * Serve a package's own preview files, so the grid can show who each character is.

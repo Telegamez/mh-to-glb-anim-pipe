@@ -28,6 +28,9 @@
   button.go{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
   button.sel{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
   button.small{padding:6px 11px;font-size:13px}
+  /* Destructive, and coloured like the alert box rather than like the go buttons. */
+  button.danger{border-color:#5d2c22;color:#f0b5a4}
+  button.danger:hover:not(:disabled){border-color:var(--bad);background:#2a1614}
 
   /* ---- the grid: where every character is, at every step, always on screen ---- */
   table{width:100%;border-collapse:collapse;font-size:14px}
@@ -107,6 +110,9 @@
   <div class="row" style="margin-top:8px">
     <span class="sub" id="rootPath"></span>
     <button id="browseRoot" class="small">Change folder</button>
+    <!-- Hidden until something is ticked: a delete button with nothing selected is only ever
+         a question about what it would delete. -->
+    <button id="del" class="small danger" hidden>Delete</button>
     <span class="sub" id="picked"></span>
   </div>
 
@@ -135,6 +141,8 @@
     </div>
     <div class="alert" id="connErr" hidden></div>
     <div class="row">
+      <!-- Before Upload, because Upload cannot run without the row this makes. -->
+      <button id="mkRecord" disabled>Create record</button>
       <button id="pubModel" disabled>Upload model</button>
       <button id="pubPreviews" disabled>Upload previews</button>
       <button id="goLive" class="go" disabled>Go live</button>

@@ -482,20 +482,39 @@ const server = http.createServer(async (req, res) => {
       if (!session.token) return send(res, 400, { error: 'no token set' });
       if (!char || !name) return send(res, 400, { error: 'char and name are required' });
 
+      // 'human', because the database says so. chk_avatar_category allows exactly
+      // human | fantasy | robot | animal | abstract | other, and 'metahuman' is not one of
+      // them - it violated the constraint on every attempt. The metahuman marker belongs in
+      // tags, which carries no constraint and is what the six existing rows are found by.
+      const payload = {
+        name,
+        slug: `mh-${char}`,
+        category: category || 'human',
+        gender: gender || undefined,
+        description: description || undefined,
+        tags: ['metahuman'],
+      };
+
       const r = await fetch(`${target.apiBase}/api/admin/avatars`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          slug: `mh-${char}`,
-          category: category || 'metahuman',
-          gender: gender || undefined,
-          description: description || undefined,
-          tags: ['metahuman'],
-        }),
+        body: JSON.stringify(payload),
       });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok) return send(res, 502, { error: out.error || `create failed (${r.status})` });
+
+      // Read as text first: a failure that is not JSON still has something to say, and
+      // .json() would swallow it.
+      const raw = await r.text();
+      let out = {};
+      try { out = raw ? JSON.parse(raw) : {}; } catch { /* not JSON - the text is the message */ }
+
+      if (!r.ok) {
+        // The admin API special-cases a duplicate slug and collapses everything else into one
+        // sentence, with the reason left in its own log. "Failed to create avatar" alone
+        // cannot be told apart from a rejected field, a constraint violation or a database
+        // that is down - so carry the status and the payload that caused it.
+        const said = out.error || out.message || raw.slice(0, 300) || '(empty body)';
+        return send(res, 502, { error: `admin API ${r.status}: ${said}`, sent: payload });
+      }
       return send(res, 200, { avatarId: out.id || out.avatar?.id || null, raw: out });
     }
 
@@ -593,7 +612,13 @@ const server = http.createServer(async (req, res) => {
 
       // The bake suffix is already in the key, so the record lands in the same file as the
       // publish it completes rather than needing the page to carry it back here.
-      const suffix = String(modelKey).split('/')[2] ?? 'unknown';
+      //
+      // The key's segment is `<char>-<suffix>`, because publish passes -BakeHash that way, but
+      // publish names its file from the bare suffix. Taking the segment whole put every go-live
+      // in a file of its own beside the publish it belonged to - which is how the original six
+      // ended up as panda-tele-*, panda-tele1-* and so on, apart from their publishes.
+      const segment = String(modelKey).split('/')[2] ?? 'unknown';
+      const suffix = segment.startsWith(`${char}-`) ? segment.slice(char.length + 1) : segment;
       const previous = body?.data?.previousModelPath ?? null;
       const recorded = recordGoLive({
         env, apiBase: target.apiBase, char, avatarId,

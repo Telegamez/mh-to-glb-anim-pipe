@@ -1,0 +1,33 @@
+End to end, Unreal → publishable package, through the console. That's the thing we didn't know worked.
+
+
+S:\Avatars\metahuman\characters\tele
+  tele.glb           48M      23:29
+  mh_materials.json
+  textures/          14 files
+  thumbnail.png               23:33
+  imagePreview.jpg            23:33
+  videoPreview.mp4            23:33
+Everything postdates the GLB now, so the previews genuinely depict this bake. unmatched=[], framed at 93%, still from Idle at pitch 1.0°.
+
+One difference from the prior bake worth flagging
+The new GLB matched three more material slots than the one currently published to panda:
+
+
+prior:  ...HS_Polo_Shirt, ...HS_Chinos, ...HS_Desert_Boots           (6 matched)
+new:    same + MI_HS_Polo_Shirt_62, MI_HS_Chinos_54, MI_HS_Desert_Boots_63   (9 matched)
+Same 48 MB, 14 textures, unmatched=[] both ways — so nothing is broken. But it's a real difference in material naming between the hand-run bake on panda and this one, and the boots render noticeably paler here. Worth knowing before we compare published against fresh and wonder why they differ.
+
+The likely cause is the config: ue_version: "5.7" but editor_cmd points at UE_5.8. Not something to chase now, just something that shouldn't surprise us later.
+
+Where the practice cycle stands
+
+Bake       proven end to end, this run
+Previews   proven
+Publish    proven earlier against panda
+Assets     publish_previews.ps1 — written, never run
+Live       SQL — proven
+Clear      DELETE route — written, never run  (PR #3582)
+Two things left unproven, both API calls needing your cookie. And now that we can bake and clear, the full practice loop is available: clear panda, publish fresh, verify, repeat.
+
+Next I'd prove publish_previews.ps1 — it fills three of the five columns that define a complete avatar. Want me to wire it into the publisher so you can run it from there, or run it directly against panda first to confirm the route accepts what we send?

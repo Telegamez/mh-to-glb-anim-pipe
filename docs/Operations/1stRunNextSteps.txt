@@ -1,0 +1,30 @@
+That's your go-live SQL — and it means all six published successfully. telee, telie, and telly are in there, so the batch completed.
+
+What you're looking at
+Two blocks. The first repoints all six avatars rows at the freshly published keys, wrapped in a transaction:
+
+
+BEGIN;
+  UPDATE avatars SET model_path = 'avatars/.../tele-20260828-1529/tele.glb' ... -- tele
+  ... six of these ...
+COMMIT;
+The BEGIN/COMMIT matters: all six flip together or none do. You can't end up with a half-swapped roster where three characters load the new bake and three don't.
+
+The second block is the undo, pre-computed with each row's previous value. That's the thing worth protecting — it's only knowable before the first block runs.
+
+One detail worth noticing
+The old and new values aren't the same shape:
+
+
+was:  https://telegames-assets-local.s3.us-west-2.amazonaws.com/models/tele/tele.glb   ← absolute URL
+now:  avatars/e0e48f1f-.../tele-20260828-1529/tele.glb                                  ← relative key
+That's expected, not a bug — the new content-addressed form is what the re-seed guard recognises as published, so a later unrelated re-seed won't quietly revert these rows. That was the failure mode fixed in telegamez#3579.
+
+But it means don't "tidy" the undo block into relative paths. Those absolute URLs are literally what was in the rows, and the undo is only an undo if it restores them verbatim.
+
+Do this now
+Copy that panel and save it somewhere. This run predates the journal I just wired in — the server was already running the old code — so these six records exist only in that browser tab. Next run writes them to disk automatically; this one doesn't.
+
+Then it needs running against panda's database, which needs DB access — the panda team, unless you have it directly. Publishing is done and safe; nothing users see has changed yet.
+
+After it commits, hit Check it worked.

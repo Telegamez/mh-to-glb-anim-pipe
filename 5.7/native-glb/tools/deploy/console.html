@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Telegames MetaHuman Publisher</title>
+<style>
+  :root{
+    --bg:#0f1419;--panel:#161d26;--line:#252f3d;--ink:#e6edf5;--dim:#8b9bb0;
+    --accent:#4fbdc8;--ok:#5fbe8c;--warn:#d2a83f;--bad:#e08a72;
+    --mono:'JetBrains Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+  header{padding:16px 26px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  h1{font-size:16px;margin:0;font-weight:600}
+  main{display:grid;grid-template-columns:minmax(500px,1fr) minmax(320px,.7fr);gap:1px;background:var(--line)}
+  .col{background:var(--bg);padding:22px 26px;min-height:calc(100vh - 57px);overflow:auto}
+
+  /* A step is invisible until it is your turn. Nothing to read ahead of yourself. */
+  .step{margin-bottom:20px}
+  .step[hidden]{display:none}
+  .step h2{font-size:13px;margin:0 0 10px;color:var(--dim);font-weight:600;
+           text-transform:uppercase;letter-spacing:.07em}
+
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input,select{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:10px 11px;
+               border-radius:5px;font:14px system-ui;flex:1;min-width:0}
+  input.mono{font:13px var(--mono)}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  button{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:10px 16px;
+         border-radius:5px;cursor:pointer;font:14px system-ui}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  button.go{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
+  button.small{padding:5px 11px;font-size:12px}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);
+     font-weight:500;padding:0 8px 6px 0;border-bottom:1px solid var(--line)}
+  td{padding:9px 8px 9px 0;border-bottom:1px solid var(--line)}
+  tr.off td{opacity:.5}
+  .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.dim{color:var(--dim)}
+  .mono{font-family:var(--mono);font-size:12px}
+
+  /* Only ever used for production, and for an error you have to act on. */
+  .alert{border:1px solid #5d2c22;background:#2a1614;color:#f0b5a4;border-radius:5px;
+         padding:10px 13px;margin-bottom:12px;font-size:13.5px}
+  .msg{font-size:13.5px;margin-top:8px}
+
+  pre{background:#0a0e13;border:1px solid var(--line);border-radius:5px;padding:12px;
+      font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;margin:0;overflow:auto}
+  #sql{max-height:30vh}
+  #log{min-height:220px;color:var(--dim)}
+
+  .picker{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;z-index:9}
+  .picker.on{display:flex}
+  .pbox{background:var(--panel);border:1px solid var(--line);border-radius:7px;width:min(640px,92vw);
+        max-height:74vh;display:flex;flex-direction:column}
+  .phead,.pfoot{padding:12px 14px;display:flex;gap:9px;align-items:center}
+  .phead{border-bottom:1px solid var(--line)}
+  .pfoot{border-top:1px solid var(--line);justify-content:flex-end}
+  .plist{overflow:auto;padding:5px}
+  [hidden]{display:none !important}   /* beats .pfoot's display:flex */
+  .grouphead{padding:10px 11px 5px;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
+  .pitem{padding:9px 11px;border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;font-size:14px}
+  .pitem:hover{background:var(--bg)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Telegames MetaHuman Publisher</h1>
+  <select id="env" style="flex:0 0 auto;width:auto"></select>
+</header>
+
+<main>
+<div class="col">
+
+  <div class="step" id="s2">
+    <h2>Sign in</h2>
+    <div id="prodWarn"></div>
+    <div class="row">
+      <input id="token" type="password" placeholder="Paste admin cookie" autocomplete="off">
+      <button id="setToken" class="go">Connect</button>
+    </div>
+    <div class="msg"><a href="#" id="openSignin">Get the cookie</a> <span class="dim" id="signinHost"></span></div>
+    <div class="msg" id="tokenState"></div>
+  </div>
+
+  <div class="step" id="s3" hidden>
+    <h2>Characters</h2>
+    <div class="row" style="margin-bottom:12px">
+      <input id="root" class="mono" readonly>
+      <button id="browse">Browse</button>
+    </div>
+    <table><thead><tr>
+      <th style="width:26px"></th><th>Character</th><th>Size</th><th>What will happen</th>
+    </tr></thead><tbody id="chars"></tbody></table>
+    <div class="row" style="margin-top:16px">
+      <button id="publish" class="go">Publish</button>
+      <button id="pubPreviews">Publish previews</button>
+      <span class="dim" id="pubCount" style="font-size:13px"></span>
+    </div>
+  </div>
+
+  <div class="step" id="s5" hidden>
+    <h2>Go live</h2>
+    <div class="row" style="margin-bottom:12px">
+      <button id="goLive" class="go">Go live</button>
+      <span class="dim" id="liveCount" style="font-size:13px"></span>
+    </div>
+    <pre id="sql"></pre>
+    <div class="row" style="margin-top:10px">
+      <button id="copySql" class="small">Copy the SQL instead</button>
+      <button id="verify" class="small">Check it worked</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="col">
+  <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:0 0 10px;font-weight:600">Progress</h2>
+  <pre id="log"></pre>
+</div>
+</main>
+
+<div class="picker" id="picker"><div class="pbox">
+  <div class="phead">
+    <button id="pUp" class="small">Up</button>
+    <input id="pPath" class="mono" readonly>
+  </div>
+  <div class="plist" id="pList"></div>
+  <div class="pfoot">
+    <button id="pCancel" class="small">Cancel</button>
+    <button id="pUse" class="go small">Use this folder</button>
+  </div>
+</div></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const log = (s) => { $('log').textContent += s; $('log').scrollTop = 1e9; };
+const setLog = (s) => { $('log').textContent = s; };
+const show = (id, yes) => { $(id).hidden = !yes; };
+
+let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [];
+
+async function boot() {
+  CONFIG = await (await fetch('/api/config')).json();
+  $('root').value = CONFIG.defaultRoot;
+  for (const e of CONFIG.environments) {
+    const o = document.createElement('option');
+    o.value = e.key; o.textContent = e.label;
+    $('env').appendChild(o);
+  }
+  envChanged();
+}
+
+function envChanged() {
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  // Ids, publishes and SQL are all per-environment. Carrying any of them across is the
+  // mistake this resets to prevent, so the flow restarts rather than partially updating.
+  RESOLVED = {}; PUBLISHED = {}; CHARS = [];
+  show('s3', false); show('s5', false);
+  $('token').value = ''; $('tokenState').innerHTML = ''; $('chars').innerHTML = '';
+  $('signinHost').textContent = e.apiBase;
+  $('prodWarn').innerHTML = e.danger
+    ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
+    : '';
+}
+$('env').onchange = envChanged;
+
+$('openSignin').onclick = (ev) => {
+  ev.preventDefault();
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  window.open(e.apiBase + '/api/auth/signin', '_blank');
+};
+
+$('setToken').onclick = async () => {
+  const v = $('token').value.trim();
+  if (!v) return;
+  await fetch('/api/token', { method:'POST', headers:{'content-type':'application/json'},
+                              body: JSON.stringify({ token: v }) });
+  $('token').value = '';
+  $('tokenState').innerHTML = '<span class="dim">Connecting</span>';
+  setLog('Connecting to ' + $('env').value + '\n');
+  await load();
+};
+
+async function load() {
+  const scan = await (await fetch('/api/scan?root=' + encodeURIComponent($('root').value))).json();
+  CHARS = scan.characters || [];
+
+  const res = await fetch('/api/resolve', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ env: $('env').value, characters: CHARS.map((c) => c.id) }),
+  });
+  const body = await res.json();
+
+  if (!res.ok) {
+    // The only failure an operator actually hits. One line, and what to do about it.
+    $('tokenState').innerHTML = '<span class="bad">' + body.error + '</span>';
+    return;
+  }
+
+  RESOLVED = {};
+  for (const r of body.resolved) RESOLVED[r.char] = r;
+  $('tokenState').innerHTML = '<span class="ok">Connected</span>';
+  show('s3', true);
+  render();
+}
+
+function render() {
+  const tb = $('chars'); tb.innerHTML = '';
+  if (!CHARS.length) {
+    tb.innerHTML = '<tr><td colspan="4" class="dim">Nothing here &mdash; try Browse.</td></tr>';
+    return;
+  }
+
+  for (const c of CHARS) {
+    const r = RESOLVED[c.id] || {};
+    /* Whether a record already exists is the publisher's problem, not the operator's. Both
+     * cases are one tick and one button; the only thing a brand-new character genuinely needs
+     * from a person is a display name, so that is the only thing it asks for - inline, filled
+     * in, editable. No separate step, no id, nothing to look up first. */
+    let action, needsName = false;
+    if (!c.ready) action = '<span class="bad">' + c.problems[0] + '</span>';
+    else if (!r.avatarId) { action = '<span class="ok">Add as new</span>'; needsName = true; }
+    else if (r.published) action = '<span class="dim">Update to a new version</span>';
+    else action = '<span class="dim">Add its model</span>';
+
+    const tick = c.ready && c.inRoster;
+    const tr = document.createElement('tr');
+    if (!c.ready) tr.className = 'off';
+    tr.innerHTML = '<td><input type="checkbox" data-char="' + c.id + '"'
+      + (tick ? ' checked' : '') + (c.ready ? '' : ' disabled') + '></td>'
+      + '<td>' + c.id + (c.inRoster ? '' : ' <span class="dim">&middot; extra</span>') + '</td>'
+      + '<td class="mono dim">' + c.mb + ' MB</td>'
+      + '<td>' + action
+      + (needsName ? '<br><input class="nm" data-char="' + c.id + '" value="' + title(c.id)
+          + '" style="margin-top:5px;padding:5px 8px;font-size:13px;max-width:220px">' : '')
+      + '</td>';
+    tb.appendChild(tr);
+  }
+  for (const cb of document.querySelectorAll('#chars input[type=checkbox]')) cb.onchange = count;
+  count();
+}
+
+const title = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+const picked = () =>
+  [...document.querySelectorAll('#chars input[type=checkbox]:checked')].map((c) => c.dataset.char);
+
+function count() {
+  const n = picked().length;
+  $('pubCount').textContent = n ? n + ' selected' : '';
+  $('publish').disabled = n === 0;
+  $('pubPreviews').disabled = n === 0;
+}
+
+$('publish').onclick = async () => {
+  const list = picked();
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?')) return;
+
+  // Never typed. A label only has to be new and readable; a timestamp is both, and inventing
+  // one by hand is a step that can only go wrong.
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + String(Date.now()).slice(-4);
+
+  $('publish').disabled = true;
+  setLog('Publishing ' + list.length + ' to ' + $('env').value + '\n');
+
+  for (const c of list) {
+    log('\n' + c + '\n');
+    // Create the record if this character has never existed here. The operator ticked a box;
+    // whether that means create-then-publish or just publish is not a distinction worth
+    // making them hold.
+    if (!RESOLVED[c] || !RESOLVED[c].avatarId) {
+      const el = document.querySelector('input.nm[data-char=\"' + c + '\"]');
+      const name = (el && el.value.trim()) || title(c);
+      log('  adding as ' + name + '\n');
+      const mk = await fetch('/api/create-avatar', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ env: $('env').value, char: c, name, category:'metahuman' }),
+      });
+      if (!mk.ok) { log('  ' + (await mk.json()).error + '\n'); break; }
+      // Re-ask rather than trust the create response's shape for the id.
+      const rr = await fetch('/api/resolve', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ env: $('env').value, characters:[c] }),
+      });
+      const rb = await rr.json();
+      if (!rr.ok || !rb.resolved[0].avatarId) { log('  could not read the new record back\n'); break; }
+      RESOLVED[c] = rb.resolved[0];
+    }
+
+    const res = await fetch('/api/publish?root=' + encodeURIComponent($('root').value), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp,
+                             avatarIds: { [c]: RESOLVED[c].avatarId } }),
+    });
+    if (!res.ok) { log((await res.json()).error + '\n'); break; }
+
+    let out = '';
+    const rd = res.body.getReader(); const dec = new TextDecoder();
+    for (;;) { const t = await rd.read(); if (t.done) break;
+               const s = dec.decode(t.value,{stream:true}); out += s; log(s); }
+
+    const m = out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+/);
+    if (!m) { log('\nNo published path came back. Stopped.\n'); break; }
+    PUBLISHED[c] = { key: m[0], avatarId: RESOLVED[c].avatarId, before: RESOLVED[c].modelPath, beforeStatus: RESOLVED[c].status };
+    renderSql();
+  }
+
+  $('publish').disabled = false;
+  if (Object.keys(PUBLISHED).length) show('s5', true);
+};
+
+/**
+ * Previews are their own step because they are their own contract: the model goes through the
+ * directory route, which writes no row, and these go through smart-upload, which owns the three
+ * preview columns and writes them itself. Nothing to run afterwards - no SQL appears for these.
+ */
+$('pubPreviews').onclick = async () => {
+  const list = picked();
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && !confirm('Publish previews for ' + list.length + ' to PRODUCTION?')) return;
+
+  // Refuse before uploading anything rather than part way through a batch. A character with no
+  // captured previews is a bake that has not finished, not an upload that can be retried.
+  const missing = list.filter((c) => { const r = CHARS.find((x) => x.id === c); return r && !r.previews; });
+  if (missing.length) {
+    setLog('No previews captured for: ' + missing.join(', ') + '\nBake them, or use Previews in the bake console.\n');
+    return;
+  }
+
+  $('pubPreviews').disabled = true;
+  setLog('Publishing previews for ' + list.length + ' to ' + $('env').value + '\n');
+
+  for (const c of list) {
+    log('\n' + c + '\n');
+    if (!RESOLVED[c] || !RESOLVED[c].avatarId) {
+      log('  no avatar record in this environment yet - publish the model first\n');
+      break;
+    }
+    const res = await fetch('/api/publish-previews?root=' + encodeURIComponent($('root').value), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ env: $('env').value, characters:[c],
+                             avatarIds: { [c]: RESOLVED[c].avatarId } }),
+    });
+    if (!res.ok) { log((await res.json()).error + '\n'); break; }
+
+    let out = '';
+    const rd = res.body.getReader(); const dec = new TextDecoder();
+    for (;;) { const t = await rd.read(); if (t.done) break;
+               const x = dec.decode(t.value,{stream:true}); out += x; log(x); }
+
+    // Stop the batch on the first failure, the way the model publish does.
+    if (!/\[publish_previews\] OK/.test(out)) { log('\nStopped.\n'); break; }
+  }
+
+  $('pubPreviews').disabled = false;
+};
+
+/**
+ * Going live, without a database.
+ *
+ * Still its own press: publishing put bytes somewhere and changed nothing anybody sees, and
+ * this is the moment that changes. What is gone is the hand-run SQL - the API checks the object
+ * exists before pointing a row at it, which a pasted statement never did, and the previous key
+ * is written to the journal instead of living in whatever file somebody remembered to keep.
+ */
+$('goLive').onclick = async () => {
+  const entries = Object.entries(PUBLISHED);
+  if (!entries.length) return;
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && !confirm('Take ' + entries.length + ' live on PRODUCTION?')) return;
+
+  $('goLive').disabled = true;
+  setLog('Going live: ' + entries.length + ' on ' + $('env').value + '\n');
+
+  let done = 0;
+  for (const [c, p] of entries) {
+    const r = await fetch('/api/go-live', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ env: $('env').value, char: c, avatarId: p.avatarId, modelKey: p.key }),
+    });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) { log('\n' + c + ': ' + (b.error || 'failed') + '\nStopped.\n'); break; }
+    done++;
+    log('\n' + c + ' is live\n');
+    log('   now ' + b.modelKey + '\n');
+    log('   was ' + (b.previous || '(no model on the row)') + '\n');
+    if (b.recorded) log('   recorded in ' + b.recorded + '\n');
+  }
+
+  $('liveCount').textContent = done + ' of ' + entries.length + ' live';
+  $('goLive').disabled = false;
+};
+
+function renderSql() {
+  const rows = Object.entries(PUBLISHED);
+  if (!rows.length) return;
+  let out = 'BEGIN;\n';
+  // status goes with the path: a row the admin API created starts as 'processing', and the
+  // companion form only lists avatars that are isActive AND status=active. Without this the
+  // character publishes correctly and then cannot be picked when making its companion.
+  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + p.key + "', status = 'active', updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
+  out += 'COMMIT;\n\n-- undo\nBEGIN;\n';
+  // The undo restores the status the row actually had, not a guess. Where it was not read
+  // back, status is left out entirely rather than reverted to something invented.
+  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + (p.before || '') + "'" + (p.beforeStatus ? ", status = '" + p.beforeStatus + "'" : "") + ", updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
+  out += 'COMMIT;';
+  $('sql').textContent = out;
+}
+
+$('copySql').onclick = () => {
+  navigator.clipboard.writeText($('sql').textContent);
+  $('copySql').textContent = 'Copied';
+  setTimeout(() => { $('copySql').textContent = 'Copy'; }, 1400);
+};
+
+$('verify').onclick = async () => {
+  setLog('Checking ' + $('env').value + '\n\n');
+  const res = await fetch('/api/verify', { method:'POST', headers:{'content-type':'application/json'},
+                                           body: JSON.stringify({ env: $('env').value }) });
+  if (!res.ok) { log((await res.json()).error + '\n'); return; }
+  const rd = res.body.getReader(); const dec = new TextDecoder();
+  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value,{stream:true})); }
+};
+
+// ---- folder picker ---------------------------------------------------------------------
+
+let pCurrent = '';
+async function pGo(p) {
+  const r = await (await fetch('/api/browse?path=' + encodeURIComponent(p))).json();
+  pCurrent = r.path;
+  $('pPath').value = r.path || 'This computer';
+  $('pUse').disabled = !r.path;
+  const list = $('pList'); list.innerHTML = '';
+  for (const d of r.dirs) {
+    const el = document.createElement('div');
+    el.className = 'pitem';
+    // The one thing worth saying in a file list: which folder is the one you want.
+    const tag = d.characterCount ? '<span class="ok">' + d.characterCount + ' characters</span>'
+              : d.isCharacter ? '<span class="dim">character</span>' : '';
+    el.innerHTML = '<span>' + d.name + '</span>' + tag;
+    el.onclick = () => pGo(d.path);
+    list.appendChild(el);
+  }
+  if (!r.dirs.length) list.innerHTML = '<div class="pitem dim">' + (r.error || 'Empty') + '</div>';
+}
+$('browse').onclick = () => { $('picker').classList.add('on'); pGo($('root').value); };
+$('pUp').onclick = async () => {
+  const r = await (await fetch('/api/browse?path=' + encodeURIComponent(pCurrent))).json();
+  pGo(r.parent || '');
+};
+$('pCancel').onclick = () => $('picker').classList.remove('on');
+$('pUse').onclick = async () => {
+  $('root').value = pCurrent;
+  $('picker').classList.remove('on');
+  await load();
+};
+
+boot();
+</script>
+</body>
+</html>

@@ -140,6 +140,7 @@ docs/animations/
 # of whoever is about to stage everything. The spike's sources under tools/dna/ stay tracked.
 tools/riglogic-spike/bt*/
 tools/riglogic-spike/build-native/
+tools/riglogic-spike/build-wasm/
 
 # Stage 01's viseme authoring report — generated per run, like every other stage output.
 5.7/native-glb/stages/01-unreal-glb-export/config/tg_viseme_authoring_report.json

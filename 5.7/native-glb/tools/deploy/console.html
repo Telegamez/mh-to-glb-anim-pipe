@@ -2,260 +2,446 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Companion Deploy Console</title>
+<title>Telegames MetaHuman Publisher</title>
 <style>
-  :root {
-    --bg:#0f1419; --panel:#161d26; --line:#252f3d; --ink:#e6edf5; --dim:#8b9bb0;
-    --accent:#4fbdc8; --ok:#5fbe8c; --warn:#d2a83f; --bad:#e08a72; --mono:'JetBrains Mono',Consolas,monospace;
+  :root{
+    --bg:#0f1419;--panel:#161d26;--line:#252f3d;--ink:#e6edf5;--dim:#8b9bb0;
+    --accent:#4fbdc8;--ok:#5fbe8c;--warn:#d2a83f;--bad:#e08a72;
+    --mono:'JetBrains Mono',Consolas,monospace;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif}
-  header{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px}
-  h1{font-size:16px;margin:0;letter-spacing:-.01em}
-  .sub{color:var(--dim);font-size:12px}
-  main{display:grid;grid-template-columns:minmax(420px,1fr) minmax(360px,1fr);gap:1px;background:var(--line);min-height:calc(100vh - 53px)}
-  section{background:var(--bg);padding:18px 22px;overflow:auto}
-  h2{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:0 0 12px;font-weight:600}
-  .row{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-  label{color:var(--dim);font-size:12px;min-width:76px}
-  input,select{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:7px 9px;border-radius:4px;font:13px var(--mono);flex:1;min-width:0}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+  header{padding:16px 26px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  h1{font-size:16px;margin:0;font-weight:600}
+  main{display:grid;grid-template-columns:minmax(500px,1fr) minmax(320px,.7fr);gap:1px;background:var(--line)}
+  .col{background:var(--bg);padding:22px 26px;min-height:calc(100vh - 57px);overflow:auto}
+
+  /* A step is invisible until it is your turn. Nothing to read ahead of yourself. */
+  .step{margin-bottom:20px}
+  .step[hidden]{display:none}
+  .step h2{font-size:13px;margin:0 0 10px;color:var(--dim);font-weight:600;
+           text-transform:uppercase;letter-spacing:.07em}
+
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input,select{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:10px 11px;
+               border-radius:5px;font:14px system-ui;flex:1;min-width:0}
+  input.mono{font:13px var(--mono)}
   input:focus,select:focus{outline:none;border-color:var(--accent)}
-  button{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:7px 13px;border-radius:4px;cursor:pointer;font:13px system-ui}
+  button{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:10px 16px;
+         border-radius:5px;cursor:pointer;font:14px system-ui}
   button:hover:not(:disabled){border-color:var(--accent)}
-  button:disabled{opacity:.4;cursor:not-allowed}
+  button:disabled{opacity:.35;cursor:not-allowed}
   button.go{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);font-weight:500;padding:0 8px 7px 0;border-bottom:1px solid var(--line)}
-  td{padding:8px 8px 8px 0;border-bottom:1px solid var(--panel);vertical-align:top}
-  td.num{font-family:var(--mono);font-size:12px}
-  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .dim{color:var(--dim)}
-  .prob{display:block;color:var(--bad);font-size:11px;margin-top:2px}
-  pre{background:#0a0e13;border:1px solid var(--line);border-radius:4px;padding:12px;font:12px/1.55 var(--mono);
-      white-space:pre-wrap;word-break:break-word;margin:0;min-height:240px;max-height:62vh;overflow:auto}
-  .danger{color:var(--bad);font-weight:600}
-  .note{color:var(--dim);font-size:12px;margin:10px 0 0}
+  button.small{padding:5px 11px;font-size:12px}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);
+     font-weight:500;padding:0 8px 6px 0;border-bottom:1px solid var(--line)}
+  td{padding:9px 8px 9px 0;border-bottom:1px solid var(--line)}
+  tr.off td{opacity:.5}
+  .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.dim{color:var(--dim)}
+  .mono{font-family:var(--mono);font-size:12px}
+
+  /* Only ever used for production, and for an error you have to act on. */
+  .alert{border:1px solid #5d2c22;background:#2a1614;color:#f0b5a4;border-radius:5px;
+         padding:10px 13px;margin-bottom:12px;font-size:13.5px}
+  .msg{font-size:13.5px;margin-top:8px}
+
+  pre{background:#0a0e13;border:1px solid var(--line);border-radius:5px;padding:12px;
+      font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;margin:0;overflow:auto}
+  #sql{max-height:30vh}
+  #log{min-height:220px;color:var(--dim)}
+
+  .picker{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;z-index:9}
+  .picker.on{display:flex}
+  .pbox{background:var(--panel);border:1px solid var(--line);border-radius:7px;width:min(640px,92vw);
+        max-height:74vh;display:flex;flex-direction:column}
+  .phead,.pfoot{padding:12px 14px;display:flex;gap:9px;align-items:center}
+  .phead{border-bottom:1px solid var(--line)}
+  .pfoot{border-top:1px solid var(--line);justify-content:flex-end}
+  .plist{overflow:auto;padding:5px}
+  .pitem{padding:9px 11px;border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;font-size:14px}
+  .pitem:hover{background:var(--bg)}
 </style>
 </head>
 <body>
+
 <header>
-  <h1>Companion Deploy Console</h1>
-  <span class="sub" id="rootLabel"></span>
+  <h1>Telegames MetaHuman Publisher</h1>
+  <span style="display:flex;gap:9px;align-items:center">
+    <button id="manage" class="small" hidden>Edit existing</button>
+    <select id="env" style="flex:0 0 auto;width:auto"></select>
+  </span>
 </header>
 
 <main>
-  <section>
-    <h2>1 · Target</h2>
-    <div class="row">
-      <label for="env">Environment</label>
-      <select id="env"></select>
-    </div>
-    <div class="row">
-      <label for="token">Admin cookie</label>
-      <input id="token" type="password" placeholder="__Secure-authjs.session-token value" autocomplete="off">
-      <button id="setToken">Set</button>
-    </div>
-    <div class="row">
-      <label for="root">Models root</label>
-      <input id="root">
-      <button id="rescan">Rescan</button>
-    </div>
-    <div class="row">
-      <label for="suffix">Bake suffix</label>
-      <input id="suffix" value="panda1" placeholder="appended per character, e.g. telly-panda1">
-    </div>
-    <p class="note" id="envNote"></p>
+<div class="col">
 
-    <h2 style="margin-top:22px">2 · Characters</h2>
-    <table>
-      <thead><tr><th style="width:26px"></th><th>Character</th><th>GLB</th><th>Textures</th><th>Avatar row (in target)</th></tr></thead>
-      <tbody id="chars"></tbody>
-    </table>
+  <div class="step" id="s2">
+    <h2>Sign in</h2>
+    <div id="prodWarn"></div>
+    <div class="row">
+      <input id="token" type="password" placeholder="Paste admin cookie" autocomplete="off">
+      <button id="setToken" class="go">Connect</button>
+    </div>
+    <div class="msg"><a href="#" id="openSignin">Get the cookie</a> <span class="dim" id="signinHost"></span></div>
+    <div class="msg" id="tokenState"></div>
+  </div>
 
+  <div class="step" id="s3" hidden>
+    <h2>Characters</h2>
+    <div class="row" style="margin-bottom:12px">
+      <input id="root" class="mono" readonly>
+      <button id="browse">Browse</button>
+    </div>
+    <table><thead><tr>
+      <th style="width:26px"></th><th>Character</th><th>Size</th><th>What will happen</th>
+    </tr></thead><tbody id="chars"></tbody></table>
     <div class="row" style="margin-top:16px">
-      <button id="resolve">Resolve rows</button>
-      <button id="verify">Verify live</button>
-      <button id="publish" class="go">Publish selected</button>
+      <button id="publish" class="go">Publish</button>
+      <span class="dim" id="pubCount" style="font-size:13px"></span>
     </div>
-    <p class="note">Publishing uploads bytes only. Nothing changes for users until the avatar rows
-      are pointed at the new keys — the publisher prints that statement.</p>
-  </section>
+  </div>
 
-  <section>
-    <h2>Output</h2>
-    <pre id="log">Ready.
+  <div class="step" id="s5" hidden>
+    <h2>Run this to go live</h2>
+    <pre id="sql"></pre>
+    <div class="row" style="margin-top:10px">
+      <button id="copySql" class="small">Copy</button>
+      <button id="verify" class="small">Check it worked</button>
+    </div>
+  </div>
 
-Pick an environment, set the admin cookie, then Verify to see what is already live.</pre>
-  </section>
+</div>
+
+<div class="col">
+  <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:0 0 10px;font-weight:600">Progress</h2>
+  <pre id="log"></pre>
+</div>
 </main>
+
+<div class="picker" id="editor"><div class="pbox">
+  <div class="phead"><b style="flex:1">Existing avatars</b><button id="eClose" class="small">Close</button></div>
+  <div class="plist" id="eList"></div>
+  <div class="pfoot" id="eForm" hidden>
+    <div style="flex:1;display:grid;gap:8px">
+      <input id="eName" placeholder="Name">
+      <input id="eDesc" placeholder="Description">
+      <div class="row">
+        <select id="eGender" style="flex:0 0 130px">
+          <option value="">unspecified</option><option value="female">female</option><option value="male">male</option>
+        </select>
+        <label class="dim" style="font-size:13px;display:flex;gap:6px;align-items:center;flex:1">
+          <input type="checkbox" id="eActive" style="flex:0 0 auto;width:auto"> shown in the picker
+        </label>
+        <button id="eBack" class="small">Back</button>
+        <button id="eSave" class="go small">Save</button>
+      </div>
+      <div id="eMsg" class="msg"></div>
+    </div>
+  </div>
+</div></div>
+
+<div class="picker" id="picker"><div class="pbox">
+  <div class="phead">
+    <button id="pUp" class="small">Up</button>
+    <input id="pPath" class="mono" readonly>
+  </div>
+  <div class="plist" id="pList"></div>
+  <div class="pfoot">
+    <button id="pCancel" class="small">Cancel</button>
+    <button id="pUse" class="go small">Use this folder</button>
+  </div>
+</div></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const log = (s) => { $('log').textContent += s; $('log').scrollTop = $('log').scrollHeight; };
-const clear = (s) => { $('log').textContent = s || ''; };
-let CONFIG = null;
+const log = (s) => { $('log').textContent += s; $('log').scrollTop = 1e9; };
+const setLog = (s) => { $('log').textContent = s; };
+const show = (id, yes) => { $(id).hidden = !yes; };
+
+let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [];
 
 async function boot() {
   CONFIG = await (await fetch('/api/config')).json();
   $('root').value = CONFIG.defaultRoot;
-  $('rootLabel').textContent = CONFIG.publisherFound ? '' : 'publish_to_cdn.ps1 NOT FOUND — publishing disabled';
   for (const e of CONFIG.environments) {
     const o = document.createElement('option');
     o.value = e.key; o.textContent = e.label;
     $('env').appendChild(o);
   }
-  $('env').onchange = envChanged;
   envChanged();
-  await scan();
 }
 
 function envChanged() {
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  $('envNote').innerHTML = e && e.danger
-    ? '<span class="danger">This is production, with real customers.</span> Check the cookie you set came from this host.'
-    : 'Cookie must come from this environment — one from the bare host is a production session.';
+  // Ids, publishes and SQL are all per-environment. Carrying any of them across is the
+  // mistake this resets to prevent, so the flow restarts rather than partially updating.
+  RESOLVED = {}; PUBLISHED = {}; CHARS = [];
+  show('s3', false); show('s5', false); $('manage').hidden = true;
+  $('token').value = ''; $('tokenState').innerHTML = ''; $('chars').innerHTML = '';
+  $('signinHost').textContent = e.apiBase;
+  $('prodWarn').innerHTML = e.danger
+    ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
+    : '';
 }
+$('env').onchange = envChanged;
 
-async function scan() {
-  const r = await (await fetch('/api/scan?root=' + encodeURIComponent($('root').value))).json();
-  const tb = $('chars'); tb.innerHTML = '';
-  if (r.error) { tb.innerHTML = `<tr><td colspan="5" class="bad">${r.error}</td></tr>`; return; }
-  if (!r.characters.length) { tb.innerHTML = '<tr><td colspan="5" class="dim">No character directories found.</td></tr>'; return; }
-
-  for (const c of r.characters) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><input type="checkbox" data-char="${c.id}" ${c.ready && c.inRoster ? 'checked' : ''} ${c.ready ? '' : 'disabled'}></td>
-      <td>${c.id}${c.inRoster ? '' : '<span class="prob dim">not in the shipping roster — tick only if you mean it</span>'}${c.problems.map((p) => `<span class="prob">${p}</span>`).join('')}</td>
-      <td class="num">${c.mb} MB</td>
-      <td class="num ${c.textures ? '' : 'bad'}">${c.textures}</td>
-      <td class="aid-cell" data-char="${c.id}"><span class="dim">&mdash;</span></td>`;
-    tb.appendChild(tr);
-  }
-}
+$('openSignin').onclick = (ev) => {
+  ev.preventDefault();
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  window.open(e.apiBase + '/api/auth/signin', '_blank');
+};
 
 $('setToken').onclick = async () => {
   const v = $('token').value.trim();
   if (!v) return;
-  const r = await (await fetch('/api/token', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token: v }),
-  })).json();
+  await fetch('/api/token', { method:'POST', headers:{'content-type':'application/json'},
+                              body: JSON.stringify({ token: v }) });
   $('token').value = '';
-  $('token').placeholder = r.hasToken ? 'set — held in memory only' : 'not set';
-  log(`\n[console] token ${r.hasToken ? 'set' : 'cleared'}\n`);
+  $('tokenState').innerHTML = '<span class="dim">Connecting</span>';
+  setLog('Connecting to ' + $('env').value + '\n');
+  await load();
 };
 
-$('rescan').onclick = scan;
+async function load() {
+  const scan = await (await fetch('/api/scan?root=' + encodeURIComponent($('root').value))).json();
+  CHARS = scan.characters || [];
 
-// Resolution is per-environment, so changing target must not leave stale ids on screen -
-// publishing against another environment's uuid is the failure this whole flow avoids.
-$('env').addEventListener('change', () => {
-  for (const k of Object.keys(RESOLVED)) delete RESOLVED[k];
-  for (const cell of document.querySelectorAll('.aid-cell')) cell.innerHTML = '<span class=\"dim\">&mdash;</span>';
-});
-
-async function run(path, body) {
-  const res = await fetch(path, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  });
-  if (!res.ok && res.headers.get('content-type')?.includes('json')) {
-    const e = await res.json(); log(`\n[console] ${e.error}\n`); return false;
-  }
-  const reader = res.body.getReader(); const dec = new TextDecoder();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    log(dec.decode(value, { stream: true }));
-  }
-  return true;
-}
-
-/**
- * Ask the TARGET environment for each character's avatar id.
- *
- * Never remembered, never typed. Ids differ per environment - panda seeded its own rows - so a
- * uuid carried from somewhere else is a way to publish a correct directory under a stranger's
- * avatar, which nothing downstream would notice.
- */
-const RESOLVED = {};
-
-$('resolve').onclick = async () => {
-  const chars = [...document.querySelectorAll('#chars input[type=checkbox]')].map((c) => c.dataset.char);
-  clear('Resolving ' + chars.length + ' character(s) against ' + $('env').value + '...\n');
   const res = await fetch('/api/resolve', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: $('env').value, characters: chars }),
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ env: $('env').value, characters: CHARS.map((c) => c.id) }),
   });
   const body = await res.json();
-  if (!res.ok) { log('\n[console] ' + body.error + '\n'); return; }
 
-  for (const r of body.resolved) {
-    RESOLVED[r.char] = r.avatarId;
-    const cell = document.querySelector('.aid-cell[data-char="' + r.char + '"]');
-    if (!cell) continue;
-    if (r.avatarId) {
-      const state = r.published ? '<span class="ok">published</span>'
-                                : '<span class="warn">row exists, not published</span>';
-      const inactive = r.active === false ? ' <span class="warn">(inactive)</span>' : '';
-      cell.innerHTML = '<span class="num" style="font-size:11px">' + r.avatarId + '</span>'
-                     + '<span class="prob dim">' + state + inactive + '</span>';
-    } else {
-      cell.innerHTML = '<span class="warn">no row</span> '
-        + '<button class="mk" data-char="' + r.char + '" style="padding:3px 8px;font-size:11px">Create</button>';
-    }
-  }
-  for (const b of document.querySelectorAll('button.mk')) b.onclick = () => createRow(b.dataset.char);
-  const have = body.resolved.filter((r) => r.avatarId).length;
-  log('\n[console] resolved. ' + have + '/' + body.resolved.length + ' have rows.\n');
-};
-
-async function createRow(char) {
-  const name = prompt('Display name for "' + char + '"?', char.charAt(0).toUpperCase() + char.slice(1));
-  if (!name) return;
-  const gender = prompt('Gender (male / female / blank)?', '') || undefined;
-  log('\n[console] creating avatar row for ' + char + '...\n');
-  const res = await fetch('/api/create-avatar', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: $('env').value, char, name, gender, category: 'metahuman' }),
-  });
-  const body = await res.json();
-  if (!res.ok) { log('[console] ' + body.error + '\n'); return; }
-  log('[console] created ' + (body.avatarId || '(id not returned - press Resolve)') + '\n');
-  $('resolve').click();
-}
-
-$('verify').onclick = async () => {
-  clear(`Verifying ${$('env').value}…\n\n`);
-  await run('/api/verify', { env: $('env').value });
-};
-
-$('publish').onclick = async () => {
-  const picked = [...document.querySelectorAll('#chars input[type=checkbox]:checked')].map((c) => c.dataset.char);
-  if (!picked.length) { log('\n[console] nothing selected\n'); return; }
-
-  const avatarIds = {};
-  for (const c of picked) if (RESOLVED[c]) avatarIds[c] = RESOLVED[c];
-  const missing = picked.filter((c) => !avatarIds[c]);
-  if (missing.length) {
-    log("\n[console] no resolved avatar row for: " + missing.join(", ") + "\n");
-    log('[console] press \"Resolve rows\" first - ids come from the target environment, never typed.\n');
+  if (!res.ok) {
+    // The only failure an operator actually hits. One line, and what to do about it.
+    $('tokenState').innerHTML = '<span class="bad">' + body.error + '</span>';
     return;
   }
 
-  const env = $('env').value;
-  const e = CONFIG.environments.find((x) => x.key === env);
-  if (e.danger && !confirm(`Publish ${picked.length} companion(s) to ${e.label}?\n\nThis is production.`)) return;
+  RESOLVED = {};
+  for (const r of body.resolved) RESOLVED[r.char] = r;
+  $('tokenState').innerHTML = '<span class="ok">Connected</span>';
+  show('s3', true);
+  $('manage').hidden = false;
+  render();
+}
 
-  clear(`Publishing ${picked.length} to ${env}…\n\n`);
-  // One at a time, so a failure stops the batch at a known point rather than
-  // leaving a half-published set nobody can describe.
-  for (const c of picked) {
-    log(`\n=== ${c} ===\n`);
-    const ok = await run('/api/publish?root=' + encodeURIComponent($('root').value), {
-      env, characters: [c], bakeHashSuffix: $('suffix').value.trim(), avatarIds,
-    });
-    if (!ok) { log(`\n[console] stopped at ${c}\n`); break; }
+function render() {
+  const tb = $('chars'); tb.innerHTML = '';
+  if (!CHARS.length) {
+    tb.innerHTML = '<tr><td colspan="4" class="dim">Nothing here &mdash; try Browse.</td></tr>';
+    return;
   }
+
+  for (const c of CHARS) {
+    const r = RESOLVED[c.id] || {};
+    /* Whether a record already exists is the publisher's problem, not the operator's. Both
+     * cases are one tick and one button; the only thing a brand-new character genuinely needs
+     * from a person is a display name, so that is the only thing it asks for - inline, filled
+     * in, editable. No separate step, no id, nothing to look up first. */
+    let action, needsName = false;
+    if (!c.ready) action = '<span class="bad">' + c.problems[0] + '</span>';
+    else if (!r.avatarId) { action = '<span class="ok">Add as new</span>'; needsName = true; }
+    else if (r.published) action = '<span class="dim">Update to a new version</span>';
+    else action = '<span class="dim">Add its model</span>';
+
+    const tick = c.ready && c.inRoster;
+    const tr = document.createElement('tr');
+    if (!c.ready) tr.className = 'off';
+    tr.innerHTML = '<td><input type="checkbox" data-char="' + c.id + '"'
+      + (tick ? ' checked' : '') + (c.ready ? '' : ' disabled') + '></td>'
+      + '<td>' + c.id + (c.inRoster ? '' : ' <span class="dim">&middot; extra</span>') + '</td>'
+      + '<td class="mono dim">' + c.mb + ' MB</td>'
+      + '<td>' + action
+      + (needsName ? '<br><input class="nm" data-char="' + c.id + '" value="' + title(c.id)
+          + '" style="margin-top:5px;padding:5px 8px;font-size:13px;max-width:220px">' : '')
+      + '</td>';
+    tb.appendChild(tr);
+  }
+  for (const cb of document.querySelectorAll('#chars input[type=checkbox]')) cb.onchange = count;
+  count();
+}
+
+const title = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+const picked = () =>
+  [...document.querySelectorAll('#chars input[type=checkbox]:checked')].map((c) => c.dataset.char);
+
+function count() {
+  const n = picked().length;
+  $('pubCount').textContent = n ? n + ' selected' : '';
+  $('publish').disabled = n === 0;
+}
+
+$('publish').onclick = async () => {
+  const list = picked();
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?')) return;
+
+  // Never typed. A label only has to be new and readable; a timestamp is both, and inventing
+  // one by hand is a step that can only go wrong.
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + String(Date.now()).slice(-4);
+
+  $('publish').disabled = true;
+  setLog('Publishing ' + list.length + ' to ' + $('env').value + '\n');
+
+  for (const c of list) {
+    log('\n' + c + '\n');
+    // Create the record if this character has never existed here. The operator ticked a box;
+    // whether that means create-then-publish or just publish is not a distinction worth
+    // making them hold.
+    if (!RESOLVED[c] || !RESOLVED[c].avatarId) {
+      const el = document.querySelector('input.nm[data-char=\"' + c + '\"]');
+      const name = (el && el.value.trim()) || title(c);
+      log('  adding as ' + name + '\n');
+      const mk = await fetch('/api/create-avatar', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ env: $('env').value, char: c, name, category:'metahuman' }),
+      });
+      if (!mk.ok) { log('  ' + (await mk.json()).error + '\n'); break; }
+      // Re-ask rather than trust the create response's shape for the id.
+      const rr = await fetch('/api/resolve', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ env: $('env').value, characters:[c] }),
+      });
+      const rb = await rr.json();
+      if (!rr.ok || !rb.resolved[0].avatarId) { log('  could not read the new record back\n'); break; }
+      RESOLVED[c] = rb.resolved[0];
+    }
+
+    const res = await fetch('/api/publish?root=' + encodeURIComponent($('root').value), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp,
+                             avatarIds: { [c]: RESOLVED[c].avatarId } }),
+    });
+    if (!res.ok) { log((await res.json()).error + '\n'); break; }
+
+    let out = '';
+    const rd = res.body.getReader(); const dec = new TextDecoder();
+    for (;;) { const t = await rd.read(); if (t.done) break;
+               const s = dec.decode(t.value,{stream:true}); out += s; log(s); }
+
+    const m = out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+/);
+    if (!m) { log('\nNo published path came back. Stopped.\n'); break; }
+    PUBLISHED[c] = { key: m[0], avatarId: RESOLVED[c].avatarId, before: RESOLVED[c].modelPath };
+    renderSql();
+  }
+
+  $('publish').disabled = false;
+  if (Object.keys(PUBLISHED).length) show('s5', true);
+};
+
+function renderSql() {
+  const rows = Object.entries(PUBLISHED);
+  if (!rows.length) return;
+  let out = 'BEGIN;\n';
+  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + p.key + "', updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
+  out += 'COMMIT;\n\n-- undo\nBEGIN;\n';
+  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + (p.before || '') + "', updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
+  out += 'COMMIT;';
+  $('sql').textContent = out;
+}
+
+$('copySql').onclick = () => {
+  navigator.clipboard.writeText($('sql').textContent);
+  $('copySql').textContent = 'Copied';
+  setTimeout(() => { $('copySql').textContent = 'Copy'; }, 1400);
+};
+
+$('verify').onclick = async () => {
+  setLog('Checking ' + $('env').value + '\n\n');
+  const res = await fetch('/api/verify', { method:'POST', headers:{'content-type':'application/json'},
+                                           body: JSON.stringify({ env: $('env').value }) });
+  if (!res.ok) { log((await res.json()).error + '\n'); return; }
+  const rd = res.body.getReader(); const dec = new TextDecoder();
+  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value,{stream:true})); }
+};
+
+// ---- edit an existing avatar -----------------------------------------------------------
+
+let EDITING = null;
+
+$('manage').onclick = async () => {
+  $('editor').classList.add('on');
+  $('eForm').hidden = true;
+  $('eList').innerHTML = '<div class="pitem dim">Loading</div>';
+  const res = await fetch('/api/avatars', { method:'POST', headers:{'content-type':'application/json'},
+                                            body: JSON.stringify({ env: $('env').value }) });
+  const body = await res.json();
+  if (!res.ok) { $('eList').innerHTML = '<div class="pitem bad">' + body.error + '</div>'; return; }
+
+  $('eList').innerHTML = '';
+  for (const a of body.avatars) {
+    const el = document.createElement('div');
+    el.className = 'pitem';
+    el.innerHTML = '<span>' + a.name + (a.isMetaHuman ? '' : ' <span class="dim">&middot; other</span>') + '</span>'
+                 + (a.isActive ? '<span class="dim">shown</span>' : '<span class="warn">hidden</span>');
+    el.onclick = () => edit(a);
+    $('eList').appendChild(el);
+  }
+  if (!body.avatars.length) $('eList').innerHTML = '<div class="pitem dim">None here yet.</div>';
+};
+
+function edit(a) {
+  EDITING = a;
+  $('eList').innerHTML = '<div class="pitem dim">' + a.name + '</div>';
+  $('eForm').hidden = false;
+  $('eName').value = a.name; $('eDesc').value = a.description;
+  $('eGender').value = a.gender; $('eActive').checked = a.isActive;
+  $('eMsg').innerHTML = '';
+}
+
+$('eBack').onclick = () => $('manage').click();
+$('eClose').onclick = () => $('editor').classList.remove('on');
+
+$('eSave').onclick = async () => {
+  if (!EDITING) return;
+  $('eMsg').innerHTML = '<span class="dim">Saving</span>';
+  const res = await fetch('/api/update-avatar', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ env: $('env').value, avatarId: EDITING.id,
+                           name: $('eName').value, description: $('eDesc').value,
+                           gender: $('eGender').value, isActive: $('eActive').checked }),
+  });
+  const body = await res.json();
+  $('eMsg').innerHTML = res.ok ? '<span class="ok">Saved</span>'
+                               : '<span class="bad">' + body.error + '</span>';
+  if (res.ok) await load();
+};
+
+// ---- folder picker ---------------------------------------------------------------------
+
+let pCurrent = '';
+async function pGo(p) {
+  const r = await (await fetch('/api/browse?path=' + encodeURIComponent(p))).json();
+  pCurrent = r.path;
+  $('pPath').value = r.path || 'This computer';
+  $('pUse').disabled = !r.path;
+  const list = $('pList'); list.innerHTML = '';
+  for (const d of r.dirs) {
+    const el = document.createElement('div');
+    el.className = 'pitem';
+    // The one thing worth saying in a file list: which folder is the one you want.
+    const tag = d.characterCount ? '<span class="ok">' + d.characterCount + ' characters</span>'
+              : d.isCharacter ? '<span class="dim">character</span>' : '';
+    el.innerHTML = '<span>' + d.name + '</span>' + tag;
+    el.onclick = () => pGo(d.path);
+    list.appendChild(el);
+  }
+  if (!r.dirs.length) list.innerHTML = '<div class="pitem dim">' + (r.error || 'Empty') + '</div>';
+}
+$('browse').onclick = () => { $('picker').classList.add('on'); pGo($('root').value); };
+$('pUp').onclick = async () => {
+  const r = await (await fetch('/api/browse?path=' + encodeURIComponent(pCurrent))).json();
+  pGo(r.parent || '');
+};
+$('pCancel').onclick = () => $('picker').classList.remove('on');
+$('pUse').onclick = async () => {
+  $('root').value = pCurrent;
+  $('picker').classList.remove('on');
+  await load();
 };
 
 boot();

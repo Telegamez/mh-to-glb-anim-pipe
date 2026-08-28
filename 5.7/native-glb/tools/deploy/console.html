@@ -67,11 +67,12 @@
 
     <h2 style="margin-top:22px">2 · Characters</h2>
     <table>
-      <thead><tr><th style="width:26px"></th><th>Character</th><th>GLB</th><th>Textures</th><th>Avatar ID</th></tr></thead>
+      <thead><tr><th style="width:26px"></th><th>Character</th><th>GLB</th><th>Textures</th><th>Avatar row (in target)</th></tr></thead>
       <tbody id="chars"></tbody>
     </table>
 
     <div class="row" style="margin-top:16px">
+      <button id="resolve">Resolve rows</button>
       <button id="verify">Verify live</button>
       <button id="publish" class="go">Publish selected</button>
     </div>
@@ -127,7 +128,7 @@ async function scan() {
       <td>${c.id}${c.inRoster ? '' : '<span class="prob dim">not in the shipping roster — tick only if you mean it</span>'}${c.problems.map((p) => `<span class="prob">${p}</span>`).join('')}</td>
       <td class="num">${c.mb} MB</td>
       <td class="num ${c.textures ? '' : 'bad'}">${c.textures}</td>
-      <td><input class="aid" data-char="${c.id}" placeholder="uuid" style="font-size:11px"></td>`;
+      <td class="aid-cell" data-char="${c.id}"><span class="dim">&mdash;</span></td>`;
     tb.appendChild(tr);
   }
 }
@@ -146,6 +147,13 @@ $('setToken').onclick = async () => {
 
 $('rescan').onclick = scan;
 
+// Resolution is per-environment, so changing target must not leave stale ids on screen -
+// publishing against another environment's uuid is the failure this whole flow avoids.
+$('env').addEventListener('change', () => {
+  for (const k of Object.keys(RESOLVED)) delete RESOLVED[k];
+  for (const cell of document.querySelectorAll('.aid-cell')) cell.innerHTML = '<span class=\"dim\">&mdash;</span>';
+});
+
 async function run(path, body) {
   const res = await fetch(path, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -162,6 +170,60 @@ async function run(path, body) {
   return true;
 }
 
+/**
+ * Ask the TARGET environment for each character's avatar id.
+ *
+ * Never remembered, never typed. Ids differ per environment - panda seeded its own rows - so a
+ * uuid carried from somewhere else is a way to publish a correct directory under a stranger's
+ * avatar, which nothing downstream would notice.
+ */
+const RESOLVED = {};
+
+$('resolve').onclick = async () => {
+  const chars = [...document.querySelectorAll('#chars input[type=checkbox]')].map((c) => c.dataset.char);
+  clear('Resolving ' + chars.length + ' character(s) against ' + $('env').value + '...\n');
+  const res = await fetch('/api/resolve', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: $('env').value, characters: chars }),
+  });
+  const body = await res.json();
+  if (!res.ok) { log('\n[console] ' + body.error + '\n'); return; }
+
+  for (const r of body.resolved) {
+    RESOLVED[r.char] = r.avatarId;
+    const cell = document.querySelector('.aid-cell[data-char="' + r.char + '"]');
+    if (!cell) continue;
+    if (r.avatarId) {
+      const state = r.published ? '<span class="ok">published</span>'
+                                : '<span class="warn">row exists, not published</span>';
+      const inactive = r.active === false ? ' <span class="warn">(inactive)</span>' : '';
+      cell.innerHTML = '<span class="num" style="font-size:11px">' + r.avatarId + '</span>'
+                     + '<span class="prob dim">' + state + inactive + '</span>';
+    } else {
+      cell.innerHTML = '<span class="warn">no row</span> '
+        + '<button class="mk" data-char="' + r.char + '" style="padding:3px 8px;font-size:11px">Create</button>';
+    }
+  }
+  for (const b of document.querySelectorAll('button.mk')) b.onclick = () => createRow(b.dataset.char);
+  const have = body.resolved.filter((r) => r.avatarId).length;
+  log('\n[console] resolved. ' + have + '/' + body.resolved.length + ' have rows.\n');
+};
+
+async function createRow(char) {
+  const name = prompt('Display name for "' + char + '"?', char.charAt(0).toUpperCase() + char.slice(1));
+  if (!name) return;
+  const gender = prompt('Gender (male / female / blank)?', '') || undefined;
+  log('\n[console] creating avatar row for ' + char + '...\n');
+  const res = await fetch('/api/create-avatar', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: $('env').value, char, name, gender, category: 'metahuman' }),
+  });
+  const body = await res.json();
+  if (!res.ok) { log('[console] ' + body.error + '\n'); return; }
+  log('[console] created ' + (body.avatarId || '(id not returned - press Resolve)') + '\n');
+  $('resolve').click();
+}
+
 $('verify').onclick = async () => {
   clear(`Verifying ${$('env').value}…\n\n`);
   await run('/api/verify', { env: $('env').value });
@@ -172,11 +234,13 @@ $('publish').onclick = async () => {
   if (!picked.length) { log('\n[console] nothing selected\n'); return; }
 
   const avatarIds = {};
-  for (const i of document.querySelectorAll('#chars input.aid')) {
-    if (i.value.trim()) avatarIds[i.dataset.char] = i.value.trim();
-  }
+  for (const c of picked) if (RESOLVED[c]) avatarIds[c] = RESOLVED[c];
   const missing = picked.filter((c) => !avatarIds[c]);
-  if (missing.length) { log(`\n[console] missing avatar id for: ${missing.join(', ')}\n`); return; }
+  if (missing.length) {
+    log("\n[console] no resolved avatar row for: " + missing.join(", ") + "\n");
+    log('[console] press \"Resolve rows\" first - ids come from the target environment, never typed.\n');
+    return;
+  }
 
   const env = $('env').value;
   const e = CONFIG.environments.find((x) => x.key === env);

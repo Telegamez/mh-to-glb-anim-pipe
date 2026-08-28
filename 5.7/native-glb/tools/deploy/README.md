@@ -121,15 +121,35 @@ the guard's charset now pinned to the route's by test.
 
 ---
 
-## The gap — new characters in a remote environment
+## Avatar ids — resolved, never typed
 
-Steps 2–5 assume the `avatars` and `avatar_companions` rows already exist. Locally the roster
-seeder creates them. For panda and beta they are created through the admin front door, and that
-part is **not scripted yet**.
+Press **Resolve rows**. The console asks the target environment for each character's avatar row
+and shows its id, whether it is published, and whether it is active.
 
-Until it is, a genuinely new character needs its rows made by hand before the console can publish
-to it — the console asks for an avatar id per character for exactly this reason, rather than
-guessing.
+Ids are **not** carried between environments. Panda seeded its own rows, so its uuids differ from
+local's and from beta's — a remembered uuid is not merely inconvenient, it is a way to publish a
+correct directory under a stranger's avatar, which nothing downstream would notice. Changing the
+target environment clears the resolved ids for the same reason.
+
+A character with no row shows **no row** and a **Create** button, which posts to
+`/api/admin/avatars` with `name`, `slug` (`mh-<char>`) and `category`. That route will not accept
+a `modelPath` — the registry is pointed at bytes as a separate step, after they exist — so a row
+created this way is real but modelless, which is exactly the state the publish then fills.
+
+Publishing refuses to start for any character without a resolved id.
+
+### Still by hand: the companion row
+
+`POST /api/admin/companions` requires `modelPath` and `voiceId`, so a companion row can only be
+created **after** its publish. The avatar row is what the console creates; the companion row —
+the thing the picker actually lists — is not scripted yet.
+
+Full order for a genuinely new character:
+
+1. Resolve → Create (avatar row)
+2. Publish the directory
+3. Create the companion row, with the published `modelPath` and a voice
+4. Point `avatars.model_path` at the new key
 
 Two other things still owed:
 

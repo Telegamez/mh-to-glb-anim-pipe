@@ -171,6 +171,77 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { hasToken: Boolean(session.token) });
     }
 
+    /**
+     * Resolve each character to its avatar row in the TARGET environment.
+     *
+     * The console asked the operator to type uuids. That was wrong in a way worth naming: the
+     * ids differ per environment — panda seeded its own rows — so a remembered uuid is not
+     * merely inconvenient, it is a way to publish a correct directory under a stranger's
+     * avatar. The environment is the only authority on its own ids, so ask it.
+     *
+     * A character with no row comes back `avatarId: null` rather than as an error: that is a
+     * real and expected state for a character that has never been published here, and the page
+     * offers to create it.
+     */
+    if (url.pathname === '/api/resolve' && req.method === 'POST') {
+      const { env, characters } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+
+      const r = await fetch(`${target.apiBase}/api/admin/avatars?limit=200`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!r.ok) return send(res, 502, { error: `admin API ${r.status} — is the cookie for ${env}?` });
+      const body = await r.json();
+      const rows = body.avatars || body.data || [];
+
+      const resolved = (characters || []).map((char) => {
+        const slug = `mh-${char}`;
+        const row = rows.find((x) => x.slug === slug);
+        return {
+          char, slug,
+          avatarId: row ? row.id : null,
+          name: row ? row.name : null,
+          active: row ? Boolean(row.isActive) : null,
+          modelPath: row ? row.modelPath : null,
+          published: Boolean(row && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\//i.test(row.modelPath || '')),
+        };
+      });
+      return send(res, 200, { environment: env, resolved });
+    }
+
+    /**
+     * Create the avatar row for a character that has none.
+     *
+     * `modelPath` is deliberately not sent, and the route would not accept it: the registry is
+     * pointed at bytes as a separate step, after they exist. So a row created here is a real
+     * row with no model yet, which is exactly the state the publish then fills.
+     */
+    if (url.pathname === '/api/create-avatar' && req.method === 'POST') {
+      const { env, char, name, gender, description, category } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      if (!char || !name) return send(res, 400, { error: 'char and name are required' });
+
+      const r = await fetch(`${target.apiBase}/api/admin/avatars`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          slug: `mh-${char}`,
+          category: category || 'metahuman',
+          gender: gender || undefined,
+          description: description || undefined,
+          tags: ['metahuman'],
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) return send(res, 502, { error: out.error || `create failed (${r.status})` });
+      return send(res, 200, { avatarId: out.id || out.avatar?.id || null, raw: out });
+    }
+
     if (url.pathname === '/api/verify' && req.method === 'POST') {
       const { env } = await readBody(req);
       const target = ENVIRONMENTS[env];

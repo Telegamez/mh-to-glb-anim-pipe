@@ -163,8 +163,11 @@ try {
   Write-Host "[publish_to_cdn] modelKey: $modelKey"
   Write-Host ""
   Write-Host "Publishing bytes does NOT point the registry at them. To go live:"
-  Write-Host "  update avatars set model_path = '$modelKey' where id = '$AvatarId';"
+  Write-Host "  update avatars set model_path = '$modelKey', status = 'active' where id = '$AvatarId';"
   Write-Host "Rolling back is putting the previous model_path back."
+  # status rides along because a row created through the admin API starts as 'processing',
+  # and the companion form only offers avatars that are isActive AND status=active. Without
+  # it the character publishes correctly and then cannot be picked when its companion is made.
 }
 finally {
   foreach ($s in $streams) { $s.Dispose() }

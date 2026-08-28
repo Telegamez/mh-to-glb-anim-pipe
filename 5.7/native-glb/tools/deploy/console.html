@@ -301,7 +301,7 @@ $('publish').onclick = async () => {
 
     const m = out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+/);
     if (!m) { log('\nNo published path came back. Stopped.\n'); break; }
-    PUBLISHED[c] = { key: m[0], avatarId: RESOLVED[c].avatarId, before: RESOLVED[c].modelPath };
+    PUBLISHED[c] = { key: m[0], avatarId: RESOLVED[c].avatarId, before: RESOLVED[c].modelPath, beforeStatus: RESOLVED[c].status };
     renderSql();
   }
 
@@ -313,9 +313,14 @@ function renderSql() {
   const rows = Object.entries(PUBLISHED);
   if (!rows.length) return;
   let out = 'BEGIN;\n';
-  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + p.key + "', updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
+  // status goes with the path: a row the admin API created starts as 'processing', and the
+  // companion form only lists avatars that are isActive AND status=active. Without this the
+  // character publishes correctly and then cannot be picked when making its companion.
+  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + p.key + "', status = 'active', updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
   out += 'COMMIT;\n\n-- undo\nBEGIN;\n';
-  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + (p.before || '') + "', updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
+  // The undo restores the status the row actually had, not a guess. Where it was not read
+  // back, status is left out entirely rather than reverted to something invented.
+  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + (p.before || '') + "'" + (p.beforeStatus ? ", status = '" + p.beforeStatus + "'" : "") + ", updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
   out += 'COMMIT;';
   $('sql').textContent = out;
 }

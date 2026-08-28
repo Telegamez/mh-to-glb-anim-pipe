@@ -107,7 +107,7 @@ const ENVIRONMENTS = {
 const ROSTER = ['telly', 'tele', 'telie', 'telee', 'tele1', 'tele2'];
 
 /** Held for the process lifetime only. Never persisted. */
-const session = { token: null };
+const session = { token: null, prior: {} };
 
 // ---------------------------------------------------------------------------------------
 
@@ -171,16 +171,98 @@ function readBody(req) {
  * Plain chunked text rather than SSE: the consumer is one page showing a log, and a batch that
  * takes minutes should show its first line immediately rather than after the last one.
  */
-function stream(res, file, args, extraEnv = {}) {
+// ---------------------------------------------------------------------------------------
+// The publish journal
+//
+// A publish streams to the browser and is then gone. That is survivable for the model key,
+// which can be read back off the CDN, and not survivable at all for the *previous* model_path:
+// nothing else records it, and it is the entire rollback. So every publish — including a failed
+// one — appends a record to disk.
+//
+// Records are grouped by bake suffix rather than by date, because the suffix is the batch's own
+// identity: one run's characters land in one file however long the run takes or how near midnight
+// it starts.
+//
+// No token is ever written here. Avatar ids and CDN keys are not credentials.
+
+const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
+
+function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code }) {
+  const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
+  const modelKey = grab(/modelKey:\s*(\S+)/);
+  const files = grab(/OK - (\d+ files published)/);
+  const size = grab(/\d+ files, ([\d.]+ MB)/);
+
+  const out = [`## ${char}`, ''];
+  out.push(`- when    ${new Date().toISOString()}`);
+  out.push(`- avatar  \`${avatarId}\``);
+  out.push(`- bake    \`${bakeHash}\``);
+  if (files || size) out.push(`- upload  ${[files, size].filter(Boolean).join(', ')}`);
+  const wasPath = previous?.modelPath ?? null;
+  const wasStatus = previous?.status ?? null;
+  out.push(`- was     ${wasPath ? `\`${wasPath}\`` : '(no model on the row)'}${wasStatus ? `, status \`${wasStatus}\`` : ''}`);
+  out.push('');
+
+  if (code !== 0 || !modelKey) {
+    // Worth a record precisely because it failed — this is the evidence that a character in a
+    // batch was attempted and did not land, which the absence of a record would not show.
+    out.push(`**FAILED** — exit ${code}. Nothing was published; the row is untouched.`, '');
+  } else {
+    out.push('```sql');
+    out.push('-- go live');
+    // status is set alongside the path because a row created by the admin API starts as
+    // 'processing', and the companion form only offers avatars that are isActive AND active.
+    // Without this the character publishes correctly and cannot be picked.
+    out.push(`update avatars set model_path = '${modelKey}', status = 'active' where id = '${avatarId}';`);
+    out.push('');
+    out.push('-- roll back');
+    out.push(`update avatars set model_path = ${wasPath ? `'${wasPath}'` : 'NULL'}`
+      + `${wasStatus ? `, status = '${wasStatus}'` : ''} where id = '${avatarId}';`);
+    if (!wasPath) out.push('-- (the row carried no model before this publish)');
+    if (!wasStatus) out.push('-- (previous status unknown — left as it is, rather than guessed)');
+    out.push('```', '');
+  }
+
+  try {
+    fs.mkdirSync(JOURNAL_DIR, { recursive: true });
+    const file = path.join(JOURNAL_DIR, `${env}-${bakeSuffix}.md`);
+    if (!fs.existsSync(file)) {
+      fs.writeFileSync(file, [
+        `# Publish to ${env}`, '',
+        `${apiBase}`,
+        `bake suffix \`${bakeSuffix}\``, '',
+        'Publishing moved bytes only. Nothing below is live until its "go live" statement runs.',
+        '', '---', '',
+      ].join('\n'));
+    }
+    fs.appendFileSync(file, out.join('\n') + '\n');
+    return file;
+  } catch {
+    // A journal that cannot be written must not take the publish down with it — the publish is
+    // the thing that matters, and it has already succeeded by the time we get here.
+    return null;
+  }
+}
+
+function stream(res, file, args, extraEnv = {}, onClose) {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
   const child = spawn('pwsh', ['-NoProfile', '-File', file, ...args], {
     env: { ...process.env, ...extraEnv },
     windowsHide: true,
   });
-  child.stdout.on('data', (d) => res.write(d));
-  child.stderr.on('data', (d) => res.write(d));
+  // Held only to lift the key and counts out at the end, and capped: the browser is the live
+  // view, this is a fixed-size tail, and a chatty child cannot grow it without bound.
+  let seen = '';
+  const keep = (d) => { if (seen.length < 64_000) seen += d.toString(); };
+  child.stdout.on('data', (d) => { keep(d); res.write(d); });
+  child.stderr.on('data', (d) => { keep(d); res.write(d); });
   child.on('error', (e) => { res.write(`\n[console] failed to start: ${e.message}\n`); res.end(); });
-  child.on('close', (code) => { res.write(`\n[console] exit ${code}\n`); res.end(); });
+  child.on('close', (code) => {
+    const recorded = onClose ? onClose(seen, code) : null;
+    if (recorded) res.write(`\n[console] recorded: ${recorded}\n`);
+    res.write(`\n[console] exit ${code}\n`);
+    res.end();
+  });
 }
 
 // ---------------------------------------------------------------------------------------
@@ -305,9 +387,21 @@ const server = http.createServer(async (req, res) => {
           name: row ? row.name : null,
           active: row ? Boolean(row.isActive) : null,
           modelPath: row ? row.modelPath : null,
+          // A new row is created with status 'processing', and the admin companion form only
+          // offers avatars matching isActive=true AND status=active. Left alone, a freshly
+          // published character is simply absent from that dropdown with nothing to explain
+          // why — so the status is carried here and the go-live SQL sets it.
+          status: row ? (row.status ?? null) : null,
           published: Boolean(row && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\//i.test(row.modelPath || '')),
         };
       });
+      // What each row points at *now*, kept for the journal. A publish overwrites this value,
+      // and after that it exists nowhere else — so it is captured here, before it can be lost,
+      // rather than asked for at rollback time when the answer is already gone.
+      for (const row of resolved) {
+        session.prior[`${env}/${row.char}`] = { modelPath: row.modelPath || null, status: row.status || null };
+      }
+
       return send(res, 200, { environment: env, resolved });
     }
 
@@ -371,7 +465,12 @@ const server = http.createServer(async (req, res) => {
         '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
         '-Source', path.join(url.searchParams.get('root') || DEFAULT_ROOT, char),
         '-BakeHash', `${char}-${bakeHashSuffix}`,
-      ], { TG_ADMIN_TOKEN: session.token });
+      ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
+        env, apiBase: target.apiBase, char, avatarId,
+        bakeSuffix: bakeHashSuffix, bakeHash: `${char}-${bakeHashSuffix}`,
+        previous: session.prior[`${env}/${char}`] ?? null,
+        output, code,
+      }));
     }
 
     return send(res, 404, { error: 'not found' });

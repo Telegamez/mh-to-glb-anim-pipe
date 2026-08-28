@@ -117,7 +117,25 @@ Folder problems:
 Publishing only uploads files. Nobody sees a change until the SQL runs.
 
 That's deliberate: a bad publish can't take a working companion down, and undoing it is putting a
-value back rather than restoring files. **Keep the undo half of the SQL.**
+value back rather than restoring files.
+
+### Every publish is written down
+
+You don't have to keep the SQL out of the log yourself. Each publish appends to:
+
+```
+C:\Users\<you>\.telegames-publisher\publishes\<environment>-<bake suffix>.md
+```
+
+One file per run — all six characters of a batch land together — holding what was published, when,
+against which environment, and **both** SQL statements: the one that goes live and the one that puts
+it back. That second statement is the reason this exists: the value it restores is whatever the row
+pointed at before, and after a publish overwrites it, nothing else remembers it.
+
+Failed characters are recorded too. A record saying a publish failed is what tells you it was
+attempted; a missing record would look the same as never having tried.
+
+The file contains avatar ids and CDN paths. It never contains your cookie.
 
 ---
 

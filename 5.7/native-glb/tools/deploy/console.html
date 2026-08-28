@@ -60,6 +60,8 @@
   .phead{border-bottom:1px solid var(--line)}
   .pfoot{border-top:1px solid var(--line);justify-content:flex-end}
   .plist{overflow:auto;padding:5px}
+  [hidden]{display:none !important}   /* beats .pfoot's display:flex */
+  .grouphead{padding:10px 11px 5px;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
   .pitem{padding:9px 11px;border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;font-size:14px}
   .pitem:hover{background:var(--bg)}
 </style>
@@ -68,10 +70,7 @@
 
 <header>
   <h1>Telegames MetaHuman Publisher</h1>
-  <span style="display:flex;gap:9px;align-items:center">
-    <button id="manage" class="small" hidden>Edit existing</button>
-    <select id="env" style="flex:0 0 auto;width:auto"></select>
-  </span>
+  <select id="env" style="flex:0 0 auto;width:auto"></select>
 </header>
 
 <main>
@@ -120,28 +119,6 @@
 </div>
 </main>
 
-<div class="picker" id="editor"><div class="pbox">
-  <div class="phead"><b style="flex:1">Existing avatars</b><button id="eClose" class="small">Close</button></div>
-  <div class="plist" id="eList"></div>
-  <div class="pfoot" id="eForm" hidden>
-    <div style="flex:1;display:grid;gap:8px">
-      <input id="eName" placeholder="Name">
-      <input id="eDesc" placeholder="Description">
-      <div class="row">
-        <select id="eGender" style="flex:0 0 130px">
-          <option value="">unspecified</option><option value="female">female</option><option value="male">male</option>
-        </select>
-        <label class="dim" style="font-size:13px;display:flex;gap:6px;align-items:center;flex:1">
-          <input type="checkbox" id="eActive" style="flex:0 0 auto;width:auto"> shown in the picker
-        </label>
-        <button id="eBack" class="small">Back</button>
-        <button id="eSave" class="go small">Save</button>
-      </div>
-      <div id="eMsg" class="msg"></div>
-    </div>
-  </div>
-</div></div>
-
 <div class="picker" id="picker"><div class="pbox">
   <div class="phead">
     <button id="pUp" class="small">Up</button>
@@ -178,7 +155,7 @@ function envChanged() {
   // Ids, publishes and SQL are all per-environment. Carrying any of them across is the
   // mistake this resets to prevent, so the flow restarts rather than partially updating.
   RESOLVED = {}; PUBLISHED = {}; CHARS = [];
-  show('s3', false); show('s5', false); $('manage').hidden = true;
+  show('s3', false); show('s5', false);
   $('token').value = ''; $('tokenState').innerHTML = ''; $('chars').innerHTML = '';
   $('signinHost').textContent = e.apiBase;
   $('prodWarn').innerHTML = e.danger
@@ -224,7 +201,6 @@ async function load() {
   for (const r of body.resolved) RESOLVED[r.char] = r;
   $('tokenState').innerHTML = '<span class="ok">Connected</span>';
   show('s3', true);
-  $('manage').hidden = false;
   render();
 }
 
@@ -357,58 +333,6 @@ $('verify').onclick = async () => {
   if (!res.ok) { log((await res.json()).error + '\n'); return; }
   const rd = res.body.getReader(); const dec = new TextDecoder();
   for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value,{stream:true})); }
-};
-
-// ---- edit an existing avatar -----------------------------------------------------------
-
-let EDITING = null;
-
-$('manage').onclick = async () => {
-  $('editor').classList.add('on');
-  $('eForm').hidden = true;
-  $('eList').innerHTML = '<div class="pitem dim">Loading</div>';
-  const res = await fetch('/api/avatars', { method:'POST', headers:{'content-type':'application/json'},
-                                            body: JSON.stringify({ env: $('env').value }) });
-  const body = await res.json();
-  if (!res.ok) { $('eList').innerHTML = '<div class="pitem bad">' + body.error + '</div>'; return; }
-
-  $('eList').innerHTML = '';
-  for (const a of body.avatars) {
-    const el = document.createElement('div');
-    el.className = 'pitem';
-    el.innerHTML = '<span>' + a.name + (a.isMetaHuman ? '' : ' <span class="dim">&middot; other</span>') + '</span>'
-                 + (a.isActive ? '<span class="dim">shown</span>' : '<span class="warn">hidden</span>');
-    el.onclick = () => edit(a);
-    $('eList').appendChild(el);
-  }
-  if (!body.avatars.length) $('eList').innerHTML = '<div class="pitem dim">None here yet.</div>';
-};
-
-function edit(a) {
-  EDITING = a;
-  $('eList').innerHTML = '<div class="pitem dim">' + a.name + '</div>';
-  $('eForm').hidden = false;
-  $('eName').value = a.name; $('eDesc').value = a.description;
-  $('eGender').value = a.gender; $('eActive').checked = a.isActive;
-  $('eMsg').innerHTML = '';
-}
-
-$('eBack').onclick = () => $('manage').click();
-$('eClose').onclick = () => $('editor').classList.remove('on');
-
-$('eSave').onclick = async () => {
-  if (!EDITING) return;
-  $('eMsg').innerHTML = '<span class="dim">Saving</span>';
-  const res = await fetch('/api/update-avatar', {
-    method:'POST', headers:{'content-type':'application/json'},
-    body: JSON.stringify({ env: $('env').value, avatarId: EDITING.id,
-                           name: $('eName').value, description: $('eDesc').value,
-                           gender: $('eGender').value, isActive: $('eActive').checked }),
-  });
-  const body = await res.json();
-  $('eMsg').innerHTML = res.ok ? '<span class="ok">Saved</span>'
-                               : '<span class="bad">' + body.error + '</span>';
-  if (res.ok) await load();
 };
 
 // ---- folder picker ---------------------------------------------------------------------

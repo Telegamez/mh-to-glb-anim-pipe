@@ -29,6 +29,7 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -41,9 +42,51 @@ const arg = (name, fallback) => {
 };
 
 const PORT = Number(arg('port', 7311));
-const DEFAULT_ROOT = arg('root', 'S:\\Avatars\\metahuman\\telegamez\\packages\\web-next\\public\\models');
-const PUBLISHER = path.resolve(HERE, '..', 'publish_to_cdn.ps1');
-const VERIFIER = path.resolve(HERE, 'Test-CompanionsLive.ps1');
+
+/**
+ * Where the character folders live, remembered between runs.
+ *
+ * The built-in default is a path inside the monorepo, which whoever built this has and an
+ * operator will not. So the folder they pick is remembered - in the user profile rather than
+ * beside the code, so there is nothing to gitignore and nothing that follows the repo around.
+ *
+ * Order: --root wins, then the remembered one, then the developer default. A remembered path
+ * that no longer exists is ignored rather than shown, so a moved drive degrades to "pick a
+ * folder" instead of an error about somewhere this operator has never been.
+ */
+const SETTINGS = path.join(os.homedir(), '.telegames-publisher.json');
+
+const readSetting = (key) => {
+  try { return JSON.parse(fs.readFileSync(SETTINGS, 'utf8'))[key]; } catch { return undefined; }
+};
+const writeSetting = (key, value) => {
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch { /* first run */ }
+  all[key] = value;
+  try { fs.writeFileSync(SETTINGS, JSON.stringify(all, null, 2)); } catch { /* read-only home */ }
+};
+
+const remembered = readSetting('root');
+const DEFAULT_ROOT = arg('root', null)
+  || (remembered && fs.existsSync(remembered) ? remembered : null)
+  || 'S:\\Avatars\\metahuman\\telegamez\\packages\\web-next\\public\\models';
+/**
+ * Find the scripts whether this is running from the repo or from the shared bundle.
+ *
+ * In the repo the publisher sits one level up in `tools/`; in the zip everything is flat beside
+ * this file. One search rather than two copies of the tool - a bundle that drifts from the repo
+ * is a bundle that gets sent out stale.
+ */
+const findBeside = (name, ...extra) => {
+  for (const dir of [HERE, path.resolve(HERE, '..'), ...extra]) {
+    const candidate = path.join(dir, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(HERE, name);   // report the flat location when genuinely missing
+};
+
+const PUBLISHER = findBeside('publish_to_cdn.ps1');
+const VERIFIER = findBeside('Test-CompanionsLive.ps1');
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
@@ -214,7 +257,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/scan') {
-      return send(res, 200, scanRoot(url.searchParams.get('root') || DEFAULT_ROOT));
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
+      const result = scanRoot(root);
+      // Remember a folder that actually held characters, not one that merely got typed.
+      if (result.characters.length) writeSetting('root', root);
+      return send(res, 200, result);
     }
 
     if (url.pathname === '/api/token' && req.method === 'POST') {
@@ -293,65 +340,6 @@ const server = http.createServer(async (req, res) => {
       const out = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, 502, { error: out.error || `create failed (${r.status})` });
       return send(res, 200, { avatarId: out.id || out.avatar?.id || null, raw: out });
-    }
-
-    /**
-     * Every avatar in the environment, for the "edit an existing one" path.
-     *
-     * Publishing already handles new-vs-update on its own, so this exists for the other job:
-     * changing a companion that is already there - renaming it, hiding it from the picker -
-     * without going near a database or an id.
-     */
-    if (url.pathname === '/api/avatars' && req.method === 'POST') {
-      const { env } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-
-      const r = await fetch(`${target.apiBase}/api/admin/avatars?limit=200`, {
-        headers: { Authorization: `Bearer ${session.token}` },
-      });
-      if (!r.ok) return send(res, 502, { error: `admin API ${r.status} - is the cookie for ${env}?` });
-      const body = await r.json();
-      const rows = body.avatars || body.data || [];
-
-      return send(res, 200, {
-        avatars: rows.map((a) => ({
-          id: a.id, name: a.name, slug: a.slug, description: a.description || '',
-          gender: a.gender || '', isActive: Boolean(a.isActive),
-          isMetaHuman: String(a.slug || '').startsWith('mh-'),
-        })),
-      });
-    }
-
-    /**
-     * Save an edit. Only the fields a person can see and change are forwarded.
-     *
-     * `modelPath` is deliberately not among them, and the route would not take it: what a
-     * companion is pointed at changes by publishing, never by editing a form.
-     */
-    if (url.pathname === '/api/update-avatar' && req.method === 'POST') {
-      const { env, avatarId, name, description, gender, isActive } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!avatarId) return send(res, 400, { error: 'avatarId is required' });
-
-      const patch = {};
-      if (typeof name === 'string' && name.trim()) patch.name = name.trim();
-      if (typeof description === 'string') patch.description = description;
-      if (typeof gender === 'string') patch.gender = gender;
-      if (typeof isActive === 'boolean') patch.isActive = isActive;
-      if (!Object.keys(patch).length) return send(res, 400, { error: 'nothing to change' });
-
-      const r = await fetch(`${target.apiBase}/api/admin/avatars/${avatarId}`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok) return send(res, 502, { error: out.error || `save failed (${r.status})` });
-      return send(res, 200, { saved: Object.keys(patch) });
     }
 
     if (url.pathname === '/api/verify' && req.method === 'POST') {

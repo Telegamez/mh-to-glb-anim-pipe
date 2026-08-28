@@ -12,8 +12,9 @@
   Defaults to 7311. Change it only if something else already has that port.
 
 .PARAMETER Root
-  The directory holding your character folders. Defaults to the monorepo's published
-  models directory, which is where `publish_characters.ps1` leaves them.
+  Optional. The publisher remembers the last folder that actually held characters, so this
+  is only needed to pin one - a shortcut with -Root set will always win over the memory.
+
 
 .PARAMETER NoBrowser
   Start the server but don't open a browser.
@@ -27,15 +28,21 @@
 [CmdletBinding()]
 param(
   [int]$Port = 7311,
-  [string]$Root = 'S:\Avatars\metahuman\telegamez\packages\web-next\public\models',
+  [string]$Root,
   [switch]$NoBrowser
 )
 
 $ErrorActionPreference = 'Stop'
 
-$server = Join-Path $PSScriptRoot '5.7\native-glb\tools\deploy\server.mjs'
-if (-not (Test-Path $server)) {
-  throw "Publisher not found at $server. Run this from the metahuman-to-glb repo root."
+# Works from the repo root and from the shared bundle, where everything sits flat beside this
+# script. One launcher rather than two, so the bundle cannot drift from the repo.
+$candidates = @(
+  (Join-Path $PSScriptRoot '5.7\native-glb\tools\deploy\server.mjs'),
+  (Join-Path $PSScriptRoot 'server.mjs')
+)
+$server = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $server) {
+  throw "Cannot find server.mjs - expected beside this script, or under 5.7\native-glb\tools\deploy."
 }
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
@@ -52,7 +59,7 @@ if ($busy) {
 Write-Host ""
 Write-Host "  Telegames MetaHuman Publisher" -ForegroundColor Cyan
 Write-Host "  http://127.0.0.1:$Port" -ForegroundColor Cyan
-Write-Host "  models: $Root"
+if ($Root) { Write-Host "  models: $Root" }
 Write-Host ""
 Write-Host "  Leave this window open. Ctrl+C to stop." -ForegroundColor DarkGray
 Write-Host ""
@@ -73,4 +80,8 @@ if (-not $NoBrowser) {
 }
 
 # Runs in the foreground so its output is right here and Ctrl+C stops it.
-& node $server --port $Port --root $Root
+# Only pass --root when one was given. Otherwise the server uses the folder it remembers,
+# and passing a default here would silently override it on every launch.
+$serverArgs = @($server, '--port', $Port)
+if ($Root) { $serverArgs += @('--root', $Root) }
+& node $serverArgs

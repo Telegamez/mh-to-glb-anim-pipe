@@ -16,6 +16,25 @@ page is for the things it can't show you.
 
 ---
 
+## Sending it to someone
+
+`dist/TelegamesPublisher.zip` is ready to send. They unzip it and run `Start-Publisher.ps1` —
+no repo, no install, nothing to build. They need Node.js and PowerShell 7 and nothing else.
+
+The first time, press **Browse** and point it at wherever the character folders are. It marks
+which folders hold characters as you go, so you are looking for the one that says *6 characters*
+rather than reading paths. It remembers that folder from then on.
+
+To rebuild the zip after a change:
+
+```powershell
+./5.7/native-glb/tools/deploy/Build-Bundle.ps1
+```
+
+It copies the same files the repo runs, flat — there is no second copy to drift.
+
+---
+
 ## Panda and beta are not the same job
 
 | | **panda** | **beta** |

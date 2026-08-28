@@ -4,33 +4,38 @@
 #
 #   cp _config/pipeline.example.yaml _config/pipeline.yaml
 #
-# Then fill in the four <...> placeholders below with your local UE
-# project + UE editor + Blender paths. `_config/pipeline.yaml` is
-# gitignored, so your local paths never leak back into the repo.
+# Then fill in the placeholders below with your local UE project + UE editor +
+# Blender paths. `_config/pipeline.yaml` is gitignored, so your local paths
+# never leak back into the repo.
 
-# Active pipeline. Default is 5.7/native-glb (the smallest, fastest path
-# with full ARKit blendshapes). 5.6/cinematic is the legacy reference.
-ue_version: "5.7"
-
-# Per-version paths to YOUR local UE installation + the .uproject
-# containing your MetaHumanCharacter assets. The orchestrator picks the
-# block matching `ue_version`.
+# Keyed by PIPELINE DIRECTORY, not by engine version. The stage launchers take
+# the key from the folder they live in — 5.7/native-glb looks up "5.7" — so the
+# key must match a pipeline tree that exists, and the engine you point it at is
+# whatever you have installed. They need not be the same number: the reference
+# box runs the "5.7" tree on UE 5.8.1.
+#
+# `engine_version` is the engine you are actually pointing at. The launchers
+# read the engine's own Engine/Build/Build.version next to `editor_cmd`, print
+# that, and warn if it disagrees with what you declare here — so a pipeline
+# folder named after one engine and pointed at another says so in the log
+# rather than quietly baking with something else.
 ue_by_version:
   "5.7":
-    project_path: "<PATH_TO_YOUR_UE57_UPROJECT>"   # e.g. C:/Users/you/Documents/Unreal Projects/MH/MH.uproject
-    editor_cmd:   "<PATH_TO_YOUR_UE57_EDITOR_CMD>" # e.g. C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe
+    engine_version: "<UE_VERSION_YOU_ACTUALLY_RUN>"  # e.g. 5.8.1
+    project_path:   "<PATH_TO_YOUR_UPROJECT>"        # e.g. C:/Users/you/Documents/Unreal Projects/MH/MH.uproject
+    editor_cmd:     "<PATH_TO_YOUR_EDITOR_CMD>"      # e.g. C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe
   "5.6.1":
-    project_path: "<PATH_TO_YOUR_UE56_UPROJECT>"   # only if you also use the 5.6/cinematic pipeline
-    editor_cmd:   "<PATH_TO_YOUR_UE56_EDITOR_CMD>"
+    engine_version: ""                               # only if you also use the 5.6/cinematic pipeline
+    project_path:   ""
+    editor_cmd:     ""
 
-# Legacy flat fields. Some older tools read these. Keep them in sync
-# with the `ue_by_version[ue_version]` block above (or just delete them
-# if you only use 5.7).
-ue_project_path: "<PATH_TO_YOUR_UE57_UPROJECT>"
-ue_editor_cmd:   "<PATH_TO_YOUR_UE57_EDITOR_CMD>"
+# Legacy flat fields. Stage 05 and tools/run_fbx_reweight.ps1 read these — they
+# have no per-pipeline block. Keep them in sync with the block you actually use.
+ue_project_path: "<PATH_TO_YOUR_UPROJECT>"
+ue_editor_cmd:   "<PATH_TO_YOUR_EDITOR_CMD>"
 
-# Path to Blender 5.x. Used by stages 02 + 03.
-blender_exe:     "<PATH_TO_YOUR_BLENDER_EXE>"      # e.g. C:/Program Files/Blender Foundation/Blender 5.0/blender.exe
+# Path to Blender. Used by stages 02 + 03. Checked against 4.4.1.
+blender_exe:     "<PATH_TO_YOUR_BLENDER_EXE>"      # e.g. C:/Program Files/Blender Foundation/Blender 4.4/blender.exe
 
 # Where per-character working artifacts live (relative to pipeline root,
 # not the workspace root).

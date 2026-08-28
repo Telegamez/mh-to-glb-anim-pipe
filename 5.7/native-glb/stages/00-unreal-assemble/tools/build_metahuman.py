@@ -53,6 +53,24 @@ def log(msg: str) -> None:
     unreal.log(f"[build_mh] {msg}")
 
 
+def engine_build() -> str:
+    """The full version string of the engine we are running inside.
+
+    The pipeline tree is named 5.7 and this box runs 5.8. A version hardcoded
+    here is how every bake came to record an engine it never touched, which is
+    only noticed much later, when two bakes differ and both claim 5.7.
+    """
+    try:
+        return str(unreal.SystemLibrary.get_engine_version())
+    except Exception:
+        return "unknown"
+
+
+def engine_version() -> str:
+    """Short MAJOR.MINOR.PATCH form of `engine_build`."""
+    return engine_build().split("-", 1)[0] or "unknown"
+
+
 def write_status(phase: str, **kv) -> None:
     payload = {"phase": phase, "ts": time.time(), **kv}
     Path(STATE["status_path"]).write_text(json.dumps(payload), encoding="utf-8")
@@ -328,7 +346,8 @@ def _export_fbx_and_textures(asset_paths, out_dir):
             "materials": mats,
         })
     manifest = {
-        "ue_version": "5.7",
+        "ue_version": engine_version(),
+        "ue_build": engine_build(),
         "meshes": mesh_records,
         "textures": tex_records,
     }

@@ -55,11 +55,11 @@ function Get-YamlValue([string]$Path, [string]$Key) {
     return $val
 }
 
-# The pipeline folder path tells us which UE version to use. Workspace
-# resolves to e.g. "C:/.../5.7/native-glb" so the grandparent folder
-# name ("5.7") is the UE version. This avoids depending on the root
-# ue_version flag in _config/pipeline.yaml, which is shared across all
-# pipelines and can point at a different UE.
+# The pipeline folder path tells us which ue_by_version block to read.
+# Workspace resolves to e.g. "C:/.../5.7/native-glb" so the grandparent
+# folder name ("5.7") is the key. It is a DIRECTORY NAME, not the engine
+# version - this box runs the 5.7 tree on UE 5.8 - so nothing downstream
+# should report it as the engine.
 $PipelineVer = Split-Path -Leaf (Split-Path -Parent $Workspace)
 
 # Pull per-version UE paths out of the ue_by_version block in the yaml.
@@ -99,8 +99,31 @@ function Get-YamlVersionPath([string]$Path, [string]$Version, [string]$Key) {
     throw "missing ue_by_version['$Version'].$Key in $Path"
 }
 
+# Ask the engine what it is rather than trusting either number. Build.version
+# ships beside the binary, so it cannot drift from the editor we are about to
+# launch the way a hand-kept yaml field can.
+function Get-EngineBuild([string]$EditorExe) {
+    $engineDir = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $EditorExe))
+    $buildFile = Join-Path $engineDir "Build\Build.version"
+    if (-not (Test-Path $buildFile)) { return $null }
+    try {
+        $v = Get-Content $buildFile -Raw | ConvertFrom-Json
+        return "$($v.MajorVersion).$($v.MinorVersion).$($v.PatchVersion)"
+    } catch { return $null }
+}
+
 $UEProject = Get-YamlVersionPath $ConfigPath $PipelineVer "project_path"
 $UEEditor  = Get-YamlVersionPath $ConfigPath $PipelineVer "editor_cmd"
+
+# engine_version is what the operator says is installed; $EngineBuild is what
+# is. Warn on disagreement instead of failing - a stale label is not a reason
+# to refuse a bake, but it is a reason to stop trusting the label.
+$DeclaredEngine = try { Get-YamlVersionPath $ConfigPath $PipelineVer "engine_version" } catch { "" }
+$EngineBuild    = Get-EngineBuild $UEEditor
+if ($DeclaredEngine -and $EngineBuild -and $DeclaredEngine -ne $EngineBuild) {
+    Write-Warning "[stage00] pipeline.yaml declares engine_version $DeclaredEngine but $UEEditor is $EngineBuild. Baking with $EngineBuild."
+}
+
 # For MetaHumanCharacter plugin assemble we need the GUI editor (not -Cmd),
 # because build_meta_human relies on Slate ticks.
 $UEEditor  = $UEEditor -replace "UnrealEditor-Cmd\.exe$", "UnrealEditor.exe"
@@ -184,7 +207,8 @@ $env:MH_PIPELINE_WORKSPACE = $Workspace
 
 $ExecCmd = "py C:/tmp/mh/build_mh.py -- --asset=$AssetPath --status=$StatusPath --output-dir=$OutputDir --name=$Char --pipeline=$Pipeline --timeout=1800"
 
-Write-Host "[stage00] UE version  : $PipelineVer"
+Write-Host "[stage00] pipeline dir: $PipelineVer"
+Write-Host "[stage00] UE engine   : $(if ($EngineBuild) { $EngineBuild } else { 'unknown (no Build.version beside editor)' })"
 Write-Host "[stage00] UE project  : $UEProject"
 Write-Host "[stage00] UE editor   : $UEEditor"
 Write-Host "[stage00] asset       : $AssetPath"

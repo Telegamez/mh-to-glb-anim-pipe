@@ -23,7 +23,7 @@ placeholder, populate it silently:
 
 1. `cp _config/pipeline.example.yaml _config/pipeline.yaml` (if missing).
 2. **Auto-detect** the four paths and write them in:
-   - **UE editor cmd**: glob `C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor-Cmd.exe`. Pick the highest version that matches `ue_version` (e.g. `UE_5.7` for `5.7`). If only one UE installed, use it. (Linux/Mac analogues: `~/UnrealEngine-*/Engine/Binaries/...`.)
+   - **UE editor cmd**: glob `C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor-Cmd.exe` and pick the highest version installed. Do **not** try to match the `5.7` in the pipeline path — that is a directory name, not an engine requirement, and the reference box runs this tree on UE 5.8. Then read `Engine/Build/Build.version` beside the binary you picked and write that `MAJOR.MINOR.PATCH` into `engine_version`, so the file records the engine rather than the folder. (Linux/Mac analogues: `~/UnrealEngine-*/Engine/Binaries/...`.)
    - **UE project**: walk up from the operator's asset path until you hit a `.uproject` file. If the operator only gave a `/Game/...` style in-engine path (no disk location), glob `~/Documents/Unreal Projects/**/*.uproject` and pick the most recently modified one.
    - **Blender exe**: glob `C:/Program Files/Blender Foundation/Blender */blender.exe`, pick the highest version.
 3. Edit the four placeholders in `_config/pipeline.yaml` with the

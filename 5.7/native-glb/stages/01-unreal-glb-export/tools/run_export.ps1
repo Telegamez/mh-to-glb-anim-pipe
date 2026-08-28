@@ -19,6 +19,8 @@ $ErrorActionPreference = "Stop"
 
 $ToolsDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Workspace = (Resolve-Path (Join-Path $ToolsDir "..\..\..")).Path
+# Directory name ("5.7"), used to index ue_by_version. Not the engine version -
+# this box runs the 5.7 tree on UE 5.8.
 $PipelineVer = Split-Path -Leaf (Split-Path -Parent $Workspace)
 
 $ConfigPath = Join-Path (Join-Path $Workspace "..\..\") "_config\pipeline.yaml"
@@ -53,8 +55,29 @@ function Get-YamlVersionPath([string]$Path, [string]$Version, [string]$Key) {
     throw "missing ue_by_version['$Version'].$Key in $Path"
 }
 
+# Build.version ships beside the binary, so it cannot drift from the editor we
+# are about to launch the way a hand-kept yaml field can.
+function Get-EngineBuild([string]$EditorExe) {
+    $engineDir = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $EditorExe))
+    $buildFile = Join-Path $engineDir "Build\Build.version"
+    if (-not (Test-Path $buildFile)) { return $null }
+    try {
+        $v = Get-Content $buildFile -Raw | ConvertFrom-Json
+        return "$($v.MajorVersion).$($v.MinorVersion).$($v.PatchVersion)"
+    } catch { return $null }
+}
+
 $UEProject = Get-YamlVersionPath $ConfigPath $PipelineVer "project_path"
 $UECmd     = Get-YamlVersionPath $ConfigPath $PipelineVer "editor_cmd"
+
+$DeclaredEngine = try { Get-YamlVersionPath $ConfigPath $PipelineVer "engine_version" } catch { "" }
+$EngineBuild    = Get-EngineBuild $UECmd
+if ($DeclaredEngine -and $EngineBuild -and $DeclaredEngine -ne $EngineBuild) {
+    Write-Warning "[stage01] pipeline.yaml declares engine_version $DeclaredEngine but $UECmd is $EngineBuild. Exporting with $EngineBuild."
+}
+# export_glb.py stamps mh_manifest.json with the engine it is running in; pass
+# the launcher's reading too so a mismatch would be visible rather than silent.
+$env:MH_ENGINE_BUILD = $EngineBuild
 # Use the commandlet binary for headless Python scripts.
 if (-not $UECmd.EndsWith("UnrealEditor-Cmd.exe")) {
     $UECmd = $UECmd -replace "UnrealEditor\.exe$", "UnrealEditor-Cmd.exe"
@@ -72,7 +95,8 @@ Copy-Item -Force $PyScript "C:\tmp\mh\export_glb.py"
 
 $env:MH_PIPELINE_WORKSPACE = $Workspace
 
-Write-Host "[stage01] UE version  : $PipelineVer"
+Write-Host "[stage01] pipeline dir: $PipelineVer"
+Write-Host "[stage01] UE engine   : $(if ($EngineBuild) { $EngineBuild } else { 'unknown (no Build.version beside editor)' })"
 Write-Host "[stage01] UE project  : $UEProject"
 Write-Host "[stage01] UE cmd      : $UECmd"
 Write-Host "[stage01] char        : $Char"

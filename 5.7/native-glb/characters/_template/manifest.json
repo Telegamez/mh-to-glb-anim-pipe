@@ -1,7 +1,7 @@
 {
   "character_id": "<id>",
   "source": "engine_mhc",
-  "ue_version": "5.7",
+  "ue_version": "5.8",
   "mh_folder": "/Game/<Name>",
   "output_name": "<Name>",
   "stages": {

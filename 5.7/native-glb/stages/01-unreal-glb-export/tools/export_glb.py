@@ -64,6 +64,24 @@ def _iso_now():
     return _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
 
+def _engine_build():
+    """The full version string of the engine we are running inside.
+
+    Not the character manifest's `ue_version` and not the pipeline folder
+    name: both say 5.7 on a box that only has 5.8 installed. Two bakes that
+    differ are unreadable if they both claim an engine neither one ran.
+    """
+    try:
+        return str(unreal.SystemLibrary.get_engine_version())
+    except Exception:
+        return os.environ.get("MH_ENGINE_BUILD") or "unknown"
+
+
+def _engine_version():
+    """Short MAJOR.MINOR.PATCH form of `_engine_build`."""
+    return _engine_build().split("-", 1)[0] or "unknown"
+
+
 def _list_under(folder, class_name):
     ar = unreal.AssetRegistryHelpers.get_asset_registry()
     # Force-scan the folder before filtering. UE's AssetRegistry lazy-
@@ -1232,7 +1250,9 @@ def main():
 
     mh_manifest = {
         "character_id": args.char,
-        "ue_version": char_manifest.get("ue_version", "5.7"),
+        "ue_version": _engine_version(),
+        "ue_build": _engine_build(),
+        "declared_ue_version": char_manifest.get("ue_version"),
         "pipeline": "native-glb",
         "exported_at": _iso_now(),
         "mh_folder": mh_folder,

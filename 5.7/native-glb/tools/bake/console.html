@@ -1,0 +1,174 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MetaHuman Bake</title>
+<style>
+  :root { --bg:#14161a; --panel:#1b1e24; --line:#2a2f38; --ink:#e6e9ef; --dim:#8b93a1; --go:#3ea76a; --warn:#c9873a; --bad:#c4574f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 "Segoe UI",system-ui,sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size:17px; font-weight:600; margin:0 0 22px; letter-spacing:.2px; }
+  .step { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px; margin-bottom:14px; }
+  .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); margin-bottom:10px; }
+  button { background:#262b33; color:var(--ink); border:1px solid var(--line); border-radius:6px;
+           padding:8px 16px; font:inherit; cursor:pointer; }
+  button:hover:not(:disabled) { background:#2f3540; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.primary { background:var(--go); border-color:var(--go); color:#0d1a12; font-weight:600; }
+  button.primary:hover:not(:disabled) { filter:brightness(1.08); }
+  .row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .pick { flex:1; min-width:200px; font-family:Consolas,monospace; font-size:12px; color:var(--dim);
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pick.set { color:var(--ink); }
+  label.chk { display:flex; align-items:center; gap:7px; color:var(--dim); font-size:13px; cursor:pointer; }
+  pre { background:#0f1115; border:1px solid var(--line); border-radius:6px; padding:12px;
+        font:12px/1.55 Consolas,monospace; max-height:420px; overflow:auto; white-space:pre-wrap; margin:0; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td { padding:7px 4px; border-bottom:1px solid var(--line); }
+  tr:last-child td { border-bottom:0; }
+  .ok { color:var(--go); } .miss { color:var(--warn); }
+  .note { color:var(--warn); font-size:13px; margin-top:10px; }
+  dialog { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+           padding:0; width:min(560px,92vw); }
+  dialog::backdrop { background:#000a; }
+  .dhead { padding:12px 16px; border-bottom:1px solid var(--line); font-family:Consolas,monospace;
+           font-size:12px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dlist { max-height:52vh; overflow:auto; }
+  .item { padding:8px 16px; cursor:pointer; display:flex; gap:9px; align-items:center; }
+  .item:hover { background:#242932; }
+  .dfoot { padding:10px 16px; border-top:1px solid var(--line); text-align:right; }
+  [hidden] { display:none !important; }
+</style>
+
+<main>
+  <h1>MetaHuman Bake</h1>
+
+  <div class="step">
+    <div class="lbl">1 · Character</div>
+    <div class="row">
+      <button id="browse">Browse…</button>
+      <div class="pick" id="picked">no MetaHuman chosen</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="lbl">2 · Bake</div>
+    <div class="row">
+      <button class="primary" id="go" disabled>Bake</button>
+      <label class="chk"><input type="checkbox" id="force"> re-bake if it already exists</label>
+    </div>
+    <div class="note" id="stackNote" hidden></div>
+  </div>
+
+  <div class="step" id="logStep" hidden>
+    <div class="lbl">Progress</div>
+    <pre id="log"></pre>
+  </div>
+
+  <div class="step">
+    <div class="lbl">Ready to publish</div>
+    <table id="baked"><tr><td class="pick">nothing baked yet</td></tr></table>
+  </div>
+</main>
+
+<dialog id="dlg">
+  <div class="dhead" id="dhere"></div>
+  <div class="dlist" id="dlist"></div>
+  <div class="dfoot"><button id="dclose">Cancel</button></div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let asset = null;
+
+const get = (u) => fetch(u).then((r) => r.json());
+
+async function refresh() {
+  const cfg = await get('/api/config');
+  $('stackNote').hidden = cfg.stackUp;
+  if (!cfg.stackUp) {
+    $('stackNote').textContent =
+      `The local stack isn't running, so previews will be skipped. The model still bakes correctly — start the stack and use Previews below.`;
+  }
+
+  const { rows } = await get('/api/baked');
+  const t = $('baked');
+  if (!rows.length) { t.innerHTML = '<tr><td class="pick">nothing baked yet</td></tr>'; return; }
+  t.innerHTML = '';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const done = r.model && r.previews;
+    tr.innerHTML = `<td>${r.id}</td>
+      <td class="${done ? 'ok' : 'miss'}">${done ? 'complete' : r.model ? 'no previews' : 'no model'}</td>
+      <td style="text-align:right"></td>`;
+    if (r.model && !r.previews) {
+      const b = document.createElement('button');
+      b.textContent = 'Previews';
+      b.onclick = () => run('/api/capture', { id: r.id });
+      tr.lastElementChild.append(b);
+    }
+    t.append(tr);
+  }
+}
+
+async function run(endpoint, body) {
+  $('logStep').hidden = false;
+  $('log').textContent = '';
+  $('go').disabled = true;
+  const res = await fetch(endpoint, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.headers.get('content-type')?.startsWith('text/plain')) {
+    $('log').textContent = (await res.json()).error ?? 'failed';
+    $('go').disabled = !asset;
+    return;
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    $('log').textContent += dec.decode(value, { stream: true });
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+  $('go').disabled = !asset;
+  refresh();
+}
+
+$('go').onclick = () => run('/api/bake', { asset, force: $('force').checked, capture: true });
+
+// --- browse -----------------------------------------------------------------------------
+async function openAt(p) {
+  const d = await get('/api/browse' + (p ? '?path=' + encodeURIComponent(p) : ''));
+  if (d.error) return;
+  $('dhere').textContent = d.here;
+  const list = $('dlist');
+  list.innerHTML = '';
+  if (d.up) {
+    const up = document.createElement('div');
+    up.className = 'item'; up.textContent = '↑  ..';
+    up.onclick = () => openAt(d.up);
+    list.append(up);
+  }
+  for (const e of d.entries) {
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.textContent = (e.dir ? '📁  ' : '🎭  ') + e.name;
+    row.onclick = () => {
+      const full = d.here.replace(/[\\/]$/, '') + '\\' + e.name;
+      if (e.dir) return openAt(full);
+      asset = full;
+      $('picked').textContent = e.name.replace(/\.uasset$/i, '');
+      $('picked').classList.add('set');
+      $('go').disabled = false;
+      $('dlg').close();
+    };
+    list.append(row);
+  }
+  $('dlg').showModal();
+}
+
+$('browse').onclick = () => openAt(null);
+$('dclose').onclick = () => $('dlg').close();
+
+refresh();
+</script>

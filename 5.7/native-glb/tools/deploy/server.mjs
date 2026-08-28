@@ -67,8 +67,19 @@ const writeSetting = (key, value) => {
 };
 
 const remembered = readSetting('root');
+
+/**
+ * Where the bake console leaves finished packages, when this is running from the repo.
+ * Guarded by existence rather than assumed: from the shared bundle this resolves to
+ * nonsense, and falling through is the correct outcome there.
+ */
+const bakedPackages = path.resolve(HERE, '..', '..', '..', '..', '..', 'characters');
+
 const DEFAULT_ROOT = arg('root', null)
   || (remembered && fs.existsSync(remembered) ? remembered : null)
+  || (fs.existsSync(bakedPackages) ? bakedPackages : null)
+  // Last resort: the monorepo's local-development models. Kept so an operator with neither a
+  // remembered folder nor a bake box still opens somewhere real rather than an empty picker.
   || 'S:\\Avatars\\metahuman\\telegamez\\packages\\web-next\\public\\models';
 /**
  * Find the scripts whether this is running from the repo or from the shared bundle.
@@ -87,6 +98,7 @@ const findBeside = (name, ...extra) => {
 
 const PUBLISHER = findBeside('publish_to_cdn.ps1');
 const VERIFIER = findBeside('Test-CompanionsLive.ps1');
+const PREVIEWS = findBeside('publish_previews.ps1');
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
@@ -137,13 +149,19 @@ function scanRoot(root) {
     const strayManifest = fs.existsSync(path.join(dir, 'manifest.json'));
     const mb = Math.round(fs.statSync(glb).size / 1048576);
 
+    // The three assets that fill avatars' preview columns. Not required to publish the model
+    // directory — they go through a different route — so their absence is reported, never a
+    // problem that blocks the publish.
+    const PREVIEW_FILES = ['thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4'];
+    const previews = PREVIEW_FILES.every((f) => fs.existsSync(path.join(dir, f)));
+
     const problems = [];
     if (!sidecar) problems.push('no mh_materials.json — would render untextured');
     if (textures === 0) problems.push('no textures/');
     if (strayManifest) problems.push('stray manifest.json — publish would be refused');
 
     characters.push({
-      id: name, dir, mb, sidecar, textures, strayManifest,
+      id: name, dir, mb, sidecar, textures, strayManifest, previews,
       ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
     });
   }
@@ -244,6 +262,50 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
   }
 }
 
+/**
+ * Record a character going live, in the same file as the publish that produced it.
+ *
+ * The undo is the point. A publish is content-addressed and immutable, so rolling back is
+ * putting the previous key back — and the moment this call returns, the previous key exists
+ * nowhere else. Written here rather than printed, because a value that only appears in a
+ * browser pane is a value nobody has when they need it.
+ */
+function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, previous }) {
+  const out = [`## ${char} — live`, ''];
+  out.push(`- when    ${new Date().toISOString()}`);
+  out.push(`- avatar  \`${avatarId}\``);
+  out.push(`- now     \`${modelKey}\``);
+  out.push(`- was     ${previous ? `\`${previous}\`` : '(no model on the row)'}`);
+  out.push('');
+  // Only a published key can be restored through the API — the route refuses anything that is
+  // not a content-addressed object under this avatar, which is what makes it safe. A seeded
+  // placeholder is not one, so the FIRST time a character goes live there is nothing to go back
+  // to through this door. That is a real limit, and saying so here is better than printing a
+  // call that would be refused at the moment somebody needed it to work.
+  const restorable = previous && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(previous);
+  out.push('To put it back:');
+  out.push('```');
+  if (restorable) {
+    out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${previous}" }`);
+  } else if (previous) {
+    out.push(`the previous value is not a published key, so the API will not accept it:`);
+    out.push(`  ${previous}`);
+    out.push(`restoring it needs a database update, or a re-publish of that bake`);
+  } else {
+    out.push('the row carried no model before this, so there is nothing to restore');
+  }
+  out.push('```', '');
+
+  try {
+    fs.mkdirSync(JOURNAL_DIR, { recursive: true });
+    const file = path.join(JOURNAL_DIR, `${env}-${bakeSuffix}.md`);
+    fs.appendFileSync(file, out.join('\n') + '\n');
+    return file;
+  } catch {
+    return null;
+  }
+}
+
 function stream(res, file, args, extraEnv = {}, onClose) {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
   const child = spawn('pwsh', ['-NoProfile', '-File', file, ...args], {
@@ -282,6 +344,7 @@ const server = http.createServer(async (req, res) => {
         hasToken: Boolean(session.token),
         publisherFound: fs.existsSync(PUBLISHER),
         verifierFound: fs.existsSync(VERIFIER),
+        previewsFound: fs.existsSync(PREVIEWS),
       });
     }
 
@@ -473,6 +536,73 @@ const server = http.createServer(async (req, res) => {
       }));
     }
 
+    /**
+     * The other half of publishing an avatar: its thumbnail, image and video.
+     *
+     * A separate route and a separate step because it is a separate contract. The model goes
+     * through `companion-directory`, which writes bytes and deliberately touches no row; these
+     * go through `smart-upload`, which owns the three preview columns and writes them itself.
+     * So this one needs no SQL afterwards — and, as a side effect, takes the row out of the
+     * 'processing' state a newly created avatar starts in.
+     */
+    if (url.pathname === '/api/publish-previews' && req.method === 'POST') {
+      const { env, characters, avatarIds } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      if (!Array.isArray(characters) || characters.length === 0) {
+        return send(res, 400, { error: 'no characters selected' });
+      }
+
+      // One per request, like the model publish: the page drives the loop so a failure stops
+      // the batch at a character anyone can name.
+      const char = characters[0];
+      const avatarId = (avatarIds || {})[char];
+      if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
+
+      return stream(res, PREVIEWS, [
+        '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
+        '-Source', path.join(url.searchParams.get('root') || DEFAULT_ROOT, char),
+      ], { TG_ADMIN_TOKEN: session.token });
+    }
+
+    /**
+     * Point a published directory at its avatar row — what the SQL block used to do by hand.
+     *
+     * Still a separate press from Publish, because it is still a separate decision: bytes go up
+     * without changing anything a user sees, and this is the moment they do. What changes is
+     * that it no longer needs database access, and the rollback value is written down by the
+     * tool instead of depending on someone keeping a text file.
+     */
+    if (url.pathname === '/api/go-live' && req.method === 'POST') {
+      const { env, char, avatarId, modelKey } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      if (!avatarId || !modelKey) return send(res, 400, { error: 'avatarId and modelKey are required' });
+
+      const r = await fetch(`${target.apiBase}/api/admin/avatars/${avatarId}/model-path`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ modelKey }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        return send(res, 502, { error: body?.error ?? body?.message ?? `admin API ${r.status}` });
+      }
+
+      // The bake suffix is already in the key, so the record lands in the same file as the
+      // publish it completes rather than needing the page to carry it back here.
+      const suffix = String(modelKey).split('/')[2] ?? 'unknown';
+      const previous = body?.data?.previousModelPath ?? null;
+      const recorded = recordGoLive({
+        env, apiBase: target.apiBase, char, avatarId,
+        bakeSuffix: suffix, modelKey, previous,
+      });
+
+      return send(res, 200, { char, avatarId, modelKey, previous, recorded });
+    }
+
     return send(res, 404, { error: 'not found' });
   } catch (e) {
     return send(res, 500, { error: e.message });
@@ -484,4 +614,5 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`[deploy-console] http://127.0.0.1:${PORT}`);
   console.log(`[deploy-console] models root: ${DEFAULT_ROOT}`);
   if (!fs.existsSync(PUBLISHER)) console.warn(`[deploy-console] WARNING publisher not found: ${PUBLISHER}`);
+  if (!fs.existsSync(PREVIEWS)) console.warn(`[deploy-console] WARNING preview publisher not found: ${PREVIEWS}`);
 });

@@ -98,15 +98,20 @@
     </tr></thead><tbody id="chars"></tbody></table>
     <div class="row" style="margin-top:16px">
       <button id="publish" class="go">Publish</button>
+      <button id="pubPreviews">Publish previews</button>
       <span class="dim" id="pubCount" style="font-size:13px"></span>
     </div>
   </div>
 
   <div class="step" id="s5" hidden>
-    <h2>Run this to go live</h2>
+    <h2>Go live</h2>
+    <div class="row" style="margin-bottom:12px">
+      <button id="goLive" class="go">Go live</button>
+      <span class="dim" id="liveCount" style="font-size:13px"></span>
+    </div>
     <pre id="sql"></pre>
     <div class="row" style="margin-top:10px">
-      <button id="copySql" class="small">Copy</button>
+      <button id="copySql" class="small">Copy the SQL instead</button>
       <button id="verify" class="small">Check it worked</button>
     </div>
   </div>
@@ -249,6 +254,7 @@ function count() {
   const n = picked().length;
   $('pubCount').textContent = n ? n + ' selected' : '';
   $('publish').disabled = n === 0;
+  $('pubPreviews').disabled = n === 0;
 }
 
 $('publish').onclick = async () => {
@@ -307,6 +313,88 @@ $('publish').onclick = async () => {
 
   $('publish').disabled = false;
   if (Object.keys(PUBLISHED).length) show('s5', true);
+};
+
+/**
+ * Previews are their own step because they are their own contract: the model goes through the
+ * directory route, which writes no row, and these go through smart-upload, which owns the three
+ * preview columns and writes them itself. Nothing to run afterwards - no SQL appears for these.
+ */
+$('pubPreviews').onclick = async () => {
+  const list = picked();
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && !confirm('Publish previews for ' + list.length + ' to PRODUCTION?')) return;
+
+  // Refuse before uploading anything rather than part way through a batch. A character with no
+  // captured previews is a bake that has not finished, not an upload that can be retried.
+  const missing = list.filter((c) => { const r = CHARS.find((x) => x.id === c); return r && !r.previews; });
+  if (missing.length) {
+    setLog('No previews captured for: ' + missing.join(', ') + '\nBake them, or use Previews in the bake console.\n');
+    return;
+  }
+
+  $('pubPreviews').disabled = true;
+  setLog('Publishing previews for ' + list.length + ' to ' + $('env').value + '\n');
+
+  for (const c of list) {
+    log('\n' + c + '\n');
+    if (!RESOLVED[c] || !RESOLVED[c].avatarId) {
+      log('  no avatar record in this environment yet - publish the model first\n');
+      break;
+    }
+    const res = await fetch('/api/publish-previews?root=' + encodeURIComponent($('root').value), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ env: $('env').value, characters:[c],
+                             avatarIds: { [c]: RESOLVED[c].avatarId } }),
+    });
+    if (!res.ok) { log((await res.json()).error + '\n'); break; }
+
+    let out = '';
+    const rd = res.body.getReader(); const dec = new TextDecoder();
+    for (;;) { const t = await rd.read(); if (t.done) break;
+               const x = dec.decode(t.value,{stream:true}); out += x; log(x); }
+
+    // Stop the batch on the first failure, the way the model publish does.
+    if (!/\[publish_previews\] OK/.test(out)) { log('\nStopped.\n'); break; }
+  }
+
+  $('pubPreviews').disabled = false;
+};
+
+/**
+ * Going live, without a database.
+ *
+ * Still its own press: publishing put bytes somewhere and changed nothing anybody sees, and
+ * this is the moment that changes. What is gone is the hand-run SQL - the API checks the object
+ * exists before pointing a row at it, which a pasted statement never did, and the previous key
+ * is written to the journal instead of living in whatever file somebody remembered to keep.
+ */
+$('goLive').onclick = async () => {
+  const entries = Object.entries(PUBLISHED);
+  if (!entries.length) return;
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && !confirm('Take ' + entries.length + ' live on PRODUCTION?')) return;
+
+  $('goLive').disabled = true;
+  setLog('Going live: ' + entries.length + ' on ' + $('env').value + '\n');
+
+  let done = 0;
+  for (const [c, p] of entries) {
+    const r = await fetch('/api/go-live', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ env: $('env').value, char: c, avatarId: p.avatarId, modelKey: p.key }),
+    });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) { log('\n' + c + ': ' + (b.error || 'failed') + '\nStopped.\n'); break; }
+    done++;
+    log('\n' + c + ' is live\n');
+    log('   now ' + b.modelKey + '\n');
+    log('   was ' + (b.previous || '(no model on the row)') + '\n');
+    if (b.recorded) log('   recorded in ' + b.recorded + '\n');
+  }
+
+  $('liveCount').textContent = done + ' of ' + entries.length + ' live';
+  $('goLive').disabled = false;
 };
 
 function renderSql() {

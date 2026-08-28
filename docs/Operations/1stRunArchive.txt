@@ -1,0 +1,39 @@
+-- First publish of the six MetaHumans to panda
+--
+--   date          2026-08-28
+--   environment   panda  (internal)
+--   API base      https://api.panda.telegames.ai
+--   bake suffix   20260828-1529
+--   published     avatars/<avatarId>/<char>-20260828-1529/
+--   characters    tele, tele1, tele2, telee, telie, telly
+--
+-- All six rows were still on their seeded placeholders (models/<id>/<id>.glb) before this ran,
+-- so the undo block below does not restore a previous working version — there has never been
+-- one. It returns panda to the state where these characters do not load. The forward block is
+-- the only working state these rows have ever had.
+--
+-- Publishing had already moved the bytes; this file is only the registry change. Uploads
+-- required raising client_max_body_size on panda's nginx from 10M to 200M — a character is
+-- ~94 MB in one atomic POST.
+--
+-- Captured by hand: this run predates the publisher's automatic journal, which now writes the
+-- same record to ~/.telegames-publisher/publishes/<env>-<bake suffix>.md on every publish.
+
+BEGIN;
+  UPDATE avatars SET model_path = 'avatars/e0e48f1f-6a17-4c62-af53-b57862104f8f/tele-20260828-1529/tele.glb', updated_at = now() WHERE id = 'e0e48f1f-6a17-4c62-af53-b57862104f8f';  -- tele
+  UPDATE avatars SET model_path = 'avatars/e1341d52-f620-4946-aaa9-fef1beddde24/tele1-20260828-1529/tele1.glb', updated_at = now() WHERE id = 'e1341d52-f620-4946-aaa9-fef1beddde24';  -- tele1
+  UPDATE avatars SET model_path = 'avatars/920ce9d0-442a-47c0-bae2-65b8f86cfaa7/tele2-20260828-1529/tele2.glb', updated_at = now() WHERE id = '920ce9d0-442a-47c0-bae2-65b8f86cfaa7';  -- tele2
+  UPDATE avatars SET model_path = 'avatars/d10eff1d-9858-495f-a409-11df7f793866/telee-20260828-1529/telee.glb', updated_at = now() WHERE id = 'd10eff1d-9858-495f-a409-11df7f793866';  -- telee
+  UPDATE avatars SET model_path = 'avatars/e11e10d6-0216-4c49-b02e-4e5b07d03fec/telie-20260828-1529/telie.glb', updated_at = now() WHERE id = 'e11e10d6-0216-4c49-b02e-4e5b07d03fec';  -- telie
+  UPDATE avatars SET model_path = 'avatars/afc619ee-7e79-40c2-96ad-3b6ba6c249fa/telly-20260828-1529/telly.glb', updated_at = now() WHERE id = 'afc619ee-7e79-40c2-96ad-3b6ba6c249fa';  -- telly
+COMMIT;
+
+-- undo
+BEGIN;
+  UPDATE avatars SET model_path = 'https://telegames-assets-local.s3.us-west-2.amazonaws.com/models/tele/tele.glb', updated_at = now() WHERE id = 'e0e48f1f-6a17-4c62-af53-b57862104f8f';  -- tele
+  UPDATE avatars SET model_path = 'https://telegames-assets-local.s3.us-west-2.amazonaws.com/models/tele1/tele1.glb', updated_at = now() WHERE id = 'e1341d52-f620-4946-aaa9-fef1beddde24';  -- tele1
+  UPDATE avatars SET model_path = 'https://telegames-assets-local.s3.us-west-2.amazonaws.com/models/tele2/tele2.glb', updated_at = now() WHERE id = '920ce9d0-442a-47c0-bae2-65b8f86cfaa7';  -- tele2
+  UPDATE avatars SET model_path = 'https://telegames-assets-local.s3.us-west-2.amazonaws.com/models/telee/telee.glb', updated_at = now() WHERE id = 'd10eff1d-9858-495f-a409-11df7f793866';  -- telee
+  UPDATE avatars SET model_path = 'https://telegames-assets-local.s3.us-west-2.amazonaws.com/models/telie/telie.glb', updated_at = now() WHERE id = 'e11e10d6-0216-4c49-b02e-4e5b07d03fec';  -- telie
+  UPDATE avatars SET model_path = 'https://telegames-assets-local.s3.us-west-2.amazonaws.com/models/telly/telly.glb', updated_at = now() WHERE id = 'afc619ee-7e79-40c2-96ad-3b6ba6c249fa';  -- telly
+COMMIT;

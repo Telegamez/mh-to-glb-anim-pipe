@@ -75,8 +75,22 @@ if (-not (Test-Path (Join-Path $Source 'mh_materials.json'))) {
 # Every file, with its path RELATIVE to the directory root. Those relative paths are the
 # contract: the sidecar names its textures this way and the runtime resolves them against the
 # model's directory, so they are preserved verbatim all the way into the S3 key.
+# The three preview assets live in the same folder now that capture writes them beside the
+# model, and they are NOT part of this publish. They go to the avatar's asset slots through
+# smart-upload (publish_previews.ps1), which owns the columns that point at them.
+#
+# Left in, the route refuses the .mp4 outright - a model directory has no business holding a
+# video - and, worse, quietly accepts the .png and .jpg as though they were textures. The
+# character would publish with two stray images in its texture set and nobody would see it.
+#
+# Excluding them also keeps the derived bake hash honest: re-photographing a character must not
+# change the content address of its model.
+$PREVIEW_ASSETS = @('thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4')
+
 $root = (Resolve-Path $Source).Path
-$files = Get-ChildItem -Path $root -Recurse -File | ForEach-Object {
+$files = Get-ChildItem -Path $root -Recurse -File |
+  Where-Object { $PREVIEW_ASSETS -notcontains $_.Name } |
+  ForEach-Object {
   [PSCustomObject]@{
     FullName = $_.FullName
     Relative = $_.FullName.Substring($root.Length + 1).Replace('\', '/')

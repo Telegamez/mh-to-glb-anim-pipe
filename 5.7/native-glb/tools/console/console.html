@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MetaHuman → Avatar</title>
+<style>
+  :root{
+    --bg:#0f1419;--panel:#161d26;--line:#252f3d;--ink:#e6edf5;--dim:#8b9bb0;
+    --accent:#4fbdc8;--ok:#5fbe8c;--warn:#d2a83f;--bad:#e08a72;--run:#4fbdc8;
+    --mono:'JetBrains Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+  header{padding:14px 26px;border-bottom:1px solid var(--line);display:flex;
+         justify-content:space-between;align-items:center;gap:16px}
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.01em}
+  main{display:grid;grid-template-columns:minmax(560px,1fr) minmax(300px,.55fr);gap:1px;background:var(--line)}
+  .col{background:var(--bg);padding:20px 26px;min-height:calc(100vh - 55px);overflow:auto}
+
+  select,input{background:var(--panel);border:1px solid var(--line);color:var(--ink);
+               padding:9px 11px;border-radius:5px;font:14px system-ui}
+  input.mono{font:13px var(--mono)}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  button{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:9px 15px;
+         border-radius:5px;cursor:pointer;font:14px system-ui}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.32;cursor:not-allowed}
+  button.go{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
+  button.sel{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
+  button.small{padding:6px 11px;font-size:13px}
+  /* Destructive, and coloured like the alert box rather than like the go buttons. */
+  button.danger{border-color:#5d2c22;color:#f0b5a4}
+  button.danger:hover:not(:disabled){border-color:var(--bad);background:#2a1614}
+
+  /* ---- the grid: where every character is, at every step, always on screen ---- */
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);
+     font-weight:500;padding:0 6px 7px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+  th.step{text-align:center;width:74px}
+  td{padding:8px 6px 8px 0;border-bottom:1px solid var(--line)}
+  td.step{text-align:center;font-size:15px}
+  tr.off{opacity:.45}
+  .who{font-weight:500}
+  .sub{font-size:11px;color:var(--dim);font-family:var(--mono)}
+
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2b3646}
+  .dot.ok{background:var(--ok)}
+  .dot.no{background:#2b3646}
+  .dot.warn{background:var(--warn)}
+  .dot.run{background:var(--run);animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .unknown{color:#3a4655}
+
+  .phase{margin-top:22px}
+  .phase h2{font-size:11px;margin:0 0 4px;color:var(--dim);font-weight:600;
+            text-transform:uppercase;letter-spacing:.08em}
+  .phase .hint{font-size:12.5px;color:var(--dim);margin:0 0 10px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .alert{border:1px solid #5d2c22;background:#2a1614;color:#f0b5a4;border-radius:5px;
+         padding:9px 12px;margin-bottom:10px;font-size:13.5px}
+  .note{color:var(--warn);font-size:12.5px;margin-top:8px}
+  pre{background:#0a0e13;border:1px solid var(--line);border-radius:5px;padding:11px;
+      font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;margin:0;
+      min-height:240px;max-height:calc(100vh - 130px);overflow:auto;color:var(--dim)}
+
+  dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px;
+         padding:0;width:min(620px,92vw)}
+  dialog::backdrop{background:#000b}
+  .dhead,.dfoot{padding:11px 14px;display:flex;gap:8px;align-items:center}
+  .dhead{border-bottom:1px solid var(--line)}
+  .dfoot{border-top:1px solid var(--line);justify-content:flex-end}
+  .dlist{max-height:56vh;overflow:auto;padding:4px}
+  .item{padding:8px 11px;border-radius:4px;cursor:pointer;display:flex;gap:9px;align-items:center;font-size:14px}
+  .item:hover{background:var(--bg)}
+  .item .tag{margin-left:auto;font-size:11px;color:var(--dim);font-family:var(--mono)}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MetaHuman → Avatar</h1>
+  <div class="row">
+    <span class="sub" id="conn">not connected</span>
+    <select id="env" style="width:auto"></select>
+  </div>
+</header>
+
+<main>
+<div class="col">
+
+  <div id="prodWarn"></div>
+
+  <!--
+    The grid is the whole point. It is never hidden and never scrolled off: whatever else is
+    happening, the operator can see which characters exist and how far each one has got.
+  -->
+  <table>
+    <thead><tr>
+      <th style="width:26px"></th>
+      <th>Character</th>
+      <th class="step">Bake</th>
+      <th class="step">Previews</th>
+      <th class="step">Upload</th>
+      <th class="step">Assets</th>
+      <th class="step">Live</th>
+    </tr></thead>
+    <tbody id="grid"></tbody>
+  </table>
+  <div class="row" style="margin-top:8px">
+    <span class="sub" id="rootPath"></span>
+    <button id="browseRoot" class="small">Change folder</button>
+    <!-- Hidden until something is ticked: a delete button with nothing selected is only ever
+         a question about what it would delete. -->
+    <button id="del" class="small danger" hidden>Delete</button>
+    <span class="sub" id="picked"></span>
+  </div>
+
+  <!-- Phase 1 -->
+  <div class="phase">
+    <h2>1 · Create — on this machine</h2>
+    <p class="hint">Unreal and Blender make the model; the local stack photographs it.</p>
+    <div class="row">
+      <button id="pickAsset">Choose MetaHuman…</button>
+      <button class="body" data-body="female">Female</button>
+      <button class="body" data-body="male">Male</button>
+      <button id="bake" class="go" disabled>Bake</button>
+      <button id="capture" class="small" disabled>Previews only</button>
+    </div>
+    <div class="note" id="stackNote" hidden></div>
+  </div>
+
+  <!-- Phase 2 -->
+  <div class="phase">
+    <h2>2 · Publish — to the environment</h2>
+    <p class="hint">Each button fills one column above. Nothing a user sees changes until Go live.</p>
+    <div class="row" style="margin-bottom:10px">
+      <input id="token" type="password" placeholder="Paste admin cookie" autocomplete="off" style="flex:1;min-width:180px">
+      <button id="connect" class="go">Connect</button>
+      <a href="#" id="getCookie" class="sub">get it</a>
+    </div>
+    <div class="alert" id="connErr" hidden></div>
+    <div class="row">
+      <!-- Before Upload, because Upload cannot run without the row this makes. -->
+      <button id="mkRecord" disabled>Create record</button>
+      <button id="pubModel" disabled>Upload model</button>
+      <button id="pubPreviews" disabled>Upload previews</button>
+      <button id="goLive" class="go" disabled>Go live</button>
+      <button id="verify" class="small" disabled>Check</button>
+      <span class="sub" id="count"></span>
+    </div>
+  </div>
+
+</div>
+
+<div class="col">
+  <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
+             margin:0 0 9px;font-weight:600">Progress</h2>
+  <pre id="log"></pre>
+</div>
+</main>
+
+<dialog id="dlg">
+  <div class="dhead"><button id="dUp" class="small">Up</button><input id="dPath" class="mono" readonly style="flex:1"></div>
+  <div class="dlist" id="dList"></div>
+  <div class="dfoot"><button id="dCancel" class="small">Cancel</button><button id="dUse" class="go small" hidden>Use this folder</button></div>
+</dialog>
+
+<script src="/console.js"></script>
+</body>
+</html>

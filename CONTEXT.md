@@ -87,7 +87,10 @@ Execute the Process. Verify Outputs. Update manifest.json. Report.
 ## Active config
 
 `_config/pipeline.yaml`:
-- `active_pipeline` — default `<version>/<pipeline>` for single-char runs
-- `active_character` — default character id
 - `blender_exe` — path to blender.exe
-- `ue_by_version` — per-version UE project + editor paths (`5.6.1`, `5.7`)
+- `ue_by_version` — keyed by **pipeline directory** (`5.6.1`, `5.7`), not by engine
+  version. Each block holds `engine_version` (the engine actually installed),
+  `project_path` and `editor_cmd`. The stage launchers take the key from the
+  folder they live in, read the engine's own `Build.version` beside
+  `editor_cmd`, and warn if it disagrees with `engine_version`. The `5.7` tree
+  runs on UE 5.8 on the reference box.

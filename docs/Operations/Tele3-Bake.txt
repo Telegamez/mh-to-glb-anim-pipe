@@ -1,0 +1,682 @@
+=== Bootstrap
+[bootstrap] workspace: S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb
+[bootstrap] char_id: tele3
+[bootstrap] mh_folder: /Game/Tele3
+[bootstrap] output_name: Tele3
+[bootstrap] char_dir: S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3
+S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\tools\bootstrap_character.py:176: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  manifest["created_at"] = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+[bootstrap] OK: created S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3
+[bootstrap] manifest stages: all pending
+
+[bake] character id: tele3
+
+=== Stage 00 — Unreal assemble
+[stage00] no extract_thumbnail.py at S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\stages\00-unreal-assemble\tools\extract_thumbnail.py - skipping thumbnail
+[stage00] UE version  : 5.7
+[stage00] UE project  : G:/ue/telegames/telegames.uproject
+[stage00] UE editor   : C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe
+[stage00] asset       : /Game/Tele3.Tele3
+[stage00] pipeline    : cinematic
+[stage00] status      : C:/tmp/mh/status.json
+[stage00] UE pid=34064 - waiting on status.json + process exit
+[stage00] phase=STARTING  (t=58s)
+[stage00] phase=RIGGING  (t=108s)
+[stage00] phase=WAITING  (t=124s)
+[stage00] phase=STREAMING  (t=188s)
+[stage00] phase=BUILDING  (t=278s)
+[stage00] phase=SAVING  (t=352s)
+[stage00] phase=EXPORTING  (t=366s)
+[stage00] phase=DONE  (t=374s)
+[stage00] UE process exit code: 0 (informational)
+[stage00] final status:
+{"phase": "DONE", "ts": 1787949970.1939452, "produced": ["/Game/Unpacked/Tele3/Body/SKM_Tele3_BodyMesh.SKM_Tele3_BodyMesh", "/Game/Unpacked/Tele3/Clothing/Tele3_Outfits.Tele3_Outfits", "/Game/Unpacked/Tele3/Face/SKM_Tele3_FaceMesh.SKM_Tele3_FaceMesh"], "output_dir": "C:/tmp/mh/out", "fbx": ["meshes/skm_tele3_bodymesh.fbx", "meshes/tele3_outfits.fbx", "meshes/skm_tele3_facemesh.fbx"], "textures": [], "mh_manifest": "C:\\tmp\\mh\\out\\mh_manifest.json"}
+[stage00] UE screenshot dir not found: G:\ue\telegames\Saved\Screenshots\Windows
+[update_manifest] tele3.00_unreal_assemble = done (launcher exit 0)
+
+=== Stage 01 — Unreal GLB export
+[stage01] pipeline dir: 5.7
+[stage01] UE engine   : 5.8.1
+[stage01] UE project  : G:/ue/telegames/telegames.uproject
+[stage01] UE cmd      : C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe
+[stage01] char        : tele3
+[stage01] workspace   : S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb
+Using bundled DotNet SDK version: 10.0 win-x64
+Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" -Mode=ValidatePlatforms -OutputSDKs  -AllPlatforms  -project="G:/ue/telegames/telegames.uproject" -log="G:/ue/telegames/Saved/Logs/AutoSDKInfo.txt" -verbose -timestamps
+Log file: G:\ue\telegames\Saved\Logs\AutoSDKInfo.txt
+##PlatformValidate: Win64 VALID 10.0.22621.0
+##PlatformValidate: Mac INVALID 26.1.1
+##PlatformValidate: IOS INVALID 26.1.1
+##PlatformValidate: Android INVALID r27c
+##PlatformValidate: Linux INVALID v26_clang-20.1.8-rockylinux8
+##PlatformValidate: LinuxArm64 INVALID <UNKNOWN>
+##PlatformValidate: TVOS INVALID 26.1.1
+##PlatformValidate: VisionOS INVALID <UNKNOWN>
+Unable to find required SDK version 'MainVersion' for platform LinuxArm64. Check your SDK.json files
+Unable to find required SDK version 'MainVersion' for platform VisionOS. Check your SDK.json files
+Trace written to file C:\Users\matt\AppData\Local\UnrealBuildTool\Trace.uba with size 315b
+[2026.08.28-20.46.19:025][  0]LogInit: Display: Running engine for game: telegames
+[2026.08.28-20.46.19:025][  0]LogCore: Display: Requested channels: 'cpu,gpu,frame,log,bookmark,screenshot,region'
+[2026.08.28-20.46.19:025][  0]LogTrace: Display: Control listening on port 1985
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : platform="Windows"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : config="Development"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : buildversion="++UE5+Release-5.8-CL-56057345"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : engineversion="5.8.1-56057345+++UE5+Release-5.8"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : enginereleaseversion="5.8.1"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : os="Windows 11 (25H2) [10.0.26200.9168] "
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : cpu="AuthenticAMD|AMD Ryzen Threadripper 3970X 32-Core Processor"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : pgoenabled="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : pgoprofilingenabled="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : ltoenabled="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : asan="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : mergedmodules="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : compacttset="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : commandline="" G:/ue/telegames/telegames.uproject -run=pythonscript -script="C:/tmp/mh/export_glb.py -- --char=tele3" -AllowCommandletRendering -unattended -nosplash""
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : loginid="d73e139a497c0cf56619d38bff4da683"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : llm="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : zenstreaming="0"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : systemresolution.resx="1280"
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : systemresolution.resy="720"
+[2026.08.28-20.46.19:025][  0]LogAudio: Display: Audio Device Manager not initializing due to all audio being disabled. If this is not intentional, please check command line arguments for "-nosound".
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading VulkanPC ini files took 0.07 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading IOS ini files took 0.07 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading Mac ini files took 0.07 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading Android ini files took 0.07 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading Unix ini files took 0.08 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading Windows ini files took 0.08 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading TVOS ini files took 0.08 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading VisionOS ini files took 0.08 seconds
+[2026.08.28-20.46.19:025][  0]LogConfig: Display: Loading Linux ini files took 0.08 seconds
+[2026.08.28-20.46.19:025][  0]LogPluginManager: Display: The Plugin StructUtils has been marked deprecated for 5.5 and will be removed soon. Please update your dependencies.
+[2026.08.28-20.46.19:025][  0]RenderDocPlugin: Display: RenderDoc plugin will not be loaded. Use '-AttachRenderDoc' on the cmd line or enable 'renderdoc.AutoAttach' in the plugin settings.
+[2026.08.28-20.46.19:025][  0]LogAsyncCompilation: Display: MemorySharingInfo: UsedMemory=437MiB, MaxMemoryAvailable=139137MiB
+[2026.08.28-20.46.19:025][  0]LogAnalytics: Display: Provider StudioTelemetry.Provider.Log is disabled for this application
+[2026.08.28-20.46.19:025][  0]LogAnalytics: Display: Provider StudioTelemetry.Provider.CSV is disabled for this application
+[2026.08.28-20.46.19:025][  0]LogAnalytics: Display: Provider StudioTelemetry.Provider.Horde is disabled for this application
+[2026.08.28-20.46.19:025][  0]LogAnalytics: Display: Provider StudioTelemetry.Provider.Log is disabled for this application
+[2026.08.28-20.46.19:025][  0]LogAnalytics: Display: Provider StudioTelemetry.Provider.CSV is disabled for this application
+[2026.08.28-20.46.19:025][  0]LogAnalytics: Display: Provider StudioTelemetry.Provider.Horde is disabled for this application
+[2026.08.28-20.46.19:025][  0]LogCUDA: Display: CUDA module ready pending PostEngineInit.
+[2026.08.28-20.46.19:025][  0]LogStreaming: Display: AsyncLoading2 - Created: Async Loading Thread: false, Async Post Load: false, Multithreaded: false
+[2026.08.28-20.46.19:025][  0]LogHAL: Display: Platform has ~ 128 GB [137306116096 / 137438953472 / 128], which maps to Largest [LargestMinGB=32, LargerMinGB=12, DefaultMinGB=8, SmallerMinGB=6, SmallestMinGB=0)
+[2026.08.28-20.46.19:025][  0]LogCsvProfiler: Display: Metadata set : extradevelopmentmemorymb="0"
+[2026.08.28-20.46.19:025][  0]LogObj: Display: Attempting to load config data for Default__DownlinkBandwidthManagerConfig before the Class has been constructed/registered/linked (likely during module loading or early startup). This will result in the load silently failing and should be fixed.
+[2026.08.28-20.46.19:473][  0]LogObj: Display: Attempting to load config data for Default__SlateThemeManager before the Class has been constructed/registered/linked (likely during module loading or early startup). This will result in the load silently failing and should be fixed.
+Error [GENERAL | xrCreateInstance | OpenXR-Loader] : xrCreateInstance called with invalid API version 1.1.  Max supported version is 1.0
+Error [GENERAL | xrCreateInstance | OpenXR-Loader] : LoaderInstance::CreateInstance chained CreateInstance call failed
+Error [GENERAL | xrCreateInstance | OpenXR-Loader] : xrCreateInstance failed
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: Failed to create an OpenXR instance, result is XR_ERROR_RUNTIME_FAILURE. Please check if you have an OpenXR runtime installed.
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: The following OpenXR API versions were enabled (see project settings:plugins:OpenXR):
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - 1.1
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - 1.0
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: The following extensions were enabled:
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_KHR_D3D11_enable
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_KHR_D3D12_enable
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_KHR_opengl_enable
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_KHR_vulkan_enable
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_KHR_composition_layer_depth
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_KHR_visibility_mask
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_KHR_binding_modification
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_EXT_dpad_binding
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_EXT_palm_pose
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_EXT_active_action_set_priority
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_EXT_local_floor
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: - XR_EXT_user_presence
+[2026.08.28-20.46.19:684][  0]LogHMD: Warning: The following layers were enumerated:
+[2026.08.28-20.46.19:992][  0]LogD3D12RHI: Display: Creating D3D12 RHI with Max Feature Level SM6
+[2026.08.28-20.46.19:995][  0]LogRHI: Display: Timeout Detection and Recovery (TDR) summary: 
+
+	- TDR settings OK - Level: Recover, Delay: 2, DdiDelay: 5
+[2026.08.28-20.46.20:306][  0]LogD3D12RHI: Display: Not using pipeline state disk cache per r.D3D12.PSO.DiskCache=0
+[2026.08.28-20.46.20:306][  0]LogD3D12RHI: Display: Not using driver-optimized pipeline state disk cache per r.D3D12.PSO.DriverOptimizedDiskCache=0
+[2026.08.28-20.46.20:399][  0]LogD3D12RHI: Warning: TSR 16-bit VALU is disabled on NVIDIA due to known compiler bugs in drivers older than 610.00.
+[2026.08.28-20.46.20:412][  0]LogCsvProfiler: Display: Metadata set : verbatimrhiname="D3D12"
+[2026.08.28-20.46.20:412][  0]LogCsvProfiler: Display: Metadata set : rhiname="D3D12"
+[2026.08.28-20.46.20:412][  0]LogCsvProfiler: Display: Metadata set : rhifeaturelevel="SM6"
+[2026.08.28-20.46.20:412][  0]LogCsvProfiler: Display: Metadata set : shaderplatform="PCD3D_SM6"
+[2026.08.28-20.46.20:412][  0]LogCsvProfiler: Display: Metadata set : gpu="NVIDIA GeForce RTX 4090"
+[2026.08.28-20.46.20:412][  0]LogCsvProfiler: Display: Metadata set : gpudriver="596.49"
+[2026.08.28-20.46.20:425][  0]LogTextureFormatASTC: Display: ASTCEnc version 5.0.1 library loaded
+[2026.08.28-20.46.20:425][  0]LogTextureFormatManager: Display: Loaded Base TextureFormat: TextureFormatASTC
+[2026.08.28-20.46.20:425][  0]LogTextureFormatManager: Display: Loaded Base TextureFormat: TextureFormatDXT
+[2026.08.28-20.46.20:425][  0]LogTextureFormatManager: Display: Loaded Base TextureFormat: TextureFormatETC2
+[2026.08.28-20.46.20:425][  0]LogTextureFormatManager: Display: Loaded Base TextureFormat: TextureFormatIntelISPCTexComp
+[2026.08.28-20.46.20:425][  0]LogTextureFormatOodle: Display: Oodle Texture TFO init; latest sdk version = 2.9.16
+[2026.08.28-20.46.20:425][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.16.dll
+[2026.08.28-20.46.20:427][  0]LogTextureFormatManager: Display: Loaded Base TextureFormat: TextureFormatOodle
+[2026.08.28-20.46.20:427][  0]LogTextureFormatManager: Display: Loaded Base TextureFormat: TextureFormatUncompressed
+[2026.08.28-20.46.20:486][  0]LogTargetPlatformManager: Display: Failed to SetupSDK for platform 'Android'
+[2026.08.28-20.46.20:525][  0]LogTargetPlatformManager: Display: Failed to SetupSDK for platform 'IOS'
+[2026.08.28-20.46.20:565][  0]LogTargetPlatformManager: Display: Failed to SetupSDK for platform 'Linux'
+[2026.08.28-20.46.20:605][  0]LogTargetPlatformManager: Display: Failed to SetupSDK for platform 'Mac'
+[2026.08.28-20.46.20:607][  0]LogTargetPlatformManager: Display: Failed to SetupSDK for platform 'TVOS'
+[2026.08.28-20.46.20:647][  0]LogTargetPlatformManager: Display: Loaded TargetPlatform 'Windows'
+[2026.08.28-20.46.20:647][  0]LogTargetPlatformManager: Display: Loaded TargetPlatform 'WindowsEditor'
+[2026.08.28-20.46.20:647][  0]LogTargetPlatformManager: Display: Loaded TargetPlatform 'WindowsServer'
+[2026.08.28-20.46.20:647][  0]LogTargetPlatformManager: Display: Loaded TargetPlatform 'WindowsClient'
+[2026.08.28-20.46.20:647][  0]LogTargetPlatformManager: Display: Building Assets For WindowsEditor
+[2026.08.28-20.46.20:652][  0]LogAudioDebug: Display: Lib vorbis DLL was dynamically loaded.
+[2026.08.28-20.46.21:039][  0]LogDerivedDataCache: Display: ../../../Engine/DerivedDataCache/Compressed.ddp: Opened pak cache for reading. (1670 MiB)
+[2026.08.28-20.46.21:039][  0]LogZenServiceInstance: Display: Launching zen utility 'C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/zen.exe service status'.
+[2026.08.28-20.46.21:253][  0]LogZenServiceInstance: Display: Writing plugin version info to 'C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Install/zen_plugin_versions.json'
+[2026.08.28-20.46.21:254][  0]LogZenServiceInstance: Display: Read zen version cache file from 'C:/Users/matt/AppData/Local/UnrealEngine/5.8/Saved/Zen/zen.version', version: '5.8.13-202605190912-windows-x64-release-094f62c2'
+[2026.08.28-20.46.21:254][  0]LogZenServiceInstance: Display: Read zen version cache file from 'C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Install/zen.version', version: '5.8.13-202605190912-windows-x64-release-094f62c2'
+[2026.08.28-20.46.21:254][  0]LogZenServiceInstance: Display: Installed service at 'C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Install/zenserver.exe' is up to date
+[2026.08.28-20.46.21:255][  0]LogZenServiceInstance: Display: Launching executable 'C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Install/zenserver.exe', working dir 'C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Install', data dir 'C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Data', args '--port 8558 --data-dir C:\Users\matt\AppData\Local\UnrealEngine\Common\Zen\Data --http asio --gc-cache-duration-seconds 1209600 --gc-interval-seconds 21600 --gc-low-diskspace-threshold 2147483648 --cache-bucket-limit-overwrites --quiet --restrict-content-types --allow-external-oidctoken-exe=false --plugins-config "C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Install/zen_plugins_v1.json" --security-config-path "C:/Users/matt/AppData/Local/UnrealEngine/Common/Zen/Install/security-config.json" --owner-pid 39528  --child-id Zen_39528_Startup'
+[2026.08.28-20.46.23:741][  0]LogZenServiceInstance: Display: Unreal Zen Storage Server HTTP service at http://[::1]:8558 status: OK!.
+[2026.08.28-20.46.23:743][  0]LogDerivedDataCache: Display: ZenLocal: Using ZenServer HTTP service at [::1] with namespace ue.ddc. Status: OK!.
+[2026.08.28-20.46.23:752][  0]LogDerivedDataCache: Display: C:/Users/matt/AppData/Local/UnrealEngine/Common/DerivedDataCache: Performance: Latency=0.03ms. RandomReadSpeed=969.84MBs, RandomWriteSpeed=136.56MBs. Assigned SpeedClass 'Local'
+[2026.08.28-20.46.23:756][  0]LogUbaHorde: Display: UBA/Horde Configuration [Uba.Provider.Horde]: Not Enabled
+[2026.08.28-20.46.23:756][  0]LogShaderCompilers: Display: No distributed shader compiler controller found
+[2026.08.28-20.46.23:756][  0]LogShaderCompilers: Display: Using 61 local workers for shader compilation
+[2026.08.28-20.46.23:768][  0]LogShaderCompilers: Display: Compiling shader autogen file: G:/ue/telegames/Intermediate/ShaderAutogen/PCD3D_SM6/AutogenShaderHeaders.ush
+[2026.08.28-20.46.23:768][  0]LogShaderCompilers: Display: Autogen file is unchanged, skipping write.
+[2026.08.28-20.46.24:952][  0]LogEditorDomain: Display: EditorDomain is Disabled
+[2026.08.28-20.46.25:613][  0]LogDeviceProfileManager: Display: Deviceprofile LinuxArm64Editor not found.
+[2026.08.28-20.46.25:613][  0]LogDeviceProfileManager: Display: Deviceprofile LinuxArm64 not found.
+[2026.08.28-20.46.25:726][  0]LogCsvProfiler: Display: Metadata set : deviceprofile="WindowsEditor"
+[2026.08.28-20.46.25:732][  0]LogStreaming: Display: FlushAsyncLoading(1): 1 QueuedPackages, 0 AsyncPackages
+[2026.08.28-20.46.25:733][  0]LogTextureEncodingSettings: Display: Texture Encode Speed: Final (cook).
+[2026.08.28-20.46.25:733][  0]LogTextureEncodingSettings: Display: Oodle Texture Encode Speed settings: Fast: RDO Off Lambda=0, Effort=Normal Final: RDO Off Lambda=0, Effort=Normal
+[2026.08.28-20.46.25:733][  0]LogTextureEncodingSettings: Display: Shared linear texture encoding: Disabled
+[2026.08.28-20.46.26:174][  0]LogMeshReduction: Display: Using QuadricMeshReduction for automatic static mesh reduction
+[2026.08.28-20.46.26:174][  0]LogMeshReduction: Display: Using SkeletalMeshReduction for automatic skeletal mesh reduction
+[2026.08.28-20.46.26:174][  0]LogMeshReduction: Display: Using ProxyLODMeshReduction for automatic mesh merging
+[2026.08.28-20.46.26:174][  0]LogMeshReduction: Display: No distributed automatic mesh merging module available
+[2026.08.28-20.46.26:401][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.13.dll
+[2026.08.28-20.46.26:562][  0]LogInterchangeEngine: Display: Missing Interchange reimport data for Texture2D /nDisplay/LightCard/T_UVIndicator.T_UVIndicator
+[2026.08.28-20.46.26:562][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.7.dll
+[2026.08.28-20.46.26:840][  0]LogShaderCompilers: Display: Compiling shader autogen file: G:/ue/telegames/Intermediate/ShaderAutogen/PCD3D_SM5/AutogenShaderHeaders.ush
+[2026.08.28-20.46.26:840][  0]LogShaderCompilers: Display: Autogen file is unchanged, skipping write.
+[2026.08.28-20.46.26:840][  0]LogVirtualization: Display: VirtualizationSystem name found in ini file: None
+[2026.08.28-20.46.26:840][  0]LogVirtualization: Display: FNullVirtualizationSystem mounted, virtualization will be disabled
+[2026.08.28-20.46.27:073][  0]LogWorldPartition: Display: FWorldPartitionClassDescRegistry::Initialize started...
+[2026.08.28-20.46.27:077][  0]LogWorldPartition: Display: FWorldPartitionClassDescRegistry::Initialize took 4.227 ms
+[2026.08.28-20.46.27:815][  0]LogMetaSound: Display: MetaSound Page Target Initialized to 'Default'
+[2026.08.28-20.46.27:820][  0]LogAudio: Display: Registering Engine Module Parameter Interfaces...
+[2026.08.28-20.46.27:994][  0]LogLiveLinkHub: Display: LiveLinkHubModule::StartupModule - LiveLinkHub instance will not be created. (Config: 0)
+[2026.08.28-20.46.28:861][  0]LogMaterial: Display: Missing cached shadermap for /Engine/Transient.Footage CaptureData Material in PCD3D_SM6, Default, SM6, Editor (DDC key hash: fec5ef9353c4ddd0f42e66714a3618fa6b65ac22), compiling. 
+[2026.08.28-20.46.28:869][  0]LogMaterial: Display: Missing cached shadermap for /Engine/Transient.Footage CaptureData Material in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 2a5c7a200fc2239bfc5a3f9c1b0410601643b828), compiling. 
+[2026.08.28-20.46.29:043][  0]LogAudioCaptureCore: Display: No Audio Capture implementations found. Audio input will be silent.
+[2026.08.28-20.46.29:044][  0]LogAudioCaptureCore: Display: No Audio Capture implementations found. Audio input will be silent.
+[2026.08.28-20.46.29:471][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.8.dll
+[2026.08.28-20.46.29:794][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.5.dll
+[2026.08.28-20.46.30:318][  0]LogToolsetRegistry: Display: Registering Toolset ToolsetRegistry.AgentSkillToolset
+[2026.08.28-20.46.30:744][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.11.dll
+[2026.08.28-20.46.30:779][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.12.dll
+[2026.08.28-20.46.30:782][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.15.dll
+[2026.08.28-20.46.30:797][  0]LogAssetRegistry: Display: PlatformFileJournal is not available on volume 'G:' of project directory 'G:/ue/telegames/', so AssetDiscovery cache will not be read or written. Unavailability reason:
+	NTFS Journal is not active for volume 'G:'. Launch cmd.exe as admin and run command `fsutil usn createJournal G: m=<SizeInBytes>`. Recommended <SizeInBytes> is 0x40000000 (1GB).
+[2026.08.28-20.46.30:818][  0]LogAssetRegistry: Display: CleanupOrphanedCacheFiles (PreLoad): 1 .ref files found, 1 referenced binaries
+[2026.08.28-20.46.30:818][  0]LogAssetRegistry: Display: CleanupOrphanedCacheFiles: 1 total binaries, 1 referenced (kept), 0 old-style pre-migration (kept), 0 orphans deleted, 0 orphans locked (kept)
+[2026.08.28-20.46.30:819][  0]LogAssetRegistry: Display: FindShardedCacheFiles: 1 via .ref, 0 via migration fallback, 1 total
+[2026.08.28-20.46.30:819][  0]LogAssetRegistry: Display: LoadCacheFiles: loading 1 cache files, memory-mapping=enabled
+[2026.08.28-20.46.31:052][  0]LogAssetRegistry: Display: Asset registry cache read as 220.8 MiB from G:/ue/telegames/Intermediate/CachedAssetRegistry/CachedAssetRegistry_0_16C2F2424D1503231100C7A8631B86F7.bin (memory-mapped=yes)
+[2026.08.28-20.46.31:054][  0]LogAssetRegistry: Display: AssetDataGatherer spent 0.236s loading caches from G:/ue/telegames/Intermediate/CachedAssetRegistry.
+[2026.08.28-20.46.31:346][  0]LogCsvProfiler: Display: Metadata set : largeworldcoordinates="1"
+[2026.08.28-20.46.32:155][  0]LogCUDA: Display: Initialising CUDA API...
+[2026.08.28-20.46.32:155][  0]LogCUDA: Display: CUDA API initialised successfully.
+[2026.08.28-20.46.32:155][  0]LogCUDA: Display: Found 1 CUDA capable devices.
+[2026.08.28-20.46.32:155][  0]LogCUDA: Display: Found device 0 called "NVIDIA GeForce RTX 4090".
+[2026.08.28-20.46.32:155][  0]LogCUDA: Display: Attempting to create CUDA context on GPU Device 0...
+[2026.08.28-20.46.32:262][  0]LogCUDA: Display: Created CUDA context on device "NVIDIA GeForce RTX 4090".
+[2026.08.28-20.46.32:390][  0]LogCsvProfiler: Display: Metadata set : raytracing="1"
+[2026.08.28-20.46.32:896][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Experimental/Toolsets/MetaHumanGenerator/Content/Python/init_unreal.py... started...
+[2026.08.28-20.46.32:917][  0]LogToolsetRegistry: Display: Registering Toolset metahuman_toolset.metahuman.MetaHumanToolset
+[2026.08.28-20.46.32:917][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Experimental/Toolsets/MetaHumanGenerator/Content/Python/init_unreal.py... took 20.604 ms
+[2026.08.28-20.46.32:917][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Experimental/ToolsetRegistry/Content/Python/init_unreal.py... started...
+[2026.08.28-20.46.33:015][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Experimental/ToolsetRegistry/Content/Python/init_unreal.py... took 97.699 ms (total: 118.304 ms)
+[2026.08.28-20.46.33:015][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Animation/IKRig/Content/Python/init_unreal.py... started...
+[2026.08.28-20.46.33:019][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Animation/IKRig/Content/Python/init_unreal.py... took 4.212 ms (total: 122.517 ms)
+[2026.08.28-20.46.33:019][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Animation/ControlRig/Content/Python/init_unreal.py... started...
+[2026.08.28-20.46.33:041][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Animation/ControlRig/Content/Python/init_unreal.py... took 22.865 ms (total: 145.383 ms)
+[2026.08.28-20.46.33:042][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/MovieScene/MovieRenderPipeline/Content/Python/init_unreal.py... started...
+[2026.08.28-20.46.33:045][  0]LogPython: Display: Running start-up script C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/MovieScene/MovieRenderPipeline/Content/Python/init_unreal.py... took 3.027 ms (total: 148.410 ms)
+[2026.08.28-20.46.33:045][  0]LogPythonScriptCommandlet: Display: Running Python script: C:/tmp/mh/export_glb.py -- --char=tele3
+[2026.08.28-20.46.34:925][  0]LogTexture: Display: Building texture TwoD: /Game/Unpacked/Tele3/Face/Baked/T_BakedNormal_LOD4.T_BakedNormal_LOD4 (TFO_BC5, 256x256 x1x1x1) (Required Memory Estimate: 19.583091 MB), EncodeSpeed: Final
+[2026.08.28-20.46.34:925][  0]LogTexture: Display: Building texture TwoD: /Game/Unpacked/Tele3/Face/Baked/T_BakedNormal_LOD3.T_BakedNormal_LOD3 (TFO_BC5, 256x256 x1x1x1) (Required Memory Estimate: 19.583091 MB), EncodeSpeed: Final
+[2026.08.28-20.46.34:926][  0]LogTexture: Display: Building texture TwoD: /Game/Unpacked/Tele3/Face/Baked/T_BakedNormal_LOD5.T_BakedNormal_LOD5 (TFO_BC5, 256x256 x1x1x1) (Required Memory Estimate: 19.583091 MB), EncodeSpeed: Final
+[2026.08.28-20.46.36:404][  0]LogGLTFExporter: Warning: Maximum value (-1) used in indices accessor for mesh SKM_Tele3_FaceMesh (section ), this may not be supported on some glTF viewers
+[2026.08.28-20.46.36:437][  0]LogCsvProfiler: Display: Metadata set : streamingpoolsizemb="1000"
+[2026.08.28-20.46.38:401][  0]LogGLTFExporter: Warning: Unsupported shading model (Subsurface Profile) in material MI_Teeth_Baked, will export as Default Lit
+[2026.08.28-20.46.40:136][  0]LogGLTFExporter: Warning: Unsupported shading model (Eye) in material MI_EyeL_Baked, will export as Default Lit
+[2026.08.28-20.46.41:405][  0]LogGLTFExporter: Warning: Unsupported shading model (Eye) in material MI_EyeR_Baked, will export as Default Lit
+[2026.08.28-20.46.42:517][  0]LogMaterial: Display: Missing cached shadermap for  in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 407ab241c9da8c225a20fcdc33b25ca95f855b19), compiling. 
+[2026.08.28-20.47.09:593][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.09:630][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.09:642][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.09:858][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.10:699][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.12:278][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.13:541][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.14:961][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.16:559][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.17:826][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.18:814][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.20:665][  0]LogEditorFactories: Display: Exporting Texture as png Layer 0/1 Block 0/1
+[2026.08.28-20.47.28:915][  0]LogMaterial: Display: Missing cached shadermap for /MetaHumanCharacter/Materials/M_GrayTexture_Eyes.M_GrayTexture_Eyes in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 365861b8e729ef8f9ad34ac39a9c289d83bd239c), compiling. 
+[2026.08.28-20.47.28:932][  0]LogMaterial: Display: Missing cached shadermap for /MetaHumanCharacter/Materials/M_GrayTexture_Head.M_GrayTexture_Head in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 1948fc03ebae5ff664a9144a56e33f8b821e30a0), compiling. 
+[2026.08.28-20.47.28:959][  0]LogMaterial: Display: Missing cached shadermap for /MetaHumanCharacter/Materials/M_GrayTexture_Teeth.M_GrayTexture_Teeth in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 4729936445cc210e0eb98d327d1e1b5e556fe05e), compiling. 
+[2026.08.28-20.47.29:001][  0]LogSkinnedAsset: Display: Waiting for skinned assets to be ready 0/1 (SKM_Face) ...
+[2026.08.28-20.47.30:782][  0]LogPython: Warning: C:/tmp/mh/export_glb.py:356: DeprecationWarning: EditorLevelLibrary: Function 'get_editor_world' on 'EditorLevelLibrary' is deprecated: The Editor Scripting Utilities Plugin is deprecated - Use the function in Unreal Editor Subsystem
+  world = unreal.EditorLevelLibrary.get_editor_world()
+
+[2026.08.28-20.47.30:789][  0]LogPython: Warning: C:/tmp/mh/export_glb.py:364: DeprecationWarning: SkeletalMeshComponent: Function 'set_skeletal_mesh' on 'SkinnedMeshComponent' is deprecated: 'set_skeletal_mesh' was renamed to 'set_skinned_asset_and_update'.
+  smc.set_skeletal_mesh(face_skm)
+
+[2026.08.28-20.47.36:541][  0]LogPythonScriptCommandlet: Display: Python script executed successfully
+[2026.08.28-20.47.36:541][  0]LogInit: Display: 
+[2026.08.28-20.47.36:541][  0]LogInit: Display: Warning/Error Summary (Unique only)
+[2026.08.28-20.47.36:541][  0]LogInit: Display: -----------------------------------
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: Failed to create an OpenXR instance, result is XR_ERROR_RUNTIME_FAILURE. Please check if you have an OpenXR runtime installed.
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: The following OpenXR API versions were enabled (see project settings:plugins:OpenXR):
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - 1.1
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - 1.0
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: The following extensions were enabled:
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_KHR_D3D11_enable
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_KHR_D3D12_enable
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_KHR_opengl_enable
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_KHR_vulkan_enable
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_KHR_composition_layer_depth
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_KHR_visibility_mask
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_KHR_binding_modification
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_EXT_dpad_binding
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_EXT_palm_pose
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_EXT_active_action_set_priority
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_EXT_local_floor
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: - XR_EXT_user_presence
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogHMD: Warning: The following layers were enumerated:
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogD3D12RHI: Warning: TSR 16-bit VALU is disabled on NVIDIA due to known compiler bugs in drivers older than 610.00.
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogGLTFExporter: Warning: Maximum value (-1) used in indices accessor for mesh SKM_Tele3_FaceMesh (section ), this may not be supported on some glTF viewers
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogGLTFExporter: Warning: Unsupported shading model (Subsurface Profile) in material MI_Teeth_Baked, will export as Default Lit
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogGLTFExporter: Warning: Unsupported shading model (Eye) in material MI_EyeL_Baked, will export as Default Lit
+[2026.08.28-20.47.36:541][  0]LogInit: Display: LogGLTFExporter: Warning: Unsupported shading model (Eye) in material MI_EyeR_Baked, will export as Default Lit
+[2026.08.28-20.47.36:542][  0]LogInit: Display: LogPython: Warning: C:/tmp/mh/export_glb.py:356: DeprecationWarning: EditorLevelLibrary: Function 'get_editor_world' on 'EditorLevelLibrary' is deprecated: The Editor Scripting Utilities Plugin is deprecated - Use the function in Unreal Editor Subsystem
+  world = unreal.EditorLevelLibrary.get_editor_world()
+
+[2026.08.28-20.47.36:542][  0]LogInit: Display: LogPython: Warning: C:/tmp/mh/export_glb.py:364: DeprecationWarning: SkeletalMeshComponent: Function 'set_skeletal_mesh' on 'SkinnedMeshComponent' is deprecated: 'set_skeletal_mesh' was renamed to 'set_skinned_asset_and_update'.
+  smc.set_skeletal_mesh(face_skm)
+
+[2026.08.28-20.47.36:542][  0]LogInit: Display: 
+[2026.08.28-20.47.36:542][  0]LogInit: Display: Success - 0 error(s), 25 warning(s)
+[2026.08.28-20.47.36:542][  0]LogInit: Display: 
+
+Execution of commandlet took:  1m 3s (63.65 seconds), PeakPhysMemoryMB=6483 MB, PeakVirtMemoryMB=8535 MB
+[2026.08.28-20.47.44:161][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_GridOverlay/Dependencies/M_GridOverlay.M_GridOverlay in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 6d02e51b5c1c2be8c2d9c0a3bfb6b90470c33042), compiling. 
+[2026.08.28-20.47.44:182][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_Reticle/Dependencies/M_ReticleCross.M_ReticleCross in PCD3D_SM6, Default, SM6, Editor (DDC key hash: b3073f8ba0ab25d7315cd39ce200a25b1a70ac6e), compiling. 
+[2026.08.28-20.47.44:192][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_Reticle/Dependencies/M_ReticleNone.M_ReticleNone in PCD3D_SM6, Default, SM6, Editor (DDC key hash: aea5a84e26aa3f8fb8e8f266614eb9f63377d5ec), compiling. 
+[2026.08.28-20.47.44:209][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.10.dll
+[2026.08.28-20.47.44:219][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/Modifiers/PhotoModifier/Dependencies/PPM_VCamPhotoAlphaInvert.PPM_VCamPhotoAlphaInvert in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 340d79166d864588caba0619235f6d71a17aed91), compiling. 
+[2026.08.28-20.47.44:245][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/Modifiers/VisualizationModifier/M_VCamVisualizationPPM.M_VCamVisualizationPPM in PCD3D_SM6, Default, SM6, Editor (DDC key hash: ce2713e9c3d609f2de31b3f8737b1e8ab1069002), compiling. 
+[2026.08.28-20.47.44:256][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_AspectRatioMask/Dependencies/M_MaskAspectRatio.M_MaskAspectRatio in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 053afe107e0dadb8b8c7a1bc7ed3f6e2336a2d1b), compiling. 
+[2026.08.28-20.47.44:262][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_GridOverlay/Dependencies/M_SafeZones.M_SafeZones in PCD3D_SM6, Default, SM6, Editor (DDC key hash: dc0bd8a914452fa446d97be1b600d0ff20d0383e), compiling. 
+[2026.08.28-20.47.44:279][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_Reticle/Dependencies/M_ReticleCircle.M_ReticleCircle in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 9869f0c37f7c0626458545a39b3ac838baa6acd5), compiling. 
+[2026.08.28-20.47.44:284][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_Reticle/Dependencies/M_ReticleDot.M_ReticleDot in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 018f401c74490cc7ac4bcbbeedda28642b49415d), compiling. 
+[2026.08.28-20.47.44:291][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCW_Reticle/Dependencies/M_ReticleSplitCircle.M_ReticleSplitCircle in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 81b90438574221ae0b59adc2352fa77f75f748a8), compiling. 
+[2026.08.28-20.47.44:303][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/Modifiers/TakeRecorderModifier/M_CountDown.M_CountDown in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 5f8783a57861526f436c1361b8c1fc437ff7ec97), compiling. 
+[2026.08.28-20.47.44:327][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCamTakesBrowser/widgets/mat/M_Carousel.M_Carousel in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 17229170fe316ae36fb351347d065648b7cd0d52), compiling. 
+[2026.08.28-20.47.44:345][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCamButton/Dependencies/M_HoldTimer.M_HoldTimer in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 2e57994f03dc06fa1f60457c4724f55b2062d317), compiling. 
+[2026.08.28-20.47.44:353][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.6.dll
+[2026.08.28-20.47.44:388][  0]LogMaterial: Display: Missing cached shadermap for /Niagara/DefaultAssets/DefaultSpriteMaterial.DefaultSpriteMaterial in PCD3D_SM6, Default, SM6, Editor (DDC key hash: f265dde2bdb46644895bdfc0b5ebe01e5319161d), compiling. 
+[2026.08.28-20.47.44:422][  0]LogTextureFormatOodle: Display: Oodle Texture loading DLL: oo2tex_win64_2.9.9.dll
+[2026.08.28-20.47.44:439][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCamTakesBrowser/widgets/mat/M_Gradient.M_Gradient in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 423a55b5d30563a12a92b29f2212bd9aff2140d5), compiling. 
+[2026.08.28-20.47.44:455][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCamTakesBrowser/widgets/mat/M_ThumbnailMask.M_ThumbnailMask in PCD3D_SM6, Default, SM6, Editor (DDC key hash: b221c2cf4a0f7a8952d01e892631ec4d02c0046a), compiling. 
+[2026.08.28-20.47.44:492][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/Modifiers/TeleportModifier/Dependencies/M_TeleportUXBeam.M_TeleportUXBeam in PCD3D_SM6, Default, SM6, Editor (DDC key hash: c5e0dc3d8ed9906f6e3c1825feac316b0dbfd49c), compiling. 
+[2026.08.28-20.47.44:502][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/Modifiers/TeleportModifier/Dependencies/M_TeleportUXDisc.M_TeleportUXDisc in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 43e59ff61a67f08e45af25c7499b7806d8037135), compiling. 
+[2026.08.28-20.47.44:516][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/Common/Blueprints/VCamAim/Dependencies/Materials/M_LaserHit.M_LaserHit in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 8b02e86c4cd6b13222eb69bd433acee738df0564), compiling. 
+[2026.08.28-20.47.44:532][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/Common/Blueprints/VCamAim/Dependencies/Materials/M_LaserTube.M_LaserTube in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 1397b55039bc979fd00e71af4631135576ba92fd), compiling. 
+[2026.08.28-20.47.44:563][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCamGestureWidget/Dependencies/M_GestureFeedback.M_GestureFeedback in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 6497ce04163e660c6c046afca404f22973b04de8), compiling. 
+[2026.08.28-20.47.44:570][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCamGestureWidget/Dependencies/M_GestureFocus.M_GestureFocus in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 9ce10c11b6b64abda60438333cb131519be5aa38), compiling. 
+[2026.08.28-20.47.44:593][  0]LogMaterial: Display: Missing cached shadermap for /VirtualCamera/WidgetLibrary/VCamSequencerTimeline/Materials/M_TimelineRoundedBox.M_TimelineRoundedBox in PCD3D_SM6, Default, SM6, Editor (DDC key hash: 8b3fa86ec9970f9995509f9fcb4125b4a4661bc6), compiling. 
+[2026.08.28-20.47.44:730][  0]LogToolsetRegistry: Display: Unregistering Toolset ToolsetRegistry.AgentSkillToolset
+[2026.08.28-20.47.45:116][  0]LogPython: Display: Object '/ControlRig/Python/RigHierarchy/add_controls_for_selected_PY.ControlOutputFormat' was externally referenced when shutting down Python. Forcibly releasing its Python resources!
+[2026.08.28-20.47.46:090][  0]LogAssetRegistry: Display: CleanupOrphanedCacheFiles (PostWrite): 1 .ref files found, 1 referenced binaries
+[2026.08.28-20.47.46:090][  0]LogAssetRegistry: Display: CleanupOrphanedCacheFiles: 1 total binaries, 1 referenced (kept), 0 old-style pre-migration (kept), 0 orphans deleted, 0 orphans locked (kept)
+[2026.08.28-20.47.46:475][  0]LogShaderCompilers: Display: Exiting ShaderCompilingThread
+[stage01] UE exit code: 0
+[update_manifest] tele3.01_unreal_glb_export = done (launcher exit 0)
+
+=== Stage 02 — Blender assemble
+[run_assemble] blender   = C:/Program Files/Blender Foundation/Blender 4.4/blender.exe
+[run_assemble] workspace = S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb
+[run_assemble] char      = tele3
+[run_assemble] in_root   = S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\01-glb
+[stage02-glb] groom exclusions active: Goatee_, Mustache_, Moustache_, Beard_, Stubble_ (set MH_GROOM_EXCLUDE=none to assemble every groom)
+[stage02-glb] importing S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\01-glb\SKM_Tele3_FaceMesh.glb
+13:47:57 | INFO: Data are loaded, start creating Blender stuff
+13:47:58 | INFO: Blender create Mesh node SKM_Tele3_FaceMesh
+13:47:59 | INFO: glTF import finished in 1.21s
+[stage02-glb] importing S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\01-glb\Tele3_Outfits.glb
+13:47:59 | INFO: Data are loaded, start creating Blender stuff
+13:47:59 | INFO: Blender create Mesh node Tele3_Outfits
+13:47:59 | ERROR: File is invalid: Some vertices are not assigned to bone(s) 
+13:47:59 | INFO: glTF import finished in 0.40s
+[stage02-glb] importing S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\01-glb\SKM_Tele3_BodyMesh.glb
+13:47:59 | INFO: Data are loaded, start creating Blender stuff
+13:47:59 | INFO: Blender create Mesh node SKM_Tele3_BodyMesh
+13:47:59 | ERROR: File is invalid: Some vertices are not assigned to bone(s) 
+13:48:00 | INFO: glTF import finished in 0.34s
+[stage02-glb] importing S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\01-glb\Eyebrows_M_Thin_CardsMesh_Group0_LOD0.glb
+13:48:00 | INFO: Data are loaded, start creating Blender stuff
+13:48:00 | INFO: Blender create Mesh node Eyebrows_M_Thin_CardsMesh_Group0_LOD0
+13:48:00 | INFO: glTF import finished in 0.02s
+[stage02-glb] hid 0 non-LOD0/collision meshes
+[stage02-glb] excluded 0 mesh(es) via manifest exclude_meshes
+[stage02-glb]   armatures: Tele3_Outfits.001 vgroup 'Root' -> 'root' (case reconciliation)
+[stage02-glb]   armatures: Tele3_Outfits.001 -> SKM_Tele3_BodyMesh (body-skeleton copy)
+[stage02-glb]   armatures: SKM_Tele3_FaceMesh.001 -> SKM_Tele3_BodyMesh (facial mesh)
+[stage02-glb]   armatures: joined facial armature -> SKM_Tele3_BodyMesh (+875 bones)
+[stage02-glb]   armatures: deduped 32 connector bone(s) after join
+[stage02-glb] armatures: keeper 'SKM_Tele3_BodyMesh' - retargeted 1, joined 1 facial, deleted 1 spare(s)
+FBX version: 7300
+[stage02-glb]   arkit: imported LSE: face='SkeletalMeshComponent0' verts=34657 arm='root' action=root|Unreal Take|Base Layer
+[stage02-glb]   arkit: action frames 1..66 (66 frames), poses 66
+[stage02-glb]   arkit: captured 51 ARKit pose meshes from LSE FBX
+[stage02-glb]   arkit: GLB target='SKM_Tele3_FaceMesh.001' verts=34657
+[stage02-glb]   arkit: kdtree match max=0.00mm avg=0.00mm
+[stage02-glb]   arkit: transferred 51 ARKit shape keys to GLB face
+Info: Deleted 18 data-block(s)
+[stage02-glb] baked 51 ARKit shape keys onto the GLB face mesh (via Sequencer-baked LSE FBX)
+[stage02-glb]   grooms: face=SKM_Tele3_FaceMesh.001 basis_verts=34657 keys=51 grooms=['Eyebrows_M_Thin_CardsMesh_Group0_LOD0']
+[stage02-glb]   grooms: excluding 2144 eyelash verts from KD-tree
+[stage02-glb]   grooms: Eyebrows_M_Thin_CardsMesh_Group0_LOD0 verts=4296 keys_created=46 skipped_zero=5 nn0_mean=1.70mm p95=3.68mm
+[stage02-glb] propagated ARKit shape keys onto groom card meshes (46 total keys created)
+[stage02-glb]   convenience: composed 5 -> ['mouthSmile', 'eyesClosed', 'eyesLookUp', 'eyesLookDown', 'mouthOpen']
+[stage02-glb]   convenience: synthesised mouthClose (ARKit mapping omits it)
+[stage02-glb] composed 6 convenience shape(s) onto the GLB face mesh
+[stage02-glb]   visemes: composed 15/15
+[stage02-glb] composed 15 viseme shape(s) onto the GLB face mesh
+[stage02-glb]   groom-shapes: Eyebrows_M_Thin_CardsMesh_Group0_LOD0 composed 21/21 (zero-filled: mouthClose<-mouthRollLower+mouthRollUpper; viseme_PP<-mouthRollLower+mouthRollUpper; viseme_FF<-mouthRollLower; viseme_kk<-mouthShrugLower)
+[stage02-glb] composed 21 contract shape(s) onto groom card meshes
+[stage02-glb] made 3 invisible-mat materials fully transparent (alpha=0 Principled)
+[stage02-glb] hair parent: SKM_Tele3_BodyMesh
+[stage02-glb] parented 1 hair-card mesh(es) to head bone
+[stage02-glb]   wire Eyebrows_M_Thin_CardsMesh_Group0_LOD0: mi=MI_WI_Eyebrows_M_Thin_Facial_Hair color=(0.180, 0.100, 0.050) attr=Eyebrows_M_Thin_CardsAtlas_Attribute.png
+[stage02-glb]   wire lash SKM_Tele3_FaceMesh.001.SKM_Tele3_FaceMesh.001_LashMat -> T_Eyelashes_S_Sparse_Coverage.png color=(0.180, 0.100, 0.050)
+[stage02-glb] wired sidecar textures onto 2 card material(s)
+[stage02-glb]   clothing: MI_WI_HS_Casual_Outfit_64_HS_Chinos base_color=(0.604,0.407,0.220) maps=['base_color', 'normal', 'orm']
+[stage02-glb]   clothing: MI_WI_HS_Casual_Outfit_64_HS_Desert_Boots base_color=(1.000,1.000,1.000) maps=['base_color', 'normal', 'orm']
+[stage02-glb]   clothing: MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt base_color=(0.009,0.040,0.109) maps=['base_color', 'normal', 'orm']
+[stage02-glb] wrote mh_materials.json: 5 entry(ies)
+[stage02-glb] removed 3 glTF placeholder Icosphere(s)
+[stage02-glb]   clearance: Eyebrows_M_Thin_CardsMesh_Group0_LOD0 pushed 2385/4296 verts
+[stage02-glb] pushed 2385 hair card vert(s) to clear face clipping
+[stage02-glb]   scalp-dark: 0 head, 0 facial, 1 skipped (brows/lashes)
+[stage02-glb]   scalp-dark: no hair card meshes found - no darkening baked
+[stage02-glb]   split: 8 material slot(s) -> ['EyeAO_Mesh', 'Eye_Mesh', 'Eyelash_Mesh', 'Head_Mesh', 'Hide_Mesh', 'Lacrimal_Mesh', 'Teeth_Mesh']
+[stage02-glb]   split: produced ['EyeAO_Mesh', 'Eye_Mesh', 'Eyelash_Mesh', 'Head_Mesh', 'Hide_Mesh', 'Lacrimal_Mesh', 'Teeth_Mesh']
+[stage02-glb]   lids: Head_Mesh has ['eyesClosed', 'eyeBlinkLeft', 'eyeBlinkRight'] (eyeBlinkLeft moves ~3493 verts)
+[stage02-glb]   lids: EyeAO_Mesh has ['eyesClosed', 'eyeBlinkLeft', 'eyeBlinkRight'] (eyeBlinkLeft moves ~273 verts)
+[stage02-glb]   lids: Eyelash_Mesh has ['eyesClosed', 'eyeBlinkLeft', 'eyeBlinkRight'] (eyeBlinkLeft moves ~1127 verts)
+[stage02-glb]   mesh contract: all six meshes present
+[stage02-glb] applied the platform mesh contract (all six present)
+[stage02-glb]   bones: renamed 16 (already correct: 0)
+[stage02-glb]   bones: all 16 contract names present
+[stage02-glb]   cards->Head: Eyebrows_M_Thin_CardsMesh_Group0_LOD0
+[stage02-glb] parented 1 card mesh(es) to the Head bone
+[stage02-glb] renamed 16 bone(s) to the platform rig contract
+Info: Saved "tele3.blend"
+[stage02-glb] wrote S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\02-blend\tele3.blend
+[stage02-glb] scene: {'imported': 4, 'mesh_names': ['Body_Mesh', 'EyeAO_Mesh', 'Eye_Mesh', 'Eyebrows_M_Thin_CardsMesh_Group0_LOD0', 'Eyelash_Mesh', 'Head_Mesh', 'Hide_Mesh', 'Lacrimal_Mesh', 'Teeth_Mesh', 'Tele3_Outfits.001'], 'armature_names': ['SKM_Tele3_BodyMesh'], 'hair_parented': 1}
+[stage02-glb] char manifest updated: status=done
+Blender 4.4.1 (hash d8845b3bb572 built 2025-04-15 02:59:10)
+
+Blender quit
+[run_assemble] exit code: 0
+[update_manifest] tele3.02_blender_assemble = done (launcher exit 0)
+
+=== FBX reweight (also exports the GLB)
+[fbx_reweight] 1/5 UE FBX export (tele3)
+[fbx_reweight] 2/5 dump FBX weights
+  [dump_fbx] SKM_Tele3_BodyMesh: SKM_Tele3_BodyMesh.001 15444 verts, 250 bones
+  [dump_fbx] Tele3_Outfits: Tele3_Outfits.001 14110 verts, 83 bones
+  [dump_fbx] wrote S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\source\fbx_weights.npz
+[fbx_reweight] 3/5 reweight blend
+  [reweight] auto map: {'Body_Mesh': 'SKM_Tele3_BodyMesh', 'Tele3_Outfits.001': 'Tele3_Outfits'}
+  [reweight] Body_Mesh: rebuilt 250 bone groups over 15444 verts (position gate 0.0005mm)
+  [reweight] Tele3_Outfits.001: rebuilt 83 bone groups over 14110 verts (position gate 0.0005mm)
+  [reweight] saved S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\02-blend\tele3.blend
+[fbx_reweight] 4/5 skin dump + solve
+[weight_solve] char    = tele3
+[weight_solve] blend   = S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\02-blend\tele3.blend
+[weight_solve] anims   = S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\docs\animations\mh-animations.glb
+[dump_skin] Body_Mesh: 15444 verts, influences med=5 max=12, 9088 verts over 4
+[dump_skin] Eye_Mesh: 1604 verts, influences med=1 max=2, 0 verts over 4
+[dump_skin] EyeAO_Mesh: 560 verts, influences med=4 max=8, 277 verts over 4
+[dump_skin] Eyelash_Mesh: 2144 verts, influences med=4 max=5, 307 verts over 4
+[dump_skin] Head_Mesh: 24414 verts, influences med=7 max=12, 18557 verts over 4
+[dump_skin] Hide_Mesh: 1046 verts, influences med=1 max=8, 164 verts over 4
+[dump_skin] Lacrimal_Mesh: 276 verts, influences med=4 max=5, 115 verts over 4
+[dump_skin] Teeth_Mesh: 4613 verts, influences med=1 max=8, 350 verts over 4
+[dump_skin] Tele3_Outfits.001: 14110 verts, influences med=8 max=12, 10774 verts over 4
+[dump_skin] wrote S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\_solve\skin_dump.npz (3.2 MB, 9 meshes, 1185 bones)
+Blender 4.4.1 (hash d8845b3bb572 built 2025-04-15 02:59:10)
+Read blend: "S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\02-blend\tele3.blend"
+
+Blender quit
+[solve_skin] 80 sampled frames over 1185 bones (truth carries rig-logic slide; basis is runtime-drivable only)
+[solve_skin] skeleton nodes present 343; of those 309 move
+[solve_skin] live bones 311/1185; 873 folded to a live ancestor
+[solve_skin] Body_Mesh: 15444 verts in 7.0s   mean deviation truncated 0.341mm -> solved 0.272mm   worst 3.4 -> 3.1mm   improved on 77.2% of verts
+[solve_skin] Eye_Mesh: 1604 verts in 0.2s   mean deviation truncated 0.000mm -> solved 0.000mm   worst 0.0 -> 0.0mm   improved on 0.0% of verts
+[solve_skin] EyeAO_Mesh: 560 verts in 0.1s   mean deviation truncated 0.000mm -> solved 0.000mm   worst 0.0 -> 0.0mm   improved on 0.0% of verts
+[solve_skin] Eyelash_Mesh: 2144 verts in 0.3s   mean deviation truncated 0.000mm -> solved 0.000mm   worst 0.0 -> 0.0mm   improved on 0.0% of verts
+[solve_skin] Head_Mesh: 24414 verts in 4.5s   mean deviation truncated 0.051mm -> solved 0.032mm   worst 5.6 -> 3.3mm   improved on 5.0% of verts
+[solve_skin] Hide_Mesh: 1046 verts in 0.1s   mean deviation truncated 0.000mm -> solved 0.000mm   worst 0.0 -> 0.0mm   improved on 0.0% of verts
+[solve_skin] Lacrimal_Mesh: 276 verts in 0.0s   mean deviation truncated 0.000mm -> solved 0.000mm   worst 0.0 -> 0.0mm   improved on 0.0% of verts
+[solve_skin] Teeth_Mesh: 4613 verts in 0.6s   mean deviation truncated 0.000mm -> solved 0.000mm   worst 0.0 -> 0.0mm   improved on 0.0% of verts
+[solve_skin] Tele3_Outfits.001: 14110 verts in 8.4s   mean deviation truncated 1.218mm -> solved 0.658mm   worst 20.2 -> 6.4mm   improved on 87.2% of verts
+[solve_skin] wrote S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\_solve\skin_solved.npz
+[weight_solve] done: S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\_solve\skin_solved.npz
+[fbx_reweight] 5/5 stage 03 export
+[run_export] blender   = C:/Program Files/Blender Foundation/Blender 4.4/blender.exe
+[run_export] workspace = S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb
+[run_export] char      = tele3
+[run_export] blend     = S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\02-blend\tele3.blend
+Info: No orphaned data-blocks to purge
+[stage03-glb] removed 0 hidden meshes
+[stage03-glb] weight compensation: full
+[stage03-glb] solved: Body_Mesh -> 225 bone groups, 4 influences by construction
+[stage03-glb] solved: Eye_Mesh -> 2 bone groups, 4 influences by construction
+[stage03-glb] solved: EyeAO_Mesh -> 1 bone groups, 4 influences by construction
+[stage03-glb] solved: Eyelash_Mesh -> 1 bone groups, 4 influences by construction
+[stage03-glb] solved: Head_Mesh -> 21 bone groups, 4 influences by construction
+[stage03-glb] solved: Hide_Mesh -> 1 bone groups, 4 influences by construction
+[stage03-glb] solved: Lacrimal_Mesh -> 1 bone groups, 4 influences by construction
+[stage03-glb] solved: Teeth_Mesh -> 1 bone groups, 4 influences by construction
+[stage03-glb] solved: Tele3_Outfits.001 -> 79 bone groups, 4 influences by construction
+[stage03-glb] solved weights applied to 9 mesh(es); fold/filter/smooth skipped
+[stage03-glb]   solve Body_Mesh: 0.341mm -> 0.2722mm mean, worst 3.372 -> 3.072mm
+[stage03-glb]   solve Eye_Mesh: 0.0001mm -> 0.0001mm mean, worst 0.0 -> 0.0mm
+[stage03-glb]   solve EyeAO_Mesh: 0.0001mm -> 0.0001mm mean, worst 0.0 -> 0.0mm
+[stage03-glb]   solve Eyelash_Mesh: 0.0001mm -> 0.0001mm mean, worst 0.0 -> 0.0mm
+[stage03-glb]   solve Head_Mesh: 0.0514mm -> 0.0318mm mean, worst 5.596 -> 3.34mm
+[stage03-glb]   solve Hide_Mesh: 0.0001mm -> 0.0001mm mean, worst 0.0 -> 0.0mm
+[stage03-glb]   solve Lacrimal_Mesh: 0.0001mm -> 0.0001mm mean, worst 0.0 -> 0.0mm
+[stage03-glb]   solve Teeth_Mesh: 0.0001mm -> 0.0001mm mean, worst 0.0 -> 0.0mm
+[stage03-glb]   solve Tele3_Outfits.001: 1.2177mm -> 0.6575mm mean, worst 20.237 -> 6.41mm
+[stage03-glb] no body tuck at S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\_solve\body_tuck.npz - skipping (skin may punch through cloth in motion)
+[stage03-glb] hide-body: Tele3_Outfits.001 covers 609 more Body_Mesh verts, tucked 0 that had pushed through it
+[stage03-glb] hide-body: Body_Mesh: eroded 546, removed 20 faces (0.1%), 28667 remain
+[stage03-glb] hide-body: Tele3_Outfits.001 covers 1318 more Head_Mesh verts, tucked 0 that had pushed through it
+[stage03-glb] hide-body: Head_Mesh: eroded 804, removed 766 faces (1.6%), 47238 remain
+[stage03-glb]   normal G-flip: MI_Teeth_Baked_Normal (1024x1024)
+[stage03-glb] flipped G on 1 normal maps (DX -> GL)
+[stage03-glb]   downsample MI_WI_HS_Casual_Outfit_64_HS_Chinos_BaseColor: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample MI_WI_HS_Casual_Outfit_64_HS_Chinos_MetallicRoughness: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample MI_WI_HS_Casual_Outfit_64_HS_Desert_Boots_BaseColor: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample MI_WI_HS_Casual_Outfit_64_HS_Desert_Boots_MetallicRoughness: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt_BaseColor: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt_MetallicRoughness: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample T_Eyelashes_S_Sparse_Coverage.png: 2048x2048 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample T_HS_Chinos_54_N: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample T_HS_Chinos_54_ORM: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample T_HS_Desert_Boots_63_N: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample T_HS_Desert_Boots_63_ORM: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample T_HS_Polo_Shirt_62_N: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb]   downsample T_HS_Polo_Shirt_62_ORM: 4096x4096 -> 1024x1024 (cap=1024)
+[stage03-glb] downsampled 13 textures (max 1024px)
+Blender 4.4.1 (hash d8845b3bb572 built 2025-04-15 02:59:10)
+Read blend: "S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\02-blend\tele3.blend"
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+ERROR: Image "" not available. Keeping packed image
+Fra:52 Mem:310.27M (Peak 477.53M) | Time:29:42:24.45 | Mem:0.00M, Peak:0.00M | Scene | Synchronizing object | Lacrimal_Mesh
+Fra:52 Mem:310.27M (Peak 477.53M) | Time:29:42:24.45 | Mem:0.00M, Peak:0.00M | Scene | Synchronizing object | Eyelash_Mesh
+Fra:52 Mem:332.81M (Peak 477.53M) | Time:29:42:24.47 | Mem:0.00M, Peak:0.00M | Scene | Initializing
+Fra:52 Mem:332.81M (Peak 477.53M) | Time:29:42:24.47 | Mem:0.00M, Peak:0.00M | Scene | Updating Images | Loading MI_Body_Baked_SKM_Tele3_BodyMesh_BaseColor
+Fra:52 Mem:332.81M (Peak 477.53M) | Time:29:42:24.47 | Mem:0.00M, Peak:0.00M | Scene | Updating Images | Loading MI_Body_Baked_SKM_Tele3_BodyMesh_MetallicRoughness
+Fra:52 Mem:332.81M (Peak 477.53M) | Time:29:42:24.47 | Mem:0.00M, Peak:0.00M | Scene | Updating Images | Loading MI_Teeth_Baked_BaseColor
+Fra:52 Mem:332.81M (Peak 477.53M) | Time:29:42:24.47 | Mem:0.00M, Peak:0.00M | Scene | Updating Images | Loading MI_EyeL_Baked_SKM_Tele3_FaceMesh_BaseColor
+Info: Baking map saved to internal image, save it externally or pack it
+[stage03-glb]   flattened Eyebrows_M_Thin_CardsMesh_Group0_LOD0_CardMat BC -> Eyebrows_M_Thin_CardsMesh_Group0_LOD0_CardMat_BC_baked (1024x1024)
+[stage03-glb] flattened 1 card-material BC chains
+[stage03-glb]   vcol: no mesh carries an active colour attribute
+[stage03-glb] exporting S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\03-glb\tele3.glb (draco=True)
+INFO Draco mesh compression is available, use library at C:\Program Files\Blender Foundation\Blender 4.4\4.4\scripts\addons_core\io_scene_gltf2\extern_draco.dll
+13:49:32 | INFO: Starting glTF 2.0 export
+13:49:32 | INFO: Extracting primitive: Body_Mesh
+13:49:32 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:32 | INFO: Primitives created: 1
+13:49:32 | INFO: Extracting primitive: Eye_Mesh
+13:49:32 | INFO: Primitives created: 2
+13:49:32 | INFO: Extracting primitive: EyeAO_Mesh
+13:49:32 | INFO: Primitives created: 1
+13:49:32 | INFO: Extracting primitive: Eyelash_Mesh
+13:49:32 | WARNING: Image '<bpy_struct, Image("T_Eyelashes_S_Sparse_Coverage.png") at 0x00000149755CC120>' has no size and cannot be exported.
+13:49:32 | INFO: Primitives created: 1
+13:49:32 | INFO: Extracting primitive: Head_Mesh
+13:49:36 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:36 | WARNING: This case should not happen, please report a bug
+13:49:36 | INFO: Primitives created: 1
+13:49:36 | INFO: Extracting primitive: Hide_Mesh
+13:49:37 | INFO: Primitives created: 1
+13:49:37 | INFO: Extracting primitive: Lacrimal_Mesh
+13:49:37 | INFO: Primitives created: 1
+13:49:37 | INFO: Extracting primitive: Teeth_Mesh
+13:49:37 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | INFO: Primitives created: 1
+13:49:38 | INFO: Extracting primitive: Tele3_Outfits
+13:49:38 | WARNING: Image '<bpy_struct, Image("T_HS_Polo_Shirt_62_ORM") at 0x00000149755C7220>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt_MetallicRoughness") at 0x00000149755CCF20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt_MetallicRoughness") at 0x00000149755CCF20>' has no size and cannot be exported.
+13:49:38 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | WARNING: Image '<bpy_struct, Image("T_HS_Polo_Shirt_62_ORM") at 0x00000149755C7220>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt_MetallicRoughness") at 0x00000149755CCF20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Polo_Shirt_MetallicRoughness") at 0x00000149755CCF20>' has no size and cannot be exported.
+13:49:38 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | WARNING: Image '<bpy_struct, Image("T_HS_Chinos_54_ORM") at 0x00000149755D2B20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Chinos_MetallicRoughness") at 0x00000149755D8820>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Chinos_MetallicRoughness") at 0x00000149755D8820>' has no size and cannot be exported.
+13:49:38 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | WARNING: Image '<bpy_struct, Image("T_HS_Chinos_54_ORM") at 0x00000149755D2B20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Chinos_MetallicRoughness") at 0x00000149755D8820>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Chinos_MetallicRoughness") at 0x00000149755D8820>' has no size and cannot be exported.
+13:49:38 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | WARNING: Image '<bpy_struct, Image("T_HS_Desert_Boots_63_ORM") at 0x00000149755D0F20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Desert_Boots_MetallicRoughness") at 0x00000149755CEB20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Desert_Boots_MetallicRoughness") at 0x00000149755CEB20>' has no size and cannot be exported.
+13:49:38 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | WARNING: Image '<bpy_struct, Image("T_HS_Desert_Boots_63_ORM") at 0x00000149755D0F20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Desert_Boots_MetallicRoughness") at 0x00000149755CEB20>' has no size and cannot be exported.
+13:49:38 | WARNING: Image '<bpy_struct, Image("MI_WI_HS_Casual_Outfit_64_HS_Desert_Boots_MetallicRoughness") at 0x00000149755CEB20>' has no size and cannot be exported.
+13:49:38 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | INFO: Primitives created: 3
+13:49:38 | INFO: Extracting primitive: Eyebrows_M_Thin_CardsMesh_Group0_LOD0
+13:49:38 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+13:49:38 | INFO: Primitives created: 1
+13:49:38 | INFO: Draco encoder: Encoding mesh Body_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh Eye_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh EyeAO_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh Eyelash_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh Head_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh Hide_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh Lacrimal_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh Teeth_Mesh.
+13:49:38 | INFO: Draco encoder: Encoding mesh Tele3_Outfits.001.
+13:49:38 | INFO: Draco encoder: Encoding mesh Eyebrows_M_Thin_CardsMesh_Group0_LOD0.
+13:49:39 | INFO: Finished glTF 2.0 export in 7.491600751876831 s
+
+[stage03-glb] sidecar: mh_materials.json + 12 texture(s) -> S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\03-glb
+[stage03-glb] propagated targetNames onto 9 primitive(s)
+[stage03-glb] skeleton gate: 1 skin(s), 1185 joints, all names unique
+[stage03-glb] wrote S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\characters\tele3\03-glb\glb_manifest.json
+[stage03-glb] glb 50.6 MB, 118,103 tris, max 1024px, 13 mats, 18 imgs
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 15443 vertices, 86001 indices, raw size: 1036810, encoded size: 171286, compression ratio: 6.05
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 802 vertices, 4608 indices, raw size: 50920, encoded size: 17075, compression ratio: 2.98
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 802 vertices, 4608 indices, raw size: 54128, encoded size: 17063, compression ratio: 3.17
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 560 vertices, 2940 indices, raw size: 35000, encoded size: 10911, compression ratio: 3.21
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 2144 vertices, 5166 indices, raw size: 121820, encoded size: 28525, compression ratio: 4.27
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 24073 vertices, 141714 indices, raw size: 1631516, encoded size: 478934, compression ratio: 3.41
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 1046 vertices, 4740 indices, raw size: 63872, encoded size: 18283, compression ratio: 3.49
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 276 vertices, 1158 indices, raw size: 16668, encoded size: 4879, compression ratio: 3.42
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 4613 vertices, 25050 indices, raw size: 289976, encoded size: 90740, compression ratio: 3.20
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 5979 vertices, 28584 indices, raw size: 391992, encoded size: 79727, compression ratio: 4.92
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 3883 vertices, 21780 indices, raw size: 261008, encoded size: 49891, compression ratio: 5.23
+DracoEncoder | Preserve triangle order: no
+DracoEncoder | Encoded 4248 vertices, 19242 indices, raw size: 276372, encoded size: 51949, compression ratio: 5.32
+DracoEncoder | Preserve triangle order: yes
+DracoEncoder | Encoded 4296 vertices, 8718 indices, raw size: 189276, encoded size: 56553, compression ratio: 3.35
+
+Blender quit
+[run_export] exit code: 0
+[update_manifest] tele3.03_glb_export = done (launcher exit 0)
+[fbx_reweight] done: characters/tele3/03-glb/tele3.glb
+
+=== Stage 04 — Webview build
+[run_site] python    = python
+[run_site] workspace = S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb
+[run_site] char      = tele3
+[stage04]   cap T_HS_Chinos_54_BC.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Chinos_54_N.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Chinos_54_ORM.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Desert_Boots_63_BC.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Desert_Boots_63_N.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Desert_Boots_63_ORM.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Polo_Shirt_62_Aged_BC.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Polo_Shirt_62_N.png: 4096x4096 -> 2048x2048
+[stage04]   cap T_HS_Polo_Shirt_62_ORM.png: 4096x4096 -> 2048x2048
+[stage04] capped 9 published texture(s) at 2048px
+[stage04] tele3: GLB + mapping=True + 12 textures
+[stage04] built tele3 (118,103 tris, 48.3 MiB)
+[stage04] gallery has 7 character(s)
+[stage04] docs/ at S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\docs
+[stage04] validating http://127.0.0.1:64957/characters/tele3/
+[stage04] preview saved: S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\docs\characters\tele3\preview.png
+[stage04] render validation: OK
+[stage04] char manifest updated: status=done
+[run_site] exit code: 0
+[update_manifest] tele3.04_webview_build = done (launcher exit 0)
+
+=== Export to S:\Avatars\metahuman\characters\tele3
+3 entries copied
+
+[bake] model ready: S:\Avatars\metahuman\characters\tele3\tele3.glb
+
+[bake] Previews skipped: the local stack is not answering at http://localhost:3000.
+[bake] The model is finished and correct — start the stack and press Capture.
+
+[bake] package: S:\Avatars\metahuman\characters\tele3
+[bake] contains: mh_materials.json, tele3.glb, textures
+
+[bake] done

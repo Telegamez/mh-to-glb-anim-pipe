@@ -148,6 +148,23 @@ def _build_character_page(
     glb_manifest = _load_json(char_dir / "03-glb" / "glb_manifest.json")
 
     out_dir = docs / "characters" / char_id
+
+    # Cleared, not merged.
+    #
+    # This directory is what the publish package is copied from, so a file the previous bake
+    # produced and this one does not is carried forward into the package - past the package's
+    # own rm, which can only clear what it is about to write. A re-bake then ships its
+    # predecessor's textures, and it looks like a bad bake rather than a stale file.
+    #
+    # Everything below is regenerated from this bake. The one thing that legitimately
+    # disappears is a thumbnail whose source (02-blend/preview_threequarter.png) is gone: the
+    # gallery then shows no picture, which is the honest answer. Keeping the old one would put
+    # the previous bake's face on this bake's row.
+    #
+    # Safe by the time we are here: main() has already refused when glb_src is missing, so this
+    # never wipes a good build for a run that was going to fail anyway.
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # GLB

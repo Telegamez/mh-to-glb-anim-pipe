@@ -15,6 +15,7 @@
   button:disabled { opacity:.4; cursor:default; }
   button.primary { background:var(--go); border-color:var(--go); color:#0d1a12; font-weight:600; }
   button.primary:hover:not(:disabled) { filter:brightness(1.08); }
+  button.body.sel { background:var(--go); border-color:var(--go); color:#0d1a12; font-weight:600; }
   .row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
   .pick { flex:1; min-width:200px; font-family:Consolas,monospace; font-size:12px; color:var(--dim);
           overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -48,6 +49,11 @@
       <button id="browse">Browse…</button>
       <div class="pick" id="picked">no MetaHuman chosen</div>
     </div>
+    <div class="row" id="bodyRow" hidden style="margin-top:12px">
+      <button class="body" data-body="female">Female</button>
+      <button class="body" data-body="male">Male</button>
+      <div class="pick" id="bodyNote"></div>
+    </div>
   </div>
 
   <div class="step">
@@ -66,6 +72,7 @@
 
   <div class="step">
     <div class="lbl">Ready to publish</div>
+    <div class="pick" id="pkgPath" style="margin-bottom:10px"></div>
     <table id="baked"><tr><td class="pick">nothing baked yet</td></tr></table>
   </div>
 </main>
@@ -78,7 +85,18 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-let asset = null;
+let asset = null, body = null, BAKED = [];
+
+// Bake stays disabled until a body is chosen. It is not defaulted, here or on the server:
+// the value picks the animation library, and a wrong or missing one ships silently as
+// female (telegamez#3285), which is why the pipeline made the flag mandatory.
+function setBody(b, note) {
+  body = b;
+  for (const el of document.querySelectorAll('.body')) el.classList.toggle('sel', el.dataset.body === b);
+  $('bodyNote').textContent = note || '';
+  $('go').disabled = !(asset && body);
+}
+for (const el of document.querySelectorAll('.body')) el.onclick = () => setBody(el.dataset.body, '');
 
 const get = (u) => fetch(u).then((r) => r.json());
 
@@ -90,7 +108,10 @@ async function refresh() {
       `The local stack isn't running, so previews will be skipped. The model still bakes correctly — start the stack and use Previews below.`;
   }
 
-  const { rows } = await get('/api/baked');
+  const { rows, packages } = await get('/api/baked');
+  BAKED = rows;
+  // The folder the publisher is pointed at. Shown because it is the handoff.
+  $('pkgPath').textContent = packages;
   const t = $('baked');
   if (!rows.length) { t.innerHTML = '<tr><td class="pick">nothing baked yet</td></tr>'; return; }
   t.innerHTML = '';
@@ -110,16 +131,16 @@ async function refresh() {
   }
 }
 
-async function run(endpoint, body) {
+async function run(endpoint, payload) {
   $('logStep').hidden = false;
   $('log').textContent = '';
   $('go').disabled = true;
   const res = await fetch(endpoint, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
   });
   if (!res.headers.get('content-type')?.startsWith('text/plain')) {
     $('log').textContent = (await res.json()).error ?? 'failed';
-    $('go').disabled = !asset;
+    $('go').disabled = !(asset && body);
     return;
   }
   const reader = res.body.getReader();
@@ -130,11 +151,11 @@ async function run(endpoint, body) {
     $('log').textContent += dec.decode(value, { stream: true });
     $('log').scrollTop = $('log').scrollHeight;
   }
-  $('go').disabled = !asset;
+  $('go').disabled = !(asset && body);
   refresh();
 }
 
-$('go').onclick = () => run('/api/bake', { asset, force: $('force').checked, capture: true });
+$('go').onclick = () => run('/api/bake', { asset, body, force: $('force').checked, capture: true });
 
 // --- browse -----------------------------------------------------------------------------
 async function openAt(p) {
@@ -152,14 +173,29 @@ async function openAt(p) {
   for (const e of d.entries) {
     const row = document.createElement('div');
     row.className = 'item';
-    row.textContent = (e.dir ? '📁  ' : '🎭  ') + e.name;
+    // Say what each asset is. A MetaHuman is the only thing worth baking, and picking a
+    // Blueprint costs a UE launch and 20 seconds to be told so.
+    const mh = e.kind === 'MetaHumanCharacter';
+    row.textContent = (e.dir ? '📁  ' : mh ? '🎭  ' : '·  ') + e.name;
+    if (!e.dir && !mh) {
+      row.style.opacity = '.55';
+      const tag = document.createElement('span');
+      tag.style.cssText = 'margin-left:auto;font-size:11px;color:var(--dim)';
+      tag.textContent = e.kind ?? 'unknown';
+      row.append(tag);
+    }
     row.onclick = () => {
       const full = d.here.replace(/[\\/]$/, '') + '\\' + e.name;
       if (e.dir) return openAt(full);
       asset = full;
-      $('picked').textContent = e.name.replace(/\.uasset$/i, '');
+      const name = e.name.replace(/\.uasset$/i, '');
+      $('picked').textContent = name;
       $('picked').classList.add('set');
-      $('go').disabled = false;
+      $('bodyRow').hidden = false;
+      // Start a re-bake from what the character already is. bootstrap derives the real id;
+      // this only preselects, so the operator still confirms rather than inheriting a guess.
+      const known = BAKED.find((r) => r.id === name.toLowerCase() && r.body);
+      setBody(known ? known.body : null, known ? 'last baked as ' + known.body : '');
       $('dlg').close();
     };
     list.append(row);

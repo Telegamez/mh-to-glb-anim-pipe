@@ -55,10 +55,59 @@ const PIPELINE_ROOT = [
   ?? path.resolve(HERE, '..', '..');
 
 const REPO_ROOT = path.resolve(PIPELINE_ROOT, '..', '..');
-const CHARACTERS_OUT = path.join(PIPELINE_ROOT, 'docs', 'characters');
+
+/**
+ * Where stage 04 leaves a character. This is inside the pipeline's `docs/` viewer site —
+ * that site is what stage 04 exists to build, so it is read from and never redirected.
+ */
+const STAGE_OUT = path.join(PIPELINE_ROOT, 'docs', 'characters');
+
+/**
+ * Where finished packages are put for publishing, and what the publisher browses.
+ *
+ * Deliberately outside the repo: whoever publishes has no repo access, and asking them to
+ * find a folder inside a pipeline's generated documentation site is asking them to learn a
+ * layout that has nothing to do with their job. Derived rather than hard-coded so a
+ * different checkout still resolves; --packages overrides it.
+ */
+const PACKAGES = path.resolve(flag('packages', path.resolve(REPO_ROOT, '..', 'characters')));
+
+/**
+ * What the export leaves behind in `docs/`, and why. Two groups, for two different reasons.
+ *
+ * The viewer site's own files. `preview.png` is a 1280x800 Playwright screenshot taken to
+ * prove the character loads in a browser — render validation, not artwork, and on the site's
+ * dark ground rather than the one previews are shown against. `index.html` is that site's page
+ * for the character. Nothing in the product reads either from a published directory.
+ *
+ * And the three previews, which belong to capture and not to the pipeline. Stage 04 copies a
+ * thumbnail in for its gallery, and older runs left previews in `docs/` too, so carrying them
+ * across would hand a re-bake its PREDECESSOR's previews. That is exactly what happened on the
+ * first run through this console: capture failed, the export had already supplied stale
+ * previews, and the package looked complete while depicting a different bake. Excluded here, a
+ * failed capture leaves a package visibly missing its previews — which the ready list reports
+ * and offers a button to fix.
+ */
+const NOT_EXPORTED = new Set([
+  'preview.png', 'index.html',
+  'thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4',
+]);
 
 /** Where the local stack serves the capture page. Detected, never started — see the UI. */
 const STACK = flag('stack', 'http://localhost:3000');
+
+/**
+ * The surface these previews are shown on: the room settings avatar picker. Rendering on it
+ * means a card reads as one image instead of a cut-out pasted onto the page.
+ *
+ * Flat, not a gradient — framing measures the subject against the top-left pixel, so a
+ * gradient reads as subject at one end of the frame and clips the fit.
+ *
+ * Chosen by measurement rather than eye: against tele's garments the navy polo sits 72 away
+ * from this on average where the threshold is 24, and further from it than from the grey it
+ * replaces. A future character in a mid-navy shirt would want checking before it is trusted.
+ */
+const PREVIEW_BG = flag('bg', '18385d');
 
 /**
  * The monorepo, for the capture script. A sibling of this repo in the normal layout; the
@@ -90,6 +139,48 @@ function ueContentDir() {
     } catch { /* try the next one */ }
   }
   return null;
+}
+
+/**
+ * What kind of asset a .uasset holds, from the FIRST recognised class name in its header.
+ *
+ * "Contains MetaHumanCharacter" is not the question — shoes, hair and clothing all reference
+ * the class and match it, which is why a naive search offers an operator a list of boots. The
+ * asset's own class appears in its header before the things it imports, so the earliest
+ * recognised name wins and the references never do.
+ *
+ * This labels rather than filters. Baking a Blueprint is caught by the pipeline in about 20
+ * seconds with `wrong class: Blueprint`, so a false positive is cheap; a false negative that
+ * hid somebody's character behind a rule they cannot see would be expensive. Everything stays
+ * pickable — this only says what each thing is.
+ */
+const UASSET_CLASSES = [
+  'MetaHumanCharacter', 'BlueprintGeneratedClass', 'SkeletalMesh', 'StaticMesh',
+  'AnimSequence', 'AnimMontage', 'GroomAsset', 'Texture2D', 'MaterialInstanceConstant',
+  'LevelSequence', 'SoundWave', 'World',
+];
+
+function uassetKind(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(65536);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    // latin1 so byte offsets survive: the header is length-prefixed names, not text, and a
+    // utf8 decode would move or drop bytes and with them the ordering this depends on.
+    const head = buf.subarray(0, n).toString('latin1');
+    let best = null;
+    let bestAt = Infinity;
+    for (const cls of UASSET_CLASSES) {
+      const at = head.indexOf(cls);
+      if (at !== -1 && at < bestAt) { bestAt = at; best = cls; }
+    }
+    return best;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already gone */ } }
+  }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -158,14 +249,19 @@ const STAGES = [
   { label: 'Stage 04 — Webview build', script: 'stages/04-webview-build/tools/run_site.ps1' },
 ];
 
-async function bake(res, { asset, force, capture }) {
+async function bake(res, { asset, body, force, capture }) {
   const stop = (msg) => { res.write(`\n[bake] ${msg}\n`); res.end(); busy = null; };
 
   // Bootstrap first: it derives the character id, and everything after is keyed on it.
+  //
+  // --body is required by the script and is not defaulted here for the reason it is required
+  // there: a wrong or missing value ships silently as female (telegamez#3285). Choosing one
+  // on the operator's behalf would put that bug back, so the console refuses instead.
   const boot = await runStep(res, {
     label: 'Bootstrap',
     cmd: 'python',
-    args: [path.join(PIPELINE_ROOT, 'tools', 'bootstrap_character.py'), '--asset', asset, ...(force ? ['--force'] : [])],
+    args: [path.join(PIPELINE_ROOT, 'tools', 'bootstrap_character.py'),
+      '--asset', asset, '--body', body, ...(force ? ['--force'] : [])],
   });
 
   if (boot.code !== 0) {
@@ -193,7 +289,29 @@ async function bake(res, { asset, force, capture }) {
     if (code !== 0) return stop(`${stage.label} failed (exit ${code}). Stopped here — later stages depend on it.`);
   }
 
-  const dir = path.join(CHARACTERS_OUT, id);
+  // Stage 04 writes into the pipeline's viewer site. Check the model is really there before
+  // treating the run as a success: an exit code says a script finished, not that it produced
+  // anything.
+  const built = path.join(STAGE_OUT, id);
+  if (!fs.existsSync(path.join(built, `${id}.glb`))) {
+    return stop(`Stage 04 reported success but ${id}.glb is not in ${built}.`);
+  }
+
+  // Copy the finished character to where publishing looks for it. A copy, not a move: the
+  // viewer site is built from its own copy and breaks if the character is taken out from
+  // under it.
+  const dir = path.join(PACKAGES, id);
+  res.write(`\n=== Export to ${dir}\n`);
+  try {
+    fs.mkdirSync(PACKAGES, { recursive: true });
+    // Cleared first so a re-bake cannot leave a file from the previous one behind — a
+    // stale texture nothing references still gets published with the character.
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.cpSync(built, dir, { recursive: true, filter: (from) => !NOT_EXPORTED.has(path.basename(from)) });
+  } catch (e) {
+    return stop(`Export failed: ${e.message}`);
+  }
+  res.write(`${fs.readdirSync(dir).length} entries copied\n`);
   res.write(`\n[bake] model ready: ${path.join(dir, `${id}.glb`)}\n`);
 
   if (capture) {
@@ -207,7 +325,8 @@ async function bake(res, { asset, force, capture }) {
       const { code } = await runStep(res, {
         label: 'Previews — thumbnail, image, video',
         cmd: 'node',
-        args: [path.join(monorepo, 'scripts', 'media', 'capture-companion-previews.mjs'), '--dir', dir, '--base', STACK],
+        args: [path.join(monorepo, 'scripts', 'media', 'capture-companion-previews.mjs'),
+          '--dir', dir, '--base', STACK, '--bg', PREVIEW_BG],
         cwd: monorepo,
       });
       if (code !== 0) {
@@ -238,7 +357,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/config') {
       return send(res, 200, {
         pipelineRoot: PIPELINE_ROOT,
-        charactersOut: CHARACTERS_OUT,
+        stageOut: STAGE_OUT,
+        packages: PACKAGES,
         ueContent: ueContentDir(),
         monorepo: guessMonorepo() ?? null,
         stack: STACK,
@@ -256,7 +376,9 @@ const server = http.createServer(async (req, res) => {
       const entries = [];
       for (const e of fs.readdirSync(here, { withFileTypes: true })) {
         if (e.isDirectory()) entries.push({ name: e.name, dir: true });
-        else if (e.name.toLowerCase().endsWith('.uasset')) entries.push({ name: e.name, dir: false });
+        else if (e.name.toLowerCase().endsWith('.uasset')) {
+          entries.push({ name: e.name, dir: false, kind: uassetKind(path.join(here, e.name)) });
+        }
       }
       entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
       return send(res, 200, { here, up: path.dirname(here) === here ? null : path.dirname(here), entries });
@@ -265,34 +387,46 @@ const server = http.createServer(async (req, res) => {
     /** What has already been baked, and whether each package is complete. */
     if (url.pathname === '/api/baked') {
       const rows = [];
-      if (fs.existsSync(CHARACTERS_OUT)) {
-        for (const e of fs.readdirSync(CHARACTERS_OUT, { withFileTypes: true })) {
+      if (fs.existsSync(PACKAGES)) {
+        for (const e of fs.readdirSync(PACKAGES, { withFileTypes: true })) {
           if (!e.isDirectory()) continue;
-          const dir = path.join(CHARACTERS_OUT, e.name);
+          const dir = path.join(PACKAGES, e.name);
           const files = fs.readdirSync(dir);
+          // The body archetype a character was last baked with. Carried so a re-bake can
+          // start from what it already is: silently flipping it is exactly the defect that
+          // made the flag mandatory (telegamez#3285), and nobody re-reads a manifest first.
+          let body = null;
+          try {
+            body = JSON.parse(fs.readFileSync(path.join(PIPELINE_ROOT, 'characters', e.name, 'manifest.json'), 'utf8')).body ?? null;
+          } catch { /* never bootstrapped here, or an older manifest */ }
+
           rows.push({
             id: e.name,
+            body,
             model: files.some((f) => f.toLowerCase().endsWith('.glb')),
             previews: ['thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4'].every((f) => files.includes(f)),
           });
         }
       }
-      return send(res, 200, { charactersOut: CHARACTERS_OUT, rows });
+      return send(res, 200, { packages: PACKAGES, rows });
     }
 
     if (url.pathname === '/api/bake' && req.method === 'POST') {
-      const { asset, force, capture } = await readBody(req);
+      const { asset, body, force, capture } = await readBody(req);
       if (!asset) return send(res, 400, { error: 'pick a MetaHuman first' });
+      // Refused rather than defaulted: the value decides the animation library, and a wrong
+      // or missing one ships silently as female (telegamez#3285).
+      if (body !== 'female' && body !== 'male') return send(res, 400, { error: 'choose female or male first' });
       if (busy) return send(res, 409, { error: `already baking ${busy} — one at a time` });
       busy = asset;
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-      return bake(res, { asset, force: Boolean(force), capture: capture !== false });
+      return bake(res, { asset, body, force: Boolean(force), capture: capture !== false });
     }
 
     /** Previews on their own, for a model that baked while the stack was down. */
     if (url.pathname === '/api/capture' && req.method === 'POST') {
       const { id } = await readBody(req);
-      const dir = path.join(CHARACTERS_OUT, String(id ?? ''));
+      const dir = path.join(PACKAGES, String(id ?? ''));
       if (!id || !fs.existsSync(dir)) return send(res, 400, { error: 'unknown character' });
       const monorepo = guessMonorepo();
       if (!monorepo) return send(res, 400, { error: 'could not find the telegamez checkout' });
@@ -303,7 +437,8 @@ const server = http.createServer(async (req, res) => {
       await runStep(res, {
         label: `Previews — ${id}`,
         cmd: 'node',
-        args: [path.join(monorepo, 'scripts', 'media', 'capture-companion-previews.mjs'), '--dir', dir, '--base', STACK],
+        args: [path.join(monorepo, 'scripts', 'media', 'capture-companion-previews.mjs'),
+          '--dir', dir, '--base', STACK, '--bg', PREVIEW_BG],
         cwd: monorepo,
       });
       res.write('\n[bake] done\n');

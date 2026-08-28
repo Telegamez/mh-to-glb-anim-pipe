@@ -76,6 +76,13 @@ docs/characters/*
 !*/*/docs/characters/ada/
 !*/*/docs/characters/taro/
 
+# The pipeline's gallery index. Stage 04 rewrites it on every bake, and the
+# per-card cache-buster is keyed to the run timestamp, so a one-character bake
+# rewrites every row. It links only to docs/characters/*, ignored above — so in
+# a clean clone it is a page of dead links. The site that is actually published
+# is the repo-root docs/, which stays tracked.
+*/*/docs/index.html
+
 # Final GLB outputs in docs/ — MetaHuman-licensed, not MIT-shippable.
 docs/characters/*/*.glb
 */*/docs/characters/*/*.glb

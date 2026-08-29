@@ -455,7 +455,15 @@ const server = http.createServer(async (req, res) => {
           // published character is simply absent from that dropdown with nothing to explain
           // why — so the status is carried here and the go-live SQL sets it.
           status: row ? (row.status ?? null) : null,
-          published: Boolean(row && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\//i.test(row.modelPath || '')),
+          // Not anchored, deliberately. The column stores the relative key that was written
+          // to it, but the admin LIST endpoint formats it into a full CDN URL on the way out
+          // — so a row that is genuinely live comes back as
+          // `https://<bucket>.s3.../avatars/<id>/<hash>/<file>.glb`. Anchoring at `^avatars/`
+          // reported every live avatar as unpublished, which showed up as every row on the
+          // page reading "Add its model" — the label for a character that has no files at all.
+          // Searching for the published segment anywhere still excludes the seeded
+          // placeholder, which is `models/<id>/<id>.glb` in either form.
+          published: /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(row?.modelPath || ''),
         };
       });
       // What each row points at *now*, kept for the journal. A publish overwrites this value,

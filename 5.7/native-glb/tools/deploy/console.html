@@ -94,7 +94,7 @@
       <button id="browse">Browse</button>
     </div>
     <table><thead><tr>
-      <th style="width:26px"></th><th>Character</th><th>Size</th><th>What will happen</th>
+      <th style="width:26px"></th><th style="width:52px"></th><th>Character</th><th>Size</th><th>What will happen</th>
     </tr></thead><tbody id="chars"></tbody></table>
     <div class="row" style="margin-top:16px">
       <button id="publish" class="go">Publish</button>
@@ -142,7 +142,7 @@ const log = (s) => { $('log').textContent += s; $('log').scrollTop = 1e9; };
 const setLog = (s) => { $('log').textContent = s; };
 const show = (id, yes) => { $(id).hidden = !yes; };
 
-let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [];
+let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [], SCAN_AT = 0;
 
 async function boot() {
   CONFIG = await (await fetch('/api/config')).json();
@@ -189,6 +189,7 @@ $('setToken').onclick = async () => {
 async function load() {
   const scan = await (await fetch('/api/scan?root=' + encodeURIComponent($('root').value))).json();
   CHARS = scan.characters || [];
+  SCAN_AT = Date.now();   // cache-buster for the row thumbnails, one per scan
 
   const res = await fetch('/api/resolve', {
     method:'POST', headers:{'content-type':'application/json'},
@@ -212,7 +213,7 @@ async function load() {
 function render() {
   const tb = $('chars'); tb.innerHTML = '';
   if (!CHARS.length) {
-    tb.innerHTML = '<tr><td colspan="4" class="dim">Nothing here &mdash; try Browse.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="5" class="dim">Nothing here &mdash; try Browse.</td></tr>';
     return;
   }
 
@@ -228,11 +229,25 @@ function render() {
     else if (r.published) action = '<span class="dim">Update to a new version</span>';
     else action = '<span class="dim">Add its model</span>';
 
+    /* The face of the thing you are about to send. `t` is the scan it came from, so a
+     * re-scan after a fresh capture shows the new picture instead of the one the page
+     * already has. A capture older than its model is marked rather than dropped - it is
+     * still the best likeness there is, it is just not a likeness of THIS bake. */
+    const thumb = c.thumbnail
+      ? '<img src="/api/thumbnail?root=' + encodeURIComponent($('root').value)
+          + '&char=' + encodeURIComponent(c.id) + '&t=' + SCAN_AT + '" alt=""'
+          + ' style="width:40px;height:40px;object-fit:cover;border-radius:4px;display:block'
+          + (c.previewsStale ? ';opacity:.55' : '') + '">'
+          + (c.previewsStale ? '<span class="warn" style="font-size:10px">older</span>' : '')
+      : '<span class="dim" style="font-size:11px">no&nbsp;capture</span>';
+
     const tick = c.ready && c.inRoster;
     const tr = document.createElement('tr');
     if (!c.ready) tr.className = 'off';
     tr.innerHTML = '<td><input type="checkbox" data-char="' + c.id + '"'
       + (tick ? ' checked' : '') + (c.ready ? '' : ' disabled') + '></td>'
+      + '<td' + (c.previewsStale ? ' title="This capture is older than the model — it shows the previous bake."' : '')
+      + '>' + thumb + '</td>'
       + '<td>' + c.id + (c.inRoster ? '' : ' <span class="dim">&middot; extra</span>') + '</td>'
       + '<td class="mono dim">' + c.mb + ' MB</td>'
       + '<td>' + action

@@ -147,7 +147,8 @@ function scanRoot(root) {
     const texDir = path.join(dir, 'textures');
     const textures = fs.existsSync(texDir) ? fs.readdirSync(texDir).length : 0;
     const strayManifest = fs.existsSync(path.join(dir, 'manifest.json'));
-    const mb = Math.round(fs.statSync(glb).size / 1048576);
+    const glbStat = fs.statSync(glb);
+    const mb = Math.round(glbStat.size / 1048576);
 
     // The three assets that fill avatars' preview columns. Not required to publish the model
     // directory — they go through a different route — so their absence is reported, never a
@@ -155,13 +156,36 @@ function scanRoot(root) {
     const PREVIEW_FILES = ['thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4'];
     const previews = PREVIEW_FILES.every((f) => fs.existsSync(path.join(dir, f)));
 
+    // A capture is a photograph of a bake, so it outlives the thing it photographs: new
+    // content is written and the previous pictures stay sitting beside it. The row shows the
+    // thumbnail to say what is about to ship, and a picture that predates its subject says it
+    // wrongly — confidently, which is worse than saying nothing.
+    //
+    // Compared against the whole package, not just the GLB. The model file carries the mesh
+    // and almost nothing a person would recognise: clothing colour and texture live in
+    // mh_materials.json and textures/, and are applied over the model at runtime. A shirt can
+    // change with the .glb untouched — that is what happened when the logo polo went on, and
+    // a GLB-only comparison called every one of those previews current.
+    const thumbnail = fs.existsSync(path.join(dir, 'thumbnail.png'));
+    const contentTime = [
+      glbStat.mtimeMs,
+      ...(sidecar ? [fs.statSync(path.join(dir, 'mh_materials.json')).mtimeMs] : []),
+      ...(fs.existsSync(texDir)
+        ? fs.readdirSync(texDir).map((f) => fs.statSync(path.join(texDir, f)).mtimeMs)
+        : []),
+    ].reduce((a, b) => Math.max(a, b), 0);
+    const previewsStale = PREVIEW_FILES.some((f) => {
+      const p = path.join(dir, f);
+      return fs.existsSync(p) && fs.statSync(p).mtimeMs < contentTime;
+    });
+
     const problems = [];
     if (!sidecar) problems.push('no mh_materials.json — would render untextured');
     if (textures === 0) problems.push('no textures/');
     if (strayManifest) problems.push('stray manifest.json — publish would be refused');
 
     characters.push({
-      id: name, dir, mb, sidecar, textures, strayManifest, previews,
+      id: name, dir, mb, sidecar, textures, strayManifest, previews, thumbnail, previewsStale,
       ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
     });
   }
@@ -407,6 +431,30 @@ const server = http.createServer(async (req, res) => {
       // Remember a folder that actually held characters, not one that merely got typed.
       if (result.characters.length) writeSetting('root', root);
       return send(res, 200, result);
+    }
+
+    /**
+     * The thumbnail sitting beside a character's model, so the table shows what is about to
+     * ship rather than only its name and its size.
+     *
+     * Read-only and never cached. The whole value of the picture is noticing that it no
+     * longer matches the model — a cached one would hide exactly the change it is there to
+     * reveal, and these are 100 KB off a local disk.
+     */
+    if (url.pathname === '/api/thumbnail') {
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
+      const char = url.searchParams.get('char') || '';
+      // The path is rebuilt from the root rather than taken from the query, and has to come
+      // out a direct child of it: `..` is a perfectly good folder name to a character-class
+      // test and is not one to this route.
+      if (!/^[A-Za-z0-9._-]+$/.test(char)) return send(res, 400, { error: 'bad character id' });
+      const dir = path.resolve(root, char);
+      if (path.dirname(dir) !== path.resolve(root)) return send(res, 400, { error: 'bad character id' });
+
+      const file = path.join(dir, 'thumbnail.png');
+      if (!fs.existsSync(file)) return send(res, 404, { error: `no thumbnail for ${char}` });
+      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+      return fs.createReadStream(file).pipe(res);
     }
 
     if (url.pathname === '/api/token' && req.method === 'POST') {

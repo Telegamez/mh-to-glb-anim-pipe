@@ -1,0 +1,9 @@
+# The shipping .hdr, its sidecar and the .blend are committed: the file IS the deliverable
+# (739 KB), and the scene is what a future revision starts from.
+#
+# The masters are not. They are re-derivable by running the script, and a 22 MB EXR that
+# changes on every render is not something to carry in git history.
+render.log
+*.blend1
+*.exr
+*-2048.hdr

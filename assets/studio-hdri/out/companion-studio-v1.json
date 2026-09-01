@@ -1,0 +1,106 @@
+{
+  "name": "companion-studio-v1",
+  "spec": "_docs/Architecture/Companions/metahuman/studio-hdri-authoring-spec.md",
+  "ticket": 3660,
+  "rig_source": "S:\\Avatars\\metahuman\\telegamez\\packages\\web-next\\src\\services\\RoomManager\\Agent\\materials\\studio-lighting.json",
+  "panel_radius_m": 4.0,
+  "emission_gain": 10.0,
+  "note_on_gain": "Every emission is the spec's relative value times this gain. Ratios are untouched; the gain only lifts the key above 1.0 so the float headroom survives, per constraint 5. The import step re-normalises anyway.",
+  "surround": {
+    "sky_color": "#151a24",
+    "sky_emission": 0.007,
+    "ground_color": "#070910",
+    "ground_emission": 0.003,
+    "wall_albedo": 0.05,
+    "floor_albedo": 0.02,
+    "note_on_albedo": "Albedo is the one value the spec does not fix. The spec gives the surround as emission only, and a pure emitter cannot bounce, so a diffuse term had to be chosen for bounce to exist at all."
+  },
+  "room_bounds_m": {
+    "half_x": 5.805160999298096,
+    "half_y": 5.766316890716553,
+    "z_lo": -3.870328426361084,
+    "z_hi": 4.689751148223877
+  },
+  "panels": [
+    {
+      "id": "key",
+      "position_m": [
+        -2.57,
+        -2.16,
+        2.18
+      ],
+      "size_m": 2.14,
+      "intensity_relative": 1.0,
+      "color": "#fff2e2",
+      "housed": true
+    },
+    {
+      "id": "fill",
+      "position_m": [
+        2.87,
+        -2.77,
+        -0.28
+      ],
+      "size_m": 5.2,
+      "intensity_relative": 0.03,
+      "color": "#dce9ff",
+      "housed": false
+    },
+    {
+      "id": "rim",
+      "position_m": [
+        1.58,
+        3.55,
+        0.97
+      ],
+      "size_m": 1.41,
+      "intensity_relative": 1.8,
+      "color": "#e8f1ff",
+      "housed": true
+    },
+    {
+      "id": "hair",
+      "position_m": [
+        -1.34,
+        2.32,
+        2.97
+      ],
+      "size_m": 2.14,
+      "intensity_relative": 0.7,
+      "color": "#fff6ec",
+      "housed": true
+    },
+    {
+      "id": "catchlight",
+      "position_m": [
+        -0.48,
+        -3.9,
+        0.76
+      ],
+      "size_m": 0.84,
+      "intensity_relative": 0.18,
+      "color": "#ffffff",
+      "housed": false
+    }
+  ],
+  "render": {
+    "engine": "CYCLES",
+    "camera": "PANO/EQUIRECTANGULAR at origin",
+    "orientation": "image centre = -Y (toward viewer), +Z up",
+    "resolution": [
+      2048,
+      1024
+    ],
+    "samples": 2048,
+    "denoised": true,
+    "clamping": "disabled (constraint 5)",
+    "view_transform": "Raw"
+  },
+  "outputs": {
+    "ship": "companion-studio-v1.hdr",
+    "ship_exr": "companion-studio-v1.exr",
+    "master_hdr": "companion-studio-v1-2048.hdr",
+    "master_exr": "companion-studio-v1-2048.exr",
+    "blend": "companion-studio-v1.blend"
+  }
+}

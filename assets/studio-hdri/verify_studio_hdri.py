@@ -86,6 +86,71 @@ def find_blobs(lum, floor):
     return sorted(blobs, key=lambda b: -b["mean"])
 
 
+
+def decode_direction(cx, cy, w, h):
+    """Pixel -> (azimuth, elevation) in the spec's frame, via the RUNTIME's convention.
+
+    The runtime samples the file as a glTF/three.js equirectangular map, where
+
+        azimuth = (u - 0.5) * 360
+
+    so u = 0.5 is straight toward the viewer and azimuth increases with u. This is the
+    convention the file has to satisfy; anything else is not merely rotated, it is wrong.
+    """
+    u = (cx + 0.5) / w
+    lat = (0.5 - (cy + 0.5) / h) * math.pi
+    return (u - 0.5) * 360.0, math.degrees(lat)
+
+
+def check_handedness(matched, panels, w, h):
+    """Assert the file is not mirrored. THIS IS THE CHECK THAT WAS MISSING.
+
+    A horizontal mirror preserves every elevation and every luminance ratio exactly, which
+    is precisely why the rest of this verifier passed a mirrored file. What it does not
+    preserve is WHICH SIDE OF THE FACE the key lights. v1 shipped mirrored: the key landed
+    camera-right instead of camera-left, and measured face contrast came out at 0.75
+    against 3.50 for the rig it replaces — below 1.0 meaning the shadow side was brighter
+    than the lit side.
+
+    So this asserts the thing a mirror destroys: the sign of each panel's azimuth, and the
+    key resolving camera-LEFT.
+    """
+    print("\nhandedness (a mirror preserves elevation and luminance, so this is the real gate):")
+    ok = True
+    err_direct, err_mirrored = [], []
+    for p in panels:
+        b = matched.get(p["id"])
+        if b is None:
+            continue
+        az, _ = decode_direction(b["cx"], b["cy"], w, h)
+        d = lambda a, c: abs((a - c + 180) % 360 - 180)
+        e_direct, e_mirror = d(az, p["azimuthDeg"]), d(az, -p["azimuthDeg"])
+        err_direct.append(e_direct)
+        err_mirrored.append(e_mirror)
+        flag = "" if e_direct <= 3.0 else "   <-- WRONG"
+        if e_direct > 3.0:
+            ok = False
+        print(f"  {p['id']:<12} spec az {p['azimuthDeg']:>7.1f}   measured {az:>7.1f}"
+              f"   err {e_direct:>5.1f}deg{flag}")
+
+    mean_d = sum(err_direct) / len(err_direct) if err_direct else 999
+    mean_m = sum(err_mirrored) / len(err_mirrored) if err_mirrored else 999
+    print(f"\n  mean error vs spec        {mean_d:6.2f} deg")
+    print(f"  mean error vs MIRRORED    {mean_m:6.2f} deg")
+    if mean_m < mean_d:
+        print("  => the file is MIRRORED. Flip it horizontally.")
+
+    key = matched.get("key")
+    if key is not None:
+        key_az, _ = decode_direction(key["cx"], key["cy"], w, h)
+        side = "camera-LEFT" if key_az < 0 else "camera-RIGHT"
+        want_ok = key_az < 0
+        print(f"\n  key resolves {side} (azimuth {key_az:.1f})"
+              f" -- spec wants camera-LEFT{'' if want_ok else '   <-- FAIL'}")
+        ok = ok and want_ok
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("image")
@@ -178,12 +243,18 @@ def main():
         print(f"  {label:<20} consistency {r:.4f}   offset u0 = {centre:.4f}"
               f"{'   <-- this is the file convention' if r > 0.99 else ''}")
 
+    handed_ok = check_handedness(matched, panels, w, h)
+
     missing = [p["id"] for p in panels if p["id"] not in matched]
     print()
     if missing:
-        print(f"RESULT: FAIL — panels not found: {', '.join(missing)}")
+        print(f"RESULT: FAIL - panels not found: {', '.join(missing)}")
         sys.exit(1)
-    print("RESULT: all five panels present and located")
+    if not handed_ok:
+        print("RESULT: FAIL - handedness is wrong. The rig is mirrored; the key is on the")
+        print("        wrong side of the face. Do not ship this file.")
+        sys.exit(1)
+    print("RESULT: PASS - five panels present, correctly located, and correctly handed")
 
 
 if __name__ == "__main__":

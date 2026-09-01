@@ -86,19 +86,33 @@ It measures the file rather than trusting the scene: finds the bright regions, i
 each one by elevation (all five spec elevations are distinct, so this needs no orientation
 assumption), and reports position, solid angle and luminance ratio against the JSON.
 
-Last run:
+Last run (v2):
 
 ```
-value range     min 0.00001   median 0.00473   max 15.94
-headroom        4.64% of pixels above 1.0   OK - not clamped
+value range     min 0.00004   median 0.00473   max 15.83
+headroom        4.66% of pixels above 1.0   OK - not clamped
 surround        median/peak = 0.00030  (dark)
 
 panel         spec el  meas el  spec size  meas size  want ratio  meas ratio     err
-key              33.0     33.4       30.0       30.0       1.000       1.000    0.0%
-fill             -4.0     -4.2       66.0       62.9       0.027       0.027    1.7%
-rim              14.0     14.1       20.0       20.2       1.741       1.717    1.4%
-hair             48.0     48.7       30.0       29.9       0.723       0.725    0.3%
-catchlight       11.0     11.0       12.0       12.2       0.199       0.197    1.1%
+key              33.0     33.4       30.0       30.1       1.000       1.000    0.0%
+fill             -4.0     -4.2       66.0       63.0       0.027       0.027    2.5%
+rim              14.0     14.1       20.0       20.3       1.741       1.712    1.7%
+hair             48.0     48.7       30.0       30.1       0.723       0.725    0.3%
+catchlight       11.0     11.1       12.0       12.3       0.199       0.194    2.9%
+
+handedness (a mirror preserves elevation and luminance, so this is the real gate):
+  key          spec az   -50.0   measured   -50.0   err   0.0deg
+  fill         spec az    46.0   measured    46.0   err   0.0deg
+  rim          spec az   156.0   measured   156.0   err   0.0deg
+  hair         spec az  -150.0   measured  -150.0   err   0.0deg
+  catchlight   spec az    -7.0   measured    -7.0   err   0.0deg
+
+  mean error vs spec          0.01 deg
+  mean error vs MIRRORED     62.80 deg
+
+  key resolves camera-LEFT (azimuth -50.0) -- spec wants camera-LEFT
+
+RESULT: PASS - five panels present, correctly located, and correctly handed
 ```
 
 "want ratio" is not the JSON's `intensity`. Intensity is a radiometric scalar and the
@@ -106,20 +120,25 @@ panels are different colours, so a rim at 1.8 in a cool blue does not measure 1.
 key. The column is `intensity × relative luminance of the colour`, which is what a
 luminance measurement should actually equal.
 
-## Orientation
+## Orientation, and the v1 mirror
 
-Measured, not assumed. The verifier solves the longitude convention from the panel
-positions it finds, and this file is:
+**v1 shipped horizontally mirrored. Do not use it.** `companion-studio-v2.hdr` is the good
+file; v1 is kept only so the fix can be A/B'd rather than asserted.
 
-```
-u = 0.5 - azimuth/360      (consistency 1.0000, offset 0.5000)
-```
+Blender's equirectangular camera sweeps longitude the opposite way to the glTF/three.js
+convention the runtime samples with. Rendered as-is the file encoded `u = 0.5 - azimuth/360`
+where the runtime wants `u = 0.5 + azimuth/360`. That is a mirror, not a rotation, so no
+camera orientation fixes it — the script now flips the image after rendering.
 
-That is: the centre of the image is azimuth 0 — straight toward the viewer — with azimuth
-increasing to the left, and +Z up. Three.js's `EquirectangularReflectionMapping` puts
-`u = 0.5` on **+X** instead, so a loader that applies no rotation will have the rig turned
-90° about the vertical. The spec says the import step owns conversion and orientation; this
-is the number it needs.
+The cost of that bug is the reason the verifier changed. A mirror preserves **every**
+elevation and **every** luminance ratio exactly, so the original verifier passed it
+cleanly. What it does not preserve is which side of the face the key lights: the key landed
+camera-right, and measured face contrast came out at **0.75** against 3.50 for the rig it
+replaces — below 1.0 meaning the shadow side was brighter than the lit side.
+
+So `verify_studio_hdri.py` now decodes each panel's azimuth under the runtime's convention
+and asserts the sign, plus specifically that the key resolves camera-LEFT. It exits non-zero
+otherwise. Confirmed both ways: it FAILS on v1 and PASSES on v2.
 
 ## Reviewing it
 

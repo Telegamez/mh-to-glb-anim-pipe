@@ -30,6 +30,7 @@ import os
 import sys
 
 import bpy
+import numpy as np
 from mathutils import Matrix, Vector
 
 # --------------------------------------------------------------------------------------
@@ -443,10 +444,46 @@ def main():
         result.save_render(filepath=path, scene=scene)
         print(f"[studio-hdri] wrote {path}  ({os.path.getsize(path) / 1024:.0f} KB)")
 
+    # ---------------------------------------------------------------- handedness
+    #
+    # Blender's equirectangular camera sweeps longitude the OPPOSITE way to the
+    # glTF/three.js convention the runtime samples with. Rendered as-is, the file encodes
+    #
+    #     u = 0.5 - azimuth/360
+    #
+    # where the runtime wants `u = 0.5 + azimuth/360`. That is a mirror, not a rotation, so
+    # no camera orientation can fix it — the image has to be flipped.
+    #
+    # It is worth being blunt about how this got shipped once: a mirrored environment
+    # preserves every elevation and every luminance ratio exactly, so the first version of
+    # this script's verifier passed it. What it does NOT preserve is which side of the face
+    # the key is on. The key landed camera-RIGHT, measured face contrast came out at 0.75
+    # against 3.50 for the rig it replaces — below 1.0 meaning the shadow side was brighter
+    # than the lit side. verify_studio_hdri.py now asserts handedness for exactly this
+    # reason; see check_handedness there.
+    raw_exr = os.path.join(args.out, ".raw-render.exr")
+    save_render_result(raw_exr, "OPEN_EXR", "32")
+
+    flipped = bpy.data.images.load(raw_exr)
+    px = np.empty(len(flipped.pixels), dtype=np.float32)
+    flipped.pixels.foreach_get(px)
+    w, h = flipped.size
+    # Reverse each row of RGBA pixels. Blender stores bottom-up, which a horizontal flip
+    # does not care about.
+    flipped.pixels.foreach_set(px.reshape((h, w, 4))[:, ::-1, :].reshape(-1))
+    os.remove(raw_exr)
+
+    def save_image(image, path, fmt):
+        """Straight through, no colour management — the data is already linear."""
+        image.file_format = fmt
+        image.filepath_raw = path
+        image.save()
+        print(f"[studio-hdri] wrote {path}  ({os.path.getsize(path) / 1024:.0f} KB)")
+
     master_exr = os.path.join(args.out, f"{args.name}-{RES_X}.exr")
     master_hdr = os.path.join(args.out, f"{args.name}-{RES_X}.hdr")
-    save_render_result(master_exr, "OPEN_EXR", "32")
-    save_render_result(master_hdr, "HDR", "32")
+    save_image(flipped, master_exr, "OPEN_EXR")
+    save_image(flipped, master_hdr, "HDR")
 
     # The shipping file. The spec asks for 1024x512 — the runtime convolves down to a
     # 256px cube map, so anything above this is discarded. Resampled from the saved master
@@ -455,13 +492,9 @@ def main():
     # the already-linear data is passed straight through with no colour management at all.
     ship_hdr = os.path.join(args.out, f"{args.name}.hdr")
     ship_exr = os.path.join(args.out, f"{args.name}.exr")
-    src = bpy.data.images.load(master_exr)
-    src.scale(RES_X // 2, RES_Y // 2)
-    for path, fmt in ((ship_hdr, "HDR"), (ship_exr, "OPEN_EXR")):
-        src.file_format = fmt
-        src.filepath_raw = path
-        src.save()
-        print(f"[studio-hdri] wrote {path}  ({os.path.getsize(path) / 1024:.0f} KB)")
+    flipped.scale(RES_X // 2, RES_Y // 2)
+    save_image(flipped, ship_hdr, "HDR")
+    save_image(flipped, ship_exr, "OPEN_EXR")
 
     sidecar = {
         "name": args.name,
@@ -489,7 +522,7 @@ def main():
         "panels": placed,
         "render": {
             "engine": "CYCLES", "camera": "PANO/EQUIRECTANGULAR at origin",
-            "orientation": "image centre = -Y (toward viewer), +Z up",
+            "orientation": "u = 0.5 + azimuth/360, +Z up; horizontally flipped after render because Blender sweeps longitude opposite to the glTF/three.js convention",
             "resolution": [RES_X, RES_Y], "samples": SAMPLES,
             "denoised": True, "clamping": "disabled (constraint 5)",
             "view_transform": "Raw",

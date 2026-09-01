@@ -79,8 +79,17 @@ function Get-UrlStatus {
 function Test-Published {
   # Mirrors PUBLISHED_PATH in packages/shared/db/src/seed-metahuman-roster.ts. A path the
   # seeder wrote (`models/<id>/<id>.glb`) is NOT a publish, however plausible it looks.
+  #
+  # Not anchored, deliberately - the same correction server.mjs's /api/resolve already
+  # carries. The column stores the relative key, but the admin LIST endpoint this script
+  # reads formats it into a full CDN URL on the way out, so a live row arrives as
+  # `https://<bucket>.s3.../avatars/<id>/<hash>/<file>.glb`. Anchoring at `^avatars/`
+  # matched none of them and reported every live companion as PLACEHOLDER, which printed
+  # as "NOT LIVE: 6 of 6" over rows whose model and manifest had both just fetched 200.
+  # Requiring the published segment and a .glb ending still excludes the seeded
+  # placeholder, which is `models/<id>/<id>.glb` in either form.
   param([string]$Path)
-  return [bool]($Path -and $Path -match '^avatars/[0-9a-f-]{36}/[A-Za-z0-9._-]+/')
+  return [bool]($Path -and $Path -match 'avatars/[0-9a-f-]{36}/[A-Za-z0-9._-]+/[^/]+\.glb$')
 }
 
 function Get-ManifestUrl {

@@ -11,6 +11,12 @@ characters/*/01-glb/
 */*/characters/*/03-glb/
 */*/characters/*/01-glb/
 
+# Stage 06 web-compression output, and the publisher's compressed builds. Both are derived
+# from a bake and are re-creatable from it, so they are artifacts rather than source.
+characters/*/06-web/
+*/*/characters/*/06-web/
+_compressed/
+
 # source/ holds the weight FBX files stage 01 exports for reweight_from_fbx.py and the npz
 # dumped from them. Same reasoning as the stage folders above: rebuildable by re-running the
 # pipeline, and they carry MetaHuman mesh data that cannot ship under MIT. The README that

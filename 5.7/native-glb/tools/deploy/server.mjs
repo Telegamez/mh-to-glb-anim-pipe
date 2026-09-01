@@ -99,6 +99,17 @@ const findBeside = (name, ...extra) => {
 const PUBLISHER = findBeside('publish_to_cdn.ps1');
 const VERIFIER = findBeside('Test-CompanionsLive.ps1');
 const PREVIEWS = findBeside('publish_previews.ps1');
+const COMPRESSOR = findBeside('compress_companion.ps1');
+
+/**
+ * Where a compressed build of a character lives: `<root>/_compressed/<char>/`.
+ *
+ * Beside the character folders rather than inside one, because `publish_to_cdn.ps1` uploads
+ * its `-Source` recursively — a compressed copy nested in the character directory would be
+ * published alongside the original and double the payload instead of cutting it.
+ */
+const COMPRESSED_DIR = '_compressed';
+const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
@@ -137,6 +148,7 @@ function scanRoot(root) {
 
   const characters = [];
   for (const name of fs.readdirSync(root)) {
+    if (name === COMPRESSED_DIR) continue;   // holds character folders, is not one
     const dir = path.join(root, name);
     if (!fs.statSync(dir).isDirectory()) continue;
 
@@ -155,13 +167,54 @@ function scanRoot(root) {
     const PREVIEW_FILES = ['thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4'];
     const previews = PREVIEW_FILES.every((f) => fs.existsSync(path.join(dir, f)));
 
+    // A compressed build, if one has been made. Reported rather than assumed current: it is a
+    // derivative of this directory, so a build that predates the content it was made from
+    // would publish yesterday's companion while reporting success.
+    //
+    // Compared against the whole package, not just the GLB. The model file carries the mesh
+    // and almost nothing a person would recognise: clothing colour and texture live in
+    // mh_materials.json and textures/, and are applied over the model at runtime. A shirt can
+    // change with the .glb untouched, and a GLB-only comparison would call that build current.
+    const contentTime = [
+      fs.statSync(glb).mtimeMs,
+      ...(sidecar ? [fs.statSync(path.join(dir, 'mh_materials.json')).mtimeMs] : []),
+      ...(fs.existsSync(texDir)
+        ? fs.readdirSync(texDir).map((f) => fs.statSync(path.join(texDir, f)).mtimeMs)
+        : []),
+    ].reduce((a, b) => Math.max(a, b), 0);
+
+    const compDir = compressedPath(root, name);
+    const compGlb = path.join(compDir, `${name}.glb`);
+    let compressed = null;
+    if (fs.existsSync(compGlb)) {
+      let compMode = 'unknown';
+      try {
+        compMode = JSON.parse(
+          fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
+        ).mode || 'unknown';
+      } catch { /* a build without a readable manifest still has a size worth showing */ }
+      const compTex = path.join(compDir, 'textures');
+      const bytes = fs.statSync(compGlb).size + (fs.existsSync(compTex)
+        ? fs.readdirSync(compTex).reduce((a, f) => a + fs.statSync(path.join(compTex, f)).size, 0)
+        : 0);
+      compressed = {
+        mode: compMode,
+        mb: Math.round(bytes / 1048576),
+        stale: fs.statSync(compGlb).mtimeMs < contentTime,
+        // `full` carries KTX2, which no surface can load yet. Publishing it uploads cleanly,
+        // reports success and then fails to render — so the console must never let it go out
+        // without saying so.
+        publishable: compMode === 'meshopt',
+      };
+    }
+
     const problems = [];
     if (!sidecar) problems.push('no mh_materials.json — would render untextured');
     if (textures === 0) problems.push('no textures/');
     if (strayManifest) problems.push('stray manifest.json — publish would be refused');
 
     characters.push({
-      id: name, dir, mb, sidecar, textures, strayManifest, previews,
+      id: name, dir, mb, sidecar, textures, strayManifest, previews, compressed,
       ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
     });
   }
@@ -205,7 +258,7 @@ function readBody(req) {
 
 const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
 
-function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code }) {
+function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, compressed }) {
   const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
   const modelKey = grab(/modelKey:\s*(\S+)/);
   const files = grab(/OK - (\d+ files published)/);
@@ -216,6 +269,10 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
   out.push(`- avatar  \`${avatarId}\``);
   out.push(`- bake    \`${bakeHash}\``);
   if (files || size) out.push(`- upload  ${[files, size].filter(Boolean).join(', ')}`);
+  // Which bytes went up. A compressed publish and an uncompressed one produce the same
+  // model key and the same SQL, so nothing else in this record distinguishes them — and
+  // "why is this companion 87 MB again" is answered here or not at all.
+  out.push(`- source  ${compressed ? 'COMPRESSED build (_compressed/)' : 'uncompressed bake'}`);
   const wasPath = previous?.modelPath ?? null;
   const wasStatus = previous?.status ?? null;
   out.push(`- was     ${wasPath ? `\`${wasPath}\`` : '(no model on the row)'}${wasStatus ? `, status \`${wasStatus}\`` : ''}`);
@@ -534,8 +591,36 @@ const server = http.createServer(async (req, res) => {
       return stream(res, VERIFIER, ['-ApiBase', target.apiBase], { TG_ADMIN_TOKEN: session.token });
     }
 
+    /**
+     * Compress one companion before publishing it — #3662.
+     *
+     * A MetaHuman costs ~87 MB to download, of which ~73% of the model is uncompressed
+     * FLOAT32 morph-target data. Beta serves Avaturn avatars at ~11.5 MB, so publishing
+     * these as they come out of the bake multiplies the mobile payload roughly eightfold.
+     *
+     * Shells out like every other button. The output is a complete character directory, so
+     * publishing a compressed build is the ordinary publish pointed at a different -Source
+     * rather than a second publish path.
+     */
+    if (url.pathname === '/api/compress' && req.method === 'POST') {
+      const { characters, mode, texturePx } = await readBody(req);
+      if (!Array.isArray(characters) || characters.length === 0) {
+        return send(res, 400, { error: 'no characters selected' });
+      }
+      if (mode && !['meshopt', 'full'].includes(mode)) {
+        return send(res, 400, { error: `unknown mode: ${mode}` });
+      }
+      // One per request, like publish: the page drives the loop so a failure stops the batch
+      // at a character anyone can name.
+      const char = characters[0];
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
+      const args = ['-Char', char, '-Root', root, '-Mode', mode || 'meshopt'];
+      if (Number(texturePx) > 0) args.push('-TexturePx', String(Number(texturePx)));
+      return stream(res, COMPRESSOR, args);
+    }
+
     if (url.pathname === '/api/publish' && req.method === 'POST') {
-      const { env, characters, bakeHashSuffix, avatarIds } = await readBody(req);
+      const { env, characters, bakeHashSuffix, avatarIds, useCompressed } = await readBody(req);
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
@@ -551,15 +636,42 @@ const server = http.createServer(async (req, res) => {
       const avatarId = (avatarIds || {})[char];
       if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
 
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
+      let source = path.join(root, char);
+
+      if (useCompressed) {
+        const compDir = compressedPath(root, char);
+        if (!fs.existsSync(path.join(compDir, `${char}.glb`))) {
+          return send(res, 400, { error: `no compressed build for ${char} — compress it first` });
+        }
+        // Refuse `full` outright rather than warn. It carries KTX2, which no surface can load:
+        // it would upload cleanly, report success everywhere, and render nothing — the same
+        // silent failure as beta's G13, and nothing downstream would catch it either.
+        let compMode = 'unknown';
+        try {
+          compMode = JSON.parse(
+            fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
+          ).mode;
+        } catch { /* falls through to the refusal below */ }
+        if (compMode !== 'meshopt') {
+          return send(res, 400, {
+            error: `compressed build for ${char} is mode="${compMode}", which the runtime `
+              + 'cannot load (no KTX2Loader in web-next). It would publish and then fail to '
+              + 'render. Re-compress with mode=meshopt.',
+          });
+        }
+        source = compDir;
+      }
+
       return stream(res, PUBLISHER, [
         '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
-        '-Source', path.join(url.searchParams.get('root') || DEFAULT_ROOT, char),
+        '-Source', source,
         '-BakeHash', `${char}-${bakeHashSuffix}`,
       ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
         env, apiBase: target.apiBase, char, avatarId,
         bakeSuffix: bakeHashSuffix, bakeHash: `${char}-${bakeHashSuffix}`,
         previous: session.prior[`${env}/${char}`] ?? null,
-        output, code,
+        output, code, compressed: !!useCompressed,
       }));
     }
 

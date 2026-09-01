@@ -48,7 +48,7 @@ const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d :
 
 const src = flag('src');
 const out = flag('out');
-const mode = flag('mode', 'meshopt');
+const mode = flag('mode', 'none');
 const texturePx = Number(flag('texture-px', 0));
 const ktxBin = flag('ktx-bin', '');
 // The model is `<name>.glb`. In a publishable directory that is the folder name, but the
@@ -56,7 +56,7 @@ const ktxBin = flag('ktx-bin', '');
 const explicitName = flag('name', '');
 
 if (!src || !out) { console.error('--src and --out are required'); process.exit(2); }
-if (!['meshopt', 'full'].includes(mode)) { console.error(`unknown --mode ${mode}`); process.exit(2); }
+if (!['none', 'meshopt', 'full'].includes(mode)) { console.error(`unknown --mode ${mode}`); process.exit(2); }
 if (!fs.existsSync(src)) { console.error(`source not found: ${src}`); process.exit(1); }
 
 const name = explicitName || path.basename(path.resolve(src));
@@ -119,14 +119,32 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
 console.log(`companion : ${name}`);
-console.log(`mode      : ${mode}${mode === 'full' ? '  (NOT loadable by the runtime yet)' : '  (loadable today)'}`);
+const MODE_NOTE = {
+  none: '  (lossless — the bake is already lean)',
+  meshopt: '  (PAUSED pending the fidelity A/B — see below)',
+  full: '  (NOT loadable by the runtime yet)',
+};
+console.log(`mode      : ${mode}${MODE_NOTE[mode]}`);
+if (mode !== 'none') {
+  // meshopt is measurably lossy on morph targets: 0.85 mm median RMS on the largest
+  // expression targets, 4.58 mm worst, against a no-op control at exactly 0.0000 mm. It is
+  // held until a rendered A/B says whether that is visible. Not removed — the numbers are
+  // real and the decision is someone's to make with pictures in hand.
+  console.log('WARNING: this mode applies a LOSSY step to morph targets. Paused by default.');
+}
 
 // ------------------------------------------------------------------------------- model
 const before = structure(srcGlb);
 const outGlb = path.join(out, `${name}.glb`);
 const tmp = [];
 
-if (mode === 'full') {
+if (mode === 'none') {
+  // Nothing to do to the model. The bake is already the lean artifact: stage 03 caps and
+  // de-alphas the sidecar textures, which took one companion's set from 168 MB to 22 MB
+  // without a lossy step anywhere.
+  fs.copyFileSync(srcGlb, outGlb);
+  console.log('  model copied unchanged (no lossy step)');
+} else if (mode === 'full') {
   const a = path.join(out, '.tmp-a.glb');
   const b = path.join(out, '.tmp-b.glb');
   tmp.push(a, b);
@@ -161,9 +179,10 @@ if (fs.existsSync(srcTex)) {
   fs.mkdirSync(outTex, { recursive: true });
   const files = fs.readdirSync(srcTex);
 
-  if (mode === 'meshopt') {
+  if (mode !== 'full') {
     // Copied verbatim. The runtime resolves these by name against the model's directory, and
-    // in meshopt mode nothing about them has changed.
+    // outside `full` nothing about them changes here — stage 03 has already capped and
+    // de-alphaed them at bake time, which is where that work belongs.
     for (const f of files) fs.copyFileSync(path.join(srcTex, f), path.join(outTex, f));
     texAfter = texBefore;
     console.log(`  textures ${files.length} files copied unchanged (${MB(texBefore)} MB)`);

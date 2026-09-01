@@ -18,8 +18,11 @@
   Folder holding the character folders.
 
 .PARAMETER Mode
-  meshopt (default) - geometry and morph targets only. Loadable by the runtime today.
-  full              - adds KTX2 textures. NOT loadable yet; see the warning it prints.
+  none (default) - no lossy step. Stage 03 already caps and de-alphas the sidecar
+                   textures, which is where the weight actually was.
+  meshopt        - PAUSED. Measurably lossy on morph targets (0.85 mm median RMS on the
+                   largest expression targets); held pending a rendered A/B.
+  full           - meshopt plus KTX2 textures. Also NOT loadable by the runtime yet.
 
 .PARAMETER TexturePx
   Resample textures to this square size in `full` mode. 0 leaves them alone.
@@ -31,7 +34,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Char,
     [Parameter(Mandatory = $true)][string]$Root,
-    [ValidateSet('meshopt', 'full')][string]$Mode = 'meshopt',
+    [ValidateSet('none', 'meshopt', 'full')][string]$Mode = 'none',
     [int]$TexturePx = 0,
     [string]$KtxBin = ''
 )

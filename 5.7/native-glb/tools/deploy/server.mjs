@@ -201,10 +201,11 @@ function scanRoot(root) {
         mode: compMode,
         mb: Math.round(bytes / 1048576),
         stale: fs.statSync(compGlb).mtimeMs < contentTime,
-        // `full` carries KTX2, which no surface can load yet. Publishing it uploads cleanly,
-        // reports success and then fails to render — so the console must never let it go out
-        // without saying so.
-        publishable: compMode === 'meshopt',
+        // Only the lossless build is publishable. `meshopt` is paused pending a rendered
+        // fidelity A/B (it is measurably lossy on morph targets), and `full` carries KTX2,
+        // which no surface can load yet — that one would upload cleanly, report success and
+        // then fail to render.
+        publishable: compMode === 'none',
       };
     }
 
@@ -607,14 +608,14 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      if (mode && !['meshopt', 'full'].includes(mode)) {
+      if (mode && !['none', 'meshopt', 'full'].includes(mode)) {
         return send(res, 400, { error: `unknown mode: ${mode}` });
       }
       // One per request, like publish: the page drives the loop so a failure stops the batch
       // at a character anyone can name.
       const char = characters[0];
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      const args = ['-Char', char, '-Root', root, '-Mode', mode || 'meshopt'];
+      const args = ['-Char', char, '-Root', root, '-Mode', mode || 'none'];
       if (Number(texturePx) > 0) args.push('-TexturePx', String(Number(texturePx)));
       return stream(res, COMPRESSOR, args);
     }
@@ -653,11 +654,16 @@ const server = http.createServer(async (req, res) => {
             fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
           ).mode;
         } catch { /* falls through to the refusal below */ }
-        if (compMode !== 'meshopt') {
+        if (compMode !== 'none') {
+          const why = compMode === 'meshopt'
+            ? 'meshopt is PAUSED: it is measurably lossy on morph targets (0.85 mm median '
+              + 'RMS on the largest expression targets) and is held until a rendered A/B '
+              + 'says whether that is visible'
+            : 'the runtime cannot load KTX2 (no KTX2Loader in web-next), so it would publish '
+              + 'and then fail to render';
           return send(res, 400, {
-            error: `compressed build for ${char} is mode="${compMode}", which the runtime `
-              + 'cannot load (no KTX2Loader in web-next). It would publish and then fail to '
-              + 'render. Re-compress with mode=meshopt.',
+            error: `compressed build for ${char} is mode="${compMode}" - ${why}. `
+              + 'Re-compress with mode=none.',
           });
         }
         source = compDir;

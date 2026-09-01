@@ -12,8 +12,9 @@
   Writes characters/<id>/06-web/
 
 .PARAMETER Mode
-  meshopt (default) - geometry and morph targets. Loadable by the runtime today.
-  full              - adds KTX2 textures. NOT loadable yet.
+  none (default) - no lossy step; stage 03 already handles the sidecar textures.
+  meshopt        - PAUSED, measurably lossy on morph targets.
+  full           - meshopt plus KTX2. Not loadable by the runtime yet.
 
 .EXAMPLE
   ./run_compress.ps1 -Char tele
@@ -22,7 +23,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Char,
-    [ValidateSet('meshopt', 'full')][string]$Mode = 'meshopt',
+    [ValidateSet('none', 'meshopt', 'full')][string]$Mode = 'none',
     [int]$TexturePx = 0,
     [string]$KtxBin = ''
 )

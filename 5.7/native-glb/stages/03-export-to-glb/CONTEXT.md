@@ -52,6 +52,25 @@ fix or retroactively mark other stages' status.
      stage 02 uses to classify normals.
    - Downsamples any image texture whose largest dimension exceeds
      `glb_constraints.max_texture_px` (default 2048), in place.
+   - Processes the SIDECAR textures on their way into `03-glb/textures/`
+     rather than copying them verbatim (#3662):
+     - Drops the alpha channel where it is constant. Every clothing map
+       arrives from Unreal as 4096x4096 RGBA with a constant-255 alpha,
+       and no material reads channel `a` (all 16 use `alpha_channel: "r"`),
+       so this is provably lossless — verified bit-identical on the RGB.
+     - Caps resolution at `glb_constraints.sidecar_texture_px`, which
+       INHERITS `max_texture_px` when unset. Sidecar textures previously
+       bypassed the cap entirely, which is how clothing shipped at 4096
+       while every embedded map was capped at 1024 — a 16x inconsistency
+       nobody chose. Set `sidecar_texture_px: 0` to opt back out.
+     - Exempts the shader-critical maps from the cap: `alpha_stem`,
+       `tangent_stem` and the eyelash `alpha` coverage map. Those ARE the
+       hair and lash silhouettes, thin alpha is exactly what a downsample
+       chews, and together they are ~8 MB against ~156 MB of clothing —
+       so capping them risks the visible thing for no meaningful byte.
+     - Measured on `tele`: 168.1 MB -> 22.0 MB of sidecar textures.
+     - A texture that fails to process is copied verbatim and logged,
+       never dropped: a missing map renders like a bad bake.
    - Optionally joins the per-FBX armatures into one (v1: kept separate;
      armature merge is a stage-02 concern, not done yet).
    - Runs `bpy.ops.export_scene.gltf` with:

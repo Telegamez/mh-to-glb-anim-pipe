@@ -57,7 +57,13 @@ def _iso_now():
 def _read_glb_constraints(workspace):
     """Tiny flat YAML reader for the `glb_constraints:` block."""
     cfg = workspace / "_config" / "pipeline.yaml"
+    # `max_texture_px` governs images the exporter EMBEDS. Sidecar textures are written to
+    # disk beside the model and bypassed it entirely, which is how clothing shipped at
+    # 4096x4096 while every embedded map was capped at 1024 -- a 16x inconsistency nobody
+    # chose. So the sidecar cap INHERITS max_texture_px unless set explicitly; set
+    # `sidecar_texture_px: 0` to opt back out and ship them at source resolution.
     out = {"max_texture_px": 1024, "draco_compression": True,
+           "sidecar_texture_px": None, "sidecar_drop_unused_alpha": True,
            "target_tri_budget": 60000}
     if not cfg.exists():
         return out
@@ -165,6 +171,85 @@ def _per_image_cap(name, default_cap):
     if n.startswith("t_teeth"):
         return 256
     return default_cap
+
+
+def _sidecar_cap(constraints):
+    """Sidecar cap, inheriting max_texture_px when unset. Explicit 0 disables it."""
+    v = constraints.get("sidecar_texture_px", None)
+    if v is None:
+        return int(constraints.get("max_texture_px", 1024))
+    return int(v)
+
+
+def _alpha_is_constant(img):
+    """True when every alpha sample is identical, i.e. the channel carries nothing.
+
+    Checked on the FULL image before any scaling. Checking afterwards would be cheaper and
+    wrong: a handful of dissenting pixels can be averaged away by the downsample, and the
+    channel would then be dropped on the strength of information the resize destroyed.
+    """
+    import numpy as np
+    n = img.size[0] * img.size[1] * img.channels
+    if img.channels < 4 or n == 0:
+        return False
+    buf = np.empty(n, dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    a = buf[3::4]
+    return bool(a.min() == a.max())
+
+
+def _write_sidecar_png(img, dst, drop_alpha):
+    """Write a PNG with exact channel control and no colour management.
+
+    `save_render` is the only path that can force RGB rather than RGBA, and it applies the
+    view transform — so that is pinned to Raw. These are normal, ORM and alpha-atlas maps:
+    non-colour data, where a tone map would corrupt every value.
+    """
+    scene = bpy.context.scene
+    s = scene.render.image_settings
+    prev = (s.file_format, s.color_mode, s.color_depth, s.color_management)
+    try:
+        s.file_format = "PNG"
+        s.color_mode = "RGB" if drop_alpha else "RGBA"
+        s.color_depth = "8"
+        s.color_management = "OVERRIDE"
+        s.view_settings.view_transform = "Raw"
+        s.view_settings.look = "None"
+        s.view_settings.exposure = 0.0
+        s.view_settings.gamma = 1.0
+        img.save_render(filepath=str(dst), scene=scene)
+    finally:
+        (s.file_format, s.color_mode, s.color_depth, s.color_management) = prev
+
+
+def _process_sidecar_texture(src, dst, cap, drop_alpha_allowed):
+    """Downsample and de-alpha one sidecar texture. Returns a short note for the log.
+
+    Sidecar textures bypass `max_texture_px` entirely — that constraint governs images the
+    glTF exporter embeds, and these are copied to disk beside the model. They arrive from
+    Unreal at 4096x4096 RGBA, so one companion's clothing is ~156 MB of PNG before anything
+    downstream sees it, and every one of them carries a constant, unread alpha channel.
+    """
+    img = bpy.data.images.load(str(src))
+    try:
+        w, h = img.size[0], img.size[1]
+        # Decided before scaling; see _alpha_is_constant.
+        drop_alpha = bool(drop_alpha_allowed) and _alpha_is_constant(img)
+        note = []
+        if cap and max(w, h) > cap:
+            factor = cap / max(w, h)
+            nw, nh = max(1, int(w * factor)), max(1, int(h * factor))
+            img.scale(nw, nh)
+            note.append(f"{w}x{h} -> {nw}x{nh}")
+        if drop_alpha:
+            note.append("RGBA -> RGB")
+        _write_sidecar_png(img, dst, drop_alpha)
+        return ", ".join(note) if note else "unchanged"
+    finally:
+        try:
+            bpy.data.images.remove(img)
+        except Exception:
+            pass
 
 
 def _downsample_images(max_px):
@@ -322,7 +407,7 @@ def _current_max_image_px():
     return m
 
 
-def _emit_sidecar_for_viewer(char_dir, out_dir):
+def _emit_sidecar_for_viewer(char_dir, out_dir, sidecar_cap=0, drop_alpha=True):
     """Forward stage 02's mh_materials.json + the alpha textures it
     references from 01-glb/textures/ into 03-glb/. Stage 04's
     build_site.py copies whatever's in 03-glb/{mh_materials.json,
@@ -343,6 +428,25 @@ def _emit_sidecar_for_viewer(char_dir, out_dir):
     dst_tex_dir = out_dir / "textures"
     dst_tex_dir.mkdir(parents=True, exist_ok=True)
     needed = set()
+    # Stems named by alpha_stem/tangent_stem drive the hair and lash shaders -- the alpha
+    # atlas IS the hair silhouette, and card alpha is exactly where a downsample shows as
+    # chewed edges. They are also the small ones (~8 MB against ~156 MB of clothing), so
+    # capping them buys almost nothing and risks the thing most likely to be noticed.
+    # Everything else is clothing BC/N/ORM, which is the actual weight.
+    shader_critical = set()
+    for m in mapping.get("materials", []):
+        p = m.get("params") or {}
+        t = m.get("textures") or {}
+        if p.get("alpha_stem"):
+            shader_critical.add(p["alpha_stem"])
+        if p.get("tangent_stem"):
+            shader_critical.add(p["tangent_stem"])
+        # An `alpha` entry in the textures map is the same class of thing: the eyelash
+        # coverage map. Thin alpha structures are precisely what a downsample chews, and it
+        # is half a megabyte, so capping it risks a visible eyelash for no meaningful byte.
+        alpha_ref = (t or {}).get("alpha")
+        if isinstance(alpha_ref, str):
+            shader_critical.add(os.path.splitext(os.path.basename(alpha_ref))[0])
     for m in mapping.get("materials", []):
         p = m.get("params") or {}
         t = m.get("textures") or {}
@@ -364,15 +468,30 @@ def _emit_sidecar_for_viewer(char_dir, out_dir):
                 stem = os.path.splitext(ref)[0]
                 needed.add(stem)
     copied = 0
+    before_bytes = 0
+    after_bytes = 0
     for stem in sorted(needed):
         src = src_tex_dir / f"{stem}.png"
         if not src.exists():
             _log(f"  sidecar miss: {src}")
             continue
         dst = dst_tex_dir / f"{stem}.png"
-        shutil.copy2(src, dst)
+        before_bytes += src.stat().st_size
+        cap = 0 if stem in shader_critical else int(sidecar_cap or 0)
+        try:
+            note = _process_sidecar_texture(src, dst, cap, drop_alpha)
+        except Exception as e:
+            # A texture that fails to process must still ship, or the character publishes
+            # with a missing map and renders like a bad bake. Fall back to the raw copy and
+            # say so rather than dropping it.
+            _log(f"  sidecar process failed for {stem} ({e}); copying verbatim")
+            shutil.copy2(src, dst)
+            note = "copied verbatim"
+        after_bytes += dst.stat().st_size
+        _log(f"  sidecar {stem}: {note}")
         copied += 1
-    _log(f"sidecar: {dst_map.name} + {copied} texture(s) -> {out_dir}")
+    _log(f"sidecar: {dst_map.name} + {copied} texture(s) -> {out_dir}"
+         f"  [{before_bytes / 1048576:.1f} MB -> {after_bytes / 1048576:.1f} MB]")
 
 
 def _propagate_mesh_target_names_to_primitives(glb_path):
@@ -1354,7 +1473,11 @@ def main():
         # from 02-blend/ + 01-glb/textures/ into 03-glb/. Stage 04's
         # build_site.py copies these into docs/ so viewer.js can load
         # them as alphaMap targets and run the hair-card / lash shader.
-        _emit_sidecar_for_viewer(char_dir, out_dir)
+        _emit_sidecar_for_viewer(
+            char_dir, out_dir,
+            sidecar_cap=_sidecar_cap(constraints),
+            drop_alpha=bool(constraints.get("sidecar_drop_unused_alpha", True)),
+        )
 
         # Patch the GLB so three.js's GLTFLoader can find morph target
         # names (it looks per-primitive; Blender writes per-mesh).

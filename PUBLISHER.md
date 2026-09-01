@@ -21,6 +21,10 @@ page is for the things it can't show you.
 `dist/TelegamesPublisher.zip` is ready to send. They unzip it and run `Start-Publisher.ps1` —
 no repo, no install, nothing to build. They need Node.js and PowerShell 7 and nothing else.
 
+One exception, and only if they use **Compress**: the first run fetches `gltf-transform`
+through `npx`, so that machine needs to be online once. `full` mode additionally needs the
+`ktx` CLI installed; `meshopt` mode — the publishable one — does not.
+
 The first time, press **Browse** and point it at wherever the character folders are. It marks
 which folders hold characters as you go, so you are looking for the one that says *6 characters*
 rather than reading paths. It remembers that folder from then on.

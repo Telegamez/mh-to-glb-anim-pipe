@@ -38,6 +38,10 @@ $files = @(
   @{ From = Join-Path $here 'console.html';            As = 'console.html' }
   @{ From = Join-Path $here 'Test-CompanionsLive.ps1'; As = 'Test-CompanionsLive.ps1' }
   @{ From = Join-Path $here '..\publish_to_cdn.ps1';   As = 'publish_to_cdn.ps1' }
+  # Compression (#3662). Both halves, or the console's Compress button is a button that
+  # throws: the .ps1 is what the server streams, and it looks for the .mjs beside itself.
+  @{ From = Join-Path $here '..\compress_companion.ps1';  As = 'compress_companion.ps1' }
+  @{ From = Join-Path $here '..\compress_companion.mjs';  As = 'compress_companion.mjs' }
 )
 
 foreach ($f in $files) {

@@ -138,6 +138,11 @@ const COMPRESSED_DIR = '_compressed';
  * room. Set TG_MESHOPT_RUNTIME_READY=1 for that one publish rather than flipping this.
  */
 const MESHOPT_RUNTIME_READY = process.env.TG_MESHOPT_RUNTIME_READY === '1';
+// TELEGAMEZ (telegamez#3701): WebP sidecar textures. The compressor can write them
+// (`--texture-format webp`); the runtime resolves atlas stems to `.png` itself until it reads
+// the sidecar's `texture_format`, so a WebP build uploads cleanly and renders hair untextured.
+// Same shape as the meshopt flag: the record of what has been confirmed in a room, not a bypass.
+const WEBP_RUNTIME_READY = process.env.TG_WEBP_RUNTIME_READY === '1';
 const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
@@ -217,10 +222,13 @@ function scanRoot(root) {
     let compressed = null;
     if (fs.existsSync(compGlb)) {
       let compMode = 'unknown';
+      let compTexFmt = 'png';
       try {
-        compMode = JSON.parse(
+        const cm = JSON.parse(
           fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
-        ).mode || 'unknown';
+        );
+        compMode = cm.mode || 'unknown';
+        compTexFmt = cm.texture_format || 'png';
       } catch { /* a build without a readable manifest still has a size worth showing */ }
       const compTex = path.join(compDir, 'textures');
       const bytes = fs.statSync(compGlb).size + (fs.existsSync(compTex)
@@ -235,7 +243,10 @@ function scanRoot(root) {
         // calibration and clothing textures live — and is indistinguishable. `full` carries
         // KTX2, which no surface can load: it would upload cleanly, report success and then
         // fail to render.
-        publishable: compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY),
+        textureFormat: compTexFmt,
+        // WebP sidecar textures are gated the same way (telegamez#3701).
+        publishable: (compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY))
+          && (compTexFmt !== 'webp' || WEBP_RUNTIME_READY),
       };
     }
 
@@ -679,22 +690,32 @@ const server = http.createServer(async (req, res) => {
         // it would upload cleanly, report success everywhere, and render nothing — the same
         // silent failure as beta's G13, and nothing downstream would catch it either.
         let compMode = 'unknown';
+        let compTexFmt = 'png';
         try {
-          compMode = JSON.parse(
+          const cm = JSON.parse(
             fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
-          ).mode;
+          );
+          compMode = cm.mode;
+          compTexFmt = cm.texture_format || 'png';
         } catch { /* falls through to the refusal below */ }
-        const allowed = compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY);
+        const modeAllowed = compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY);
+        // WebP sidecar textures (telegamez#3701): refused for the same reason as `full` — the
+        // runtime would resolve the atlas stems to .png, find nothing, and render hair bare.
+        const allowed = modeAllowed && (compTexFmt !== 'webp' || WEBP_RUNTIME_READY);
         if (!allowed) {
-          const why = compMode === 'meshopt'
+          const why = !modeAllowed ? (compMode === 'meshopt'
             ? 'the room does not load meshopt yet: Agent3DHead, SupportTele3DHead and '
               + 'ProgramAgent3DRenderer each build their own GLTFLoader and register only a '
               + 'Draco decoder, so this would publish cleanly and then fail to render in a '
               + 'room. Publish mode=none until they call setMeshoptDecoder()'
             : 'the runtime cannot load KTX2 (no KTX2Loader in web-next), so it would publish '
-              + 'and then fail to render';
+              + 'and then fail to render')
+            : 'its sidecar textures are WebP and the runtime still resolves atlas stems to .png '
+              + '(telegamez#3701), so hair and clothing would publish and then render untextured. '
+              + 'Compress with --texture-format png, or set TG_WEBP_RUNTIME_READY=1 once a WebP '
+              + 'companion has been confirmed rendering in a room';
           return send(res, 400, {
-            error: `compressed build for ${char} is mode="${compMode}" - ${why}.`,
+            error: `compressed build for ${char} is mode="${compMode}" textures="${compTexFmt}" - ${why}.`,
           });
         }
         source = compDir;

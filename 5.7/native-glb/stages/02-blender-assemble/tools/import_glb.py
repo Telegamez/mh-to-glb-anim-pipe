@@ -30,8 +30,7 @@ import re
 import sys
 
 import bpy
-
-
+import bmesh
 def _manifest_body(char_id):
     """The character's body archetype, as declared in its manifest.
 
@@ -197,6 +196,37 @@ def _parent_hair_to_head_bone(hair_names):
     return parented
 
 
+def _explicit_scalars(mi_params):
+    """The scalars an instance sets ITSELF, as opposed to what it inherits.
+
+    TELEGAMEZ (telegamez#3701): stage 01 now records EFFECTIVE parameters,
+    resolved through the parent chain, so a colour that lives on the parent is
+    not lost -- and keeps the instance's own override array under
+    `overrides`. Anything asking "did the operator set this?" (lashes falling
+    through to the head-hair colour) must look at the overrides, because after
+    resolution every instance carries a hairMelanin whether anyone touched it
+    or not. Manifests written before that change have no `overrides` block;
+    their `scalars` ARE the overrides, so fall back to them.
+    """
+    if not mi_params:
+        return {}
+    ov = mi_params.get("overrides")
+    if isinstance(ov, dict):
+        return ov.get("scalars") or {}
+    return mi_params.get("scalars") or {}
+
+
+def _melanin_rgb(melanin, redness=0.0):
+    """Display-referred hair colour from MH melanin/redness (5.6 formula)."""
+    t = max(0.0, min(1.0, float(melanin)))
+    light = (1.0 - t) ** 1.5
+    r = 0.55 * light + 0.02 * t
+    g = 0.40 * light + 0.01 * t
+    b = 0.25 * light + 0.005 * t
+    r += float(redness) * 0.12
+    return [r, g, b]
+
+
 def _synth_hair_color(mi_params):
     """Compute MH hair-card Base Color from the MI's scalar/vector params.
 
@@ -205,13 +235,21 @@ def _synth_hair_color(mi_params):
     darkening modulation). Color comes procedurally from the MI's
     `hairMelanin` (0..1, where 1 = darkest) plus optional `hairRedness`
     and an `hairDye` RGB multiplier. Formula matches 5.6/cinematic
-    pipeline."""
+    pipeline.
+
+    TELEGAMEZ (telegamez#3701): now also honours the two MetaHuman Creator
+    controls that make hair grey or streaked -- `WhiteAmount` (white strands
+    mixed in) and `Highlights` (a second melanin/redness pair blended by
+    `HighlightsIntensity`). Both are approximations of MH's strand-level mix
+    as a flat colour; the raw values travel in the sidecar's `mh` block so a
+    renderer can do better than a flat tint later. Both default to 0 in the
+    plugin, so a groom that never used them is unchanged."""
     scalars = (mi_params or {}).get("scalars") or {}
     vectors = (mi_params or {}).get("vectors") or {}
     if "hairMelanin" not in scalars:
         # No melanin override on the MI. Some MH facial-hair MIs (e.g.
         # MI_WI_Beard_M_MuttonChops_Hair) ship with only `hairDye` and
-        # no melanin scalar — for those, the dye IS the color (it's
+        # no melanin scalar -- for those, the dye IS the color (it's
         # multiplied against a white base by the MH shader). Fall
         # through to that before defaulting to the plugin's medium-
         # brown unbiased fallback.
@@ -220,18 +258,34 @@ def _synth_hair_color(mi_params):
             clamp = lambda x: max(0.0, min(1.0, float(x)))
             return (clamp(dye[0]), clamp(dye[1]), clamp(dye[2]), 1.0)
         return (0.18, 0.10, 0.05, 1.0)
-    t = max(0.0, min(1.0, float(scalars["hairMelanin"])))
-    light = (1.0 - t) ** 1.5
-    r = 0.55 * light + 0.02 * t
-    g = 0.40 * light + 0.01 * t
-    b = 0.25 * light + 0.005 * t
-    red = float(scalars.get("hairRedness", 0.0))
-    r += red * 0.12
+    r, g, b = _melanin_rgb(scalars["hairMelanin"], scalars.get("hairRedness", 0.0))
     dye = vectors.get("hairDye")
     if dye and len(dye) >= 3 and dye[3] > 0.0:
         # MH hairDye alpha=0 means "no dye". Skip otherwise the white
         # passthrough RGB nukes the synthesized color to white.
         r *= float(dye[0]); g *= float(dye[1]); b *= float(dye[2])
+
+    # Highlights: a second tone, blended in by amount x intensity.
+    hl = max(0.0, min(1.0, float(scalars.get("Highlights", 0.0) or 0.0)))
+    if hl > 0.0:
+        hr, hg, hb = _melanin_rgb(scalars.get("HighlightsMelanin", 0.28),
+                                  scalars.get("HighlightsRedness", 0.25))
+        hdye = vectors.get("HighlightshairDye")
+        if hdye and len(hdye) >= 3 and hdye[3] > 0.0:
+            hr *= float(hdye[0]); hg *= float(hdye[1]); hb *= float(hdye[2])
+        k = hl * max(0.0, min(1.0, float(scalars.get("HighlightsIntensity", 0.5) or 0.0)))
+        r = r * (1.0 - k) + hr * k
+        g = g * (1.0 - k) + hg * k
+        b = b * (1.0 - k) + hb * k
+
+    # White strands: grey hair is dark strands plus white ones, which as a
+    # flat card tint is a mix toward a slightly warm off-white.
+    white = max(0.0, min(1.0, float(scalars.get("WhiteAmount", 0.0) or 0.0)))
+    if white > 0.0:
+        r = r * (1.0 - white) + 0.78 * white
+        g = g * (1.0 - white) + 0.76 * white
+        b = b * (1.0 - white) + 0.72 * white
+
     clamp = lambda x: max(0.0, min(1.0, x))
     return (clamp(r), clamp(g), clamp(b), 1.0)
 
@@ -481,7 +535,10 @@ def _wire_card_materials(in_root, mh_manifest):
         # Eyelash MI usually doesn't override hairMelanin; reuse the
         # head hair MI's value so lashes match hair colour by default.
         synth_params = lash_mi_params or {}
-        if not (synth_params.get("scalars") or {}).get("hairMelanin"):
+        # TELEGAMEZ (telegamez#3701): the test is "did the operator colour the
+        # lashes", which after effective-parameter resolution only the
+        # override array can answer.
+        if not _explicit_scalars(synth_params).get("hairMelanin"):
             head_params = _find_hair_mi_for_color()
             if head_params:
                 synth_params = {
@@ -545,7 +602,7 @@ def _wire_card_materials(in_root, mh_manifest):
     return fixed
 
 
-def _emit_material_spec(out_root, mh_manifest):
+def _emit_material_spec(out_root, mh_manifest, extra=None):
     """Write `<char>/02-blend/mh_materials.json` describing the card
     materials so stage 04's three.js viewer can apply the proper
     hair / lash shader treatment.
@@ -596,11 +653,19 @@ def _emit_material_spec(out_root, mh_manifest):
         for mi_name, params in groom_mis.items():
             if mi_pattern not in mi_name.lower():
                 continue
-            scalars = (params or {}).get("scalars") or {}
-            if require_melanin and "hairMelanin" not in scalars:
+            if require_melanin and "hairMelanin" not in _explicit_scalars(params):
                 continue
             return _synth_hair_color(params)
         return None
+
+    def _mi_for(mi_pattern):
+        """The groom MI driving a card material, preferring the `_Cards`
+        instance the way `_pick_groom_mi` does. Returns (name, params)."""
+        hits = [(n, p) for n, p in groom_mis.items() if mi_pattern in n.lower()]
+        for n, p in hits:
+            if "_cards" in n.lower():
+                return n, p
+        return hits[0] if hits else (None, None)
 
     materials = []
     for mat in bpy.data.materials:
@@ -619,17 +684,21 @@ def _emit_material_spec(out_root, mh_manifest):
             if ml.startswith("hair_"):
                 stem = _find_stem(["Hair_S_Coil_CardsAtlas_Attribute",
                                    "Hair_"])
-                color = _hair_color_for("mi_wi_hair_") or [0.18, 0.10, 0.05, 1.0]
+                mi_pat = "mi_wi_hair_"
+                color = _hair_color_for(mi_pat) or [0.18, 0.10, 0.05, 1.0]
             elif ml.startswith("eyebrows_"):
                 stem = _find_stem(["Eyebrows_M_SlightArch_CardsAtlas_Attribute",
                                    "Eyebrows_"])
-                color = _hair_color_for("mi_wi_eyebrows_") or [0.18, 0.10, 0.05, 1.0]
+                mi_pat = "mi_wi_eyebrows_"
+                color = _hair_color_for(mi_pat) or [0.18, 0.10, 0.05, 1.0]
             elif ml.startswith("beard_"):
                 stem = _find_stem(["Beard_"])
-                color = _hair_color_for("mi_wi_beard_") or [0.18, 0.10, 0.05, 1.0]
+                mi_pat = "mi_wi_beard_"
+                color = _hair_color_for(mi_pat) or [0.18, 0.10, 0.05, 1.0]
             elif ml.startswith("mustache_") or ml.startswith("moustache_"):
                 stem = _find_stem(["Mustache_"])
-                color = _hair_color_for("mi_wi_mustache_") or [0.18, 0.10, 0.05, 1.0]
+                mi_pat = "mi_wi_mustache_"
+                color = _hair_color_for(mi_pat) or [0.18, 0.10, 0.05, 1.0]
             else:
                 # TELEGAMEZ: this chain is a prefix whitelist, and the beard
                 # family does not all start with "Beard_" — a goatee is named
@@ -643,16 +712,37 @@ def _emit_material_spec(out_root, mh_manifest):
                 if not style or style == ml:
                     continue
                 stem = _find_stem([f"{style}_"])
-                color = (_hair_color_for(f"mi_wi_{style}_")
+                mi_pat = f"mi_wi_{style}_"
+                color = (_hair_color_for(mi_pat)
                          or [0.18, 0.10, 0.05, 1.0])
                 if stem is None:
                     _log(f"  groom: no atlas stem for derived style "
                          f"'{style}' (material {mn}) - not declared")
             if stem is None:
                 continue
+            # TELEGAMEZ (telegamez#3701): prefer the MI of THIS style over any
+            # MI of the family. A project's Grooms folder keeps the previous
+            # groom's instances after a hair change in Creator (Dre: TwistedBraids
+            # beside a leftover AfroCurly helmet), and the family pattern would
+            # take whichever sorts first.
+            _style = re.split(r"_cards?mesh_", ml)[0]
+            if _style and _style != ml and _mi_for(f"mi_wi_{_style}_")[0]:
+                mi_pat = f"mi_wi_{_style}_"
+                color = _hair_color_for(mi_pat) or color
+            # TELEGAMEZ (telegamez#3701): carry MetaHuman's own shading
+            # parameters for this groom. Colour alone is not the look: the
+            # MH card shader is dual-lobe (Spec0 primary, Spec1 tinted
+            # secondary), with its own roughness pair, strand variation and
+            # card opacity gain. A renderer that has these can converge on
+            # the editor instead of being hand-tuned blind per character.
+            mh_name, mh_params = _mi_for(mi_pat)
+            mh_block = _mh_shading_block(mh_params)
+            _log(f"  groom spec {mn}: mi={mh_name} "
+                 f"color=({color[0]:.3f}, {color[1]:.3f}, {color[2]:.3f})")
             materials.append({
                 "material_name": mn,
                 "kind": "hair",
+                **({"mh": mh_block} if mh_block else {}),
                 "params": {
                     "base_color": list(color),
                     "alpha_clip": True,
@@ -676,8 +766,11 @@ def _emit_material_spec(out_root, mh_manifest):
             stem = _find_stem(["T_Eyelashes_", "Eyelashes_"])
             if stem is None:
                 continue
+            # Lashes coloured on purpose keep that; otherwise they take the
+            # head hair's EFFECTIVE colour (which is now real, see
+            # _explicit_scalars), and only then the dark default.
             color = (_hair_color_for("mi_wi_eyelashes_", require_melanin=True)
-                     or _hair_color_for("mi_wi_hair_", require_melanin=True)
+                     or _hair_color_for("mi_wi_hair_")
                      or [0.05, 0.03, 0.02, 1.0])
             materials.append({
                 "material_name": mn,
@@ -808,7 +901,9 @@ def _emit_material_spec(out_root, mh_manifest):
                 f"from this value; a wrong or missing archetype ships silently."
             )
         payload = {"character": char_id, "body": body,
-                   "saved_at": payload["saved_at"], "materials": materials}
+                   "saved_at": payload["saved_at"],
+                   **(extra or {}),
+                   "materials": materials}
         json.dump(payload, f, indent=2)
     return materials
 
@@ -1920,6 +2015,205 @@ def _linear_to_srgb(c):
     return min(1.0, 1.055 * (c ** (1.0 / 2.4)) - 0.055)
 
 
+# TELEGAMEZ (telegamez#3701): MetaHuman shading parameters worth carrying.
+# Names on the left are the sidecar's; on the right, the MH material's.
+_MH_SHADING_SCALARS = (
+    ("melanin", "hairMelanin"), ("redness", "hairRedness"),
+    ("white_amount", "WhiteAmount"), ("desat", "Desat"),
+    ("highlights", "Highlights"), ("highlights_intensity", "HighlightsIntensity"),
+    ("highlights_melanin", "HighlightsMelanin"), ("highlights_redness", "HighlightsRedness"),
+    ("highlights_root_distance", "HighlightsRootDistance"),
+    ("spec0", "Spec0"), ("spec1", "Spec1"),
+    ("roughness", "Roughness"), ("roughness_trt", "RoughnessTRT"),
+    ("hair_roughness", "HairRoughness"), ("roughness_variation", "RoughnessVariation"),
+    ("melanin_variation_fine", "MelaninVariationFine"),
+    ("melanin_variation_rough", "MelaninVariationRough"),
+    ("opacity_near", "OpacityNear"), ("opacity_far", "OpacityFar"),
+    ("scraggle", "Scraggle"), ("root_fade", "RootFade"),
+)
+
+
+def _mh_shading_block(mi_params):
+    """Subset of a groom MI's EFFECTIVE parameters, snake_case, for the
+    sidecar. Empty when the manifest predates effective resolution (an
+    override-only dump has one or two keys and would mislead)."""
+    if not mi_params:
+        return {}
+    scalars = mi_params.get("scalars") or {}
+    if "Spec0" not in scalars and "OpacityNear" not in scalars:
+        return {}
+    out = {}
+    for ours, theirs in _MH_SHADING_SCALARS:
+        v = scalars.get(theirs)
+        if isinstance(v, (int, float)):
+            out[ours] = round(float(v), 4)
+    dye = (mi_params.get("vectors") or {}).get("hairDye")
+    if dye and len(dye) >= 4 and dye[3] > 0.0:
+        out["dye"] = [round(float(x), 4) for x in dye[:3]]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# TELEGAMEZ (telegamez#3701): hull normals for card grooms.
+#
+# UE exports every hair, brow, beard and mustache card with the normal of
+# its own plane. Measured on Julius's Hair_S_Coil: the stored normals sit
+# within 14 degrees (median) of each card's face normal across ~4,600 cards.
+# Lit by a PBR shader that means every card shades on its own -- a light
+# card beside a dark one beside a light one -- which is the patchwork and
+# glitter a card groom is known for. Card-hair pipelines fix this at the
+# asset: the cards take the normal of the smooth surface they grow from, so
+# the whole groom shades as one volume and the strand detail comes from the
+# atlas and the tangent map. That is what this does, from the skin under
+# the cards, via Blender's Data Transfer (nearest face, interpolated).
+#
+# It is a bake-time change with a runtime consequence: three.js flips the
+# normal on the back face of a double-sided material, which is right for a
+# flat card and wrong for a hull normal (it would point into the head). The
+# sidecar therefore declares `hair_normals: "hull"` so a renderer knows to
+# skip that flip; the reference viewer does, and the platform runtime is
+# tracked under the same ticket. A hull bake on a renderer that still flips
+# shows dark cards on their back side, so the runtime ships first.
+#
+# MH_HULL_NORMALS=0 disables it; a value in (0, 1] is the blend toward the
+# hull (1 = pure hull, the default).
+_HULL_NORMAL_MIX_DEFAULT = 1.0
+
+
+def _hull_normal_mix():
+    raw = os.environ.get("MH_HULL_NORMALS")
+    if raw is None:
+        return _HULL_NORMAL_MIX_DEFAULT
+    raw = raw.strip().lower()
+    if raw in ("", "0", "off", "none", "false", "no"):
+        return 0.0
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        return _HULL_NORMAL_MIX_DEFAULT
+
+
+def _hull_source_object():
+    """A temporary object holding only the SKIN faces of the largest face
+    mesh. Eyes, teeth, lashes and the eye shell share that mesh, and a
+    brow card nearest to a lash face would take the lash's normal."""
+    face = None
+    for o in bpy.data.objects:
+        nl = o.name.lower()
+        if o.type != "MESH" or "facemesh" not in nl:
+            continue
+        if "cardsmesh" in nl or "cardmesh" in nl:
+            continue
+        if face is None or len(o.data.vertices) > len(face.data.vertices):
+            face = o
+    if face is None:
+        return None, None
+    # From the EVALUATED face, not `face.data.copy()`: a copy drags the 72
+    # shape keys along as a second Key datablock, and removing the temporary
+    # mesh afterwards leaves that Key orphaned with a dangling owner -- which
+    # Blender refuses at save time ("Shapekey KEKey.002 has an invalid 'from'
+    # pointer"). The evaluated mesh has no keys, and at rest it is the same
+    # surface.
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = bpy.data.meshes.new_from_object(
+        face.evaluated_get(dg), preserve_all_data_layers=False, depsgraph=dg)
+    me.name = "_TG_HullNormalSource"
+    src = bpy.data.objects.new("_TG_HullNormalSource", me)
+    bpy.context.scene.collection.objects.link(src)
+    src.matrix_world = face.matrix_world.copy()
+    slots = list(face.data.materials)
+    skin_slots = {i for i, m in enumerate(slots)
+                  if m is not None and "skin" in m.name.lower()}
+    if skin_slots and len(skin_slots) < len(slots):
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        kill = [f for f in bm.faces if f.material_index not in skin_slots]
+        if kill:
+            bmesh.ops.delete(bm, geom=kill, context="FACES")
+        bm.to_mesh(me)
+        bm.free()
+    me.update()
+    return src, face
+
+
+def _transfer_hull_normals_to_cards():
+    """Give every card groom mesh the normals of the skin beneath it.
+    Returns a summary dict for the log and the sidecar."""
+    import math
+    mix = _hull_normal_mix()
+    if mix <= 0.0:
+        _log("hull normals: disabled (MH_HULL_NORMALS=0) - cards keep their own normals")
+        return {"mode": "card", "mix": 0.0, "meshes": []}
+    src, face = _hull_source_object()
+    if src is None:
+        _log("hull normals: no face mesh found - cards keep their own normals")
+        return {"mode": "card", "mix": mix, "meshes": []}
+    _log(f"hull normals: source {face.name} ({len(src.data.polygons)} skin faces), mix={mix:.2f}")
+    done = []
+    try:
+        for obj in list(bpy.data.objects):
+            if obj.type != "MESH":
+                continue
+            nl = obj.name.lower()
+            if "cardsmesh" not in nl and "cardmesh" not in nl:
+                continue
+            hidden = obj.hide_render or obj.hide_viewport
+            try:
+                hidden = hidden or obj.hide_get()
+            except Exception:
+                pass
+            if hidden:
+                continue
+            me = obj.data
+            if len(me.polygons) == 0:
+                continue
+            try:
+                before = [n.vector.copy() for n in me.corner_normals]
+            except Exception:
+                before = None
+            mod = obj.modifiers.new("_TG_HullNormals", "DATA_TRANSFER")
+            mod.object = src
+            mod.use_object_transform = True
+            mod.use_loop_data = True
+            mod.data_types_loops = {"CUSTOM_NORMAL"}
+            mod.loop_mapping = "POLYINTERP_NEAREST"
+            mod.mix_mode = "REPLACE"
+            mod.mix_factor = mix
+            dg = bpy.context.evaluated_depsgraph_get()
+            ev = obj.evaluated_get(dg)
+            me_ev = ev.to_mesh()
+            new = None
+            if len(me_ev.loops) == len(me.loops):
+                new = [n.vector.copy() for n in me_ev.corner_normals]
+            ev.to_mesh_clear()
+            obj.modifiers.remove(mod)
+            if new is None:
+                _log(f"  hull normals: {obj.name} loop count changed under its "
+                     f"modifiers - skipped, keeps card normals")
+                continue
+            me.normals_split_custom_set([tuple(v) for v in new])
+            me.update()
+            moved = None
+            if before is not None and len(before) == len(new):
+                acc = 0.0
+                for a, b in zip(before, new):
+                    d = max(-1.0, min(1.0, a.dot(b)))
+                    acc += math.degrees(math.acos(d))
+                moved = acc / max(1, len(new))
+            done.append({"mesh": obj.name, "loops": len(new),
+                         "mean_change_deg": None if moved is None else round(moved, 1)})
+            _log(f"  hull normals: {obj.name} {len(new)} loops"
+                 + ("" if moved is None else f", normals turned {moved:.1f} deg on average"))
+    finally:
+        me_src = src.data
+        bpy.data.objects.remove(src, do_unlink=True)
+        try:
+            bpy.data.meshes.remove(me_src)
+        except Exception:
+            pass
+    return {"mode": "hull" if done else "card", "mix": mix, "meshes": done}
+
+
 def _bake_scalp_darkening():
     """Bake proximity-based darkening onto the face mesh vertex colors.
 
@@ -3003,15 +3297,6 @@ def main():
     if fixed:
         _log(f"wired sidecar textures onto {fixed} card material(s)")
 
-    # Emit mh_materials.json describing the card materials so stage 04's
-    # three.js viewer can apply the proper hair-card shader (alpha-clip
-    # outer pass + opaque inner pass + per-strand seed variation +
-    # root darkening). Same schema as 5.6/cinematic so the existing
-    # viewer.js handles it without any change.
-    mat_records = _emit_material_spec(out_root, mh)
-    if mat_records:
-        _log(f"wrote mh_materials.json: {len(mat_records)} entry(ies)")
-
     removed_placeholders = _remove_gltf_placeholder_empties()
     if removed_placeholders:
         _log(f"removed {removed_placeholders} glTF placeholder Icosphere(s)")
@@ -3020,9 +3305,32 @@ def main():
     if clearance_fixed:
         _log(f"pushed {clearance_fixed} hair card vert(s) to clear face clipping")
 
+    # TELEGAMEZ (telegamez#3701): after the clearance push (it moves card
+    # verts) and before the material spec (which declares the result).
+    hull = _transfer_hull_normals_to_cards()
+    _log(f"hull normals: {hull['mode']} on {len(hull['meshes'])} card mesh(es)")
+
     scalp_darkened = _bake_scalp_darkening()
     if scalp_darkened:
         _log(f"baked scalp darkening onto {scalp_darkened} face vert(s)")
+
+    # Emit mh_materials.json describing the card materials so stage 04's
+    # three.js viewer can apply the proper hair-card shader (alpha-clip
+    # outer pass + opaque inner pass + per-strand seed variation +
+    # root darkening). Same schema as 5.6/cinematic so the existing
+    # viewer.js handles it without any change.
+    #
+    # TELEGAMEZ (telegamez#3701): runs after the hull-normal transfer so the
+    # sidecar can say which kind of normals the cards carry. `hair_normals`
+    # is "hull" or "card"; a renderer that flips back-face normals must not
+    # do so on a hull bake.
+    mat_records = _emit_material_spec(out_root, mh, extra={
+        "hair_normals": hull["mode"],
+        "hull_normal_mix": hull["mix"] if hull["mode"] == "hull" else 0.0,
+    })
+    if mat_records:
+        _log(f"wrote mh_materials.json: {len(mat_records)} entry(ies), "
+             f"hair_normals={hull['mode']}")
 
     # Save blend
     blend_path = os.path.join(out_root, f"{args.char}.blend")

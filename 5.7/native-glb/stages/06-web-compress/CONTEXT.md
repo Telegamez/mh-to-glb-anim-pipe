@@ -325,3 +325,15 @@ loader work, and is the bulk of the win), verify on panda, then do KTX2 with the
 
 change. Panda is where new work is proven; beta is production.
 
+## WebP sidecar textures (telegamez#3701)
+
+`compress_companion.mjs --texture-format webp` (modes `none` and `meshopt`) converts the sidecar
+PNGs to WebP — lossless for `_N` and `_Tangent` maps, q95 for everything else — rewrites the
+explicit `textures.*` paths, and writes `texture_format: "webp"` into the sidecar and the
+compression manifest. Atlas stems are left alone; the runtime appends the extension itself.
+
+Measured on Julius's hair atlas: 2048 PNG 5.9 MB, 4096 WebP q95 4.7 MB, 2048 WebP q95 1.5 MB.
+
+The publisher refuses a WebP build until `TG_WEBP_RUNTIME_READY=1`, for the same reason it
+refuses `full`: until the runtime reads `texture_format`, the build uploads cleanly and renders
+hair and clothing untextured. Needs `sharp-cli` through `npx` (online once), like gltf-transform.

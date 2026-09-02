@@ -142,3 +142,24 @@ read. Re-running is safe.
   file size (~46 MB expected).
 - kdtree match max > 5mm → LSE face and GLB face came from different
   SKM builds. Re-run stage 01 to get a consistent pair.
+
+## Hull normals on card grooms (telegamez#3701)
+
+After the face-clearance push and before the material spec, `_transfer_hull_normals_to_cards`
+gives every visible card mesh (hair, brows, beard, mustache, goatee — anything named
+`*CardsMesh*` / `*CardMesh*`) the normals of the skin beneath it, via a Data Transfer modifier
+from a temporary skin-only copy of the face mesh (nearest face, interpolated), baked in as custom
+split normals. The log prints the mean angle the normals turned per mesh; expect tens of degrees
+on a coil or braid groom and single digits on a flat brow.
+
+Why: UE exports each card with its own plane's normal, so a PBR renderer lights every card on
+its own — the patchwork. With hull normals the groom shades as one volume and the strand detail
+comes from the atlas and the tangent map.
+
+`mh_materials.json` records the outcome as `hair_normals: "hull"` (or `"card"`), plus
+`hull_normal_mix`. A renderer must not flip back-face normals on a hull bake. `MH_HULL_NORMALS=0`
+disables the transfer; a value in (0, 1] blends toward the hull.
+
+The same run also emits an `mh` block per hair material — MetaHuman's own shading parameters,
+resolved through the material-instance parent chain by stage 01 — and synthesises the card colour
+from the effective melanin/redness/dye/white/highlights rather than from override-only values.

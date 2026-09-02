@@ -99,7 +99,36 @@ function renderGrid() {
     body.append(tr);
   }
   refreshButtons();
+  checkRoot();
 }
+
+/**
+ * Warn when the folder being browsed is not the folder `bake` writes into.
+ *
+ * These are chosen independently -- the browse root is remembered between runs, while bake
+ * always writes to the pipeline's packages folder. When they differ the bake succeeds, the
+ * grid rescans correctly, and the character simply is not there. Nothing fails, so nothing
+ * says anything, and the obvious reading is that the bake broke.
+ */
+function checkRoot() {
+  const pkg = CONFIG && CONFIG.packagesRoot;
+  const btn = $('gotoPackages');
+  if (!pkg || !btn) return;
+  const same = String(ROOT).replace(/[\/]+$/, '').toLowerCase()
+             === String(pkg).replace(/[\/]+$/, '').toLowerCase();
+  btn.hidden = same;
+  if (!same) {
+    btn.textContent = 'Bakes go to ' + pkg + ' — show that folder';
+    btn.title = 'You are browsing a different folder from the one bake writes into, so a new '
+              + 'bake will not appear in this list.';
+  }
+}
+
+$('gotoPackages').onclick = async () => {
+  ROOT = CONFIG.packagesRoot;
+  await scan();
+  await resolveAll();
+};
 
 function toggle(id) {
   if (PICKED.has(id)) PICKED.delete(id); else PICKED.add(id);

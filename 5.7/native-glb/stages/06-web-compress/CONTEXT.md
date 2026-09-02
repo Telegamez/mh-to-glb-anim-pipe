@@ -279,7 +279,7 @@ which is precisely where the differences are.
 
 companions. drei 10.7.6's `useGLTF(url, useDraco = true, useMeshopt = true, ...)` calls
 
-`setMeshoptDecoder` by default, and `three-stdlib@2.36.1` exports `MeshoptDecoder`.
+`setMeshoptDecoder` by default.
 
 `TalkShowCompanionAvatar` uses `useGLTF`, so the talk-show, capture and harness surfaces
 

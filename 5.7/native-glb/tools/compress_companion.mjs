@@ -22,7 +22,7 @@
  * hair calibration and clothing textures all live. Indistinguishable. A Blender render said
  * the same thing but could not be trusted on its own, because it does not run the hair shader
  * — which is exactly where the differences are. drei's `useGLTF` defaults to
- * `useMeshopt = true` and wires `MeshoptDecoder` from three-stdlib, so every surface that
+ * `useMeshopt = true` and wires a MeshoptDecoder, so every surface that
  * loads a companion through it already accepts `EXT_meshopt_compression`. This is also
  * where nearly all the win is: ~73% of a MetaHuman GLB is uncompressed FLOAT32 morph-target
  * data, and meshopt takes the model from 47.5 MB to 16.6 MB on its own.
@@ -249,7 +249,8 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
   textures: { before_bytes: texBefore, after_bytes: texAfter },
   total: { before_bytes: totalBefore, after_bytes: totalAfter },
   runtime: mode === 'meshopt'
-    ? ['Loadable today: drei useGLTF defaults useMeshopt=true (three-stdlib MeshoptDecoder).']
+    ? ['Loadable: drei useGLTF registers a meshopt decoder; the other surfaces go through '
+        + 'the shared companionGltfLoader (telegamez#3682).']
     : [
         'NOT loadable: nothing in web-next registers a KTX2Loader, and KHR_texture_basisu is required.',
         `${stemRefs} alpha_stem/tangent_stem refs still resolve to .png in metaHumanMaterials.ts.`,

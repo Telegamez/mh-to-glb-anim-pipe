@@ -124,13 +124,18 @@ const COMPRESSED_DIR = '_compressed';
  * everywhere, render in the talk show, and fail to appear in a room. That is the same shape
  * as beta's G13, and nothing downstream would catch it.
  *
- * The fix is two lines in each of those three files:
+ * Fixed platform-side in telegamez#3682: one shared companion loader
+ * (`services/RoomManager/Agent/companionGltfLoader.ts`) used by all three surfaces plus the
+ * dev harnesses. It takes the decoder from `three` itself —
+ * `three/examples/jsm/libs/meshopt_decoder.module.js` — and passes it UNCALLED, because
+ * three exports the built object where three-stdlib exports a factory. Calling three's would
+ * pass undefined and silently disable meshopt, which is this exact failure again.
+ * (`three-stdlib` is only a transitive dep via drei and does not resolve from web-next.)
  *
- *     import { MeshoptDecoder } from 'three-stdlib';
- *     loader.setMeshoptDecoder(MeshoptDecoder());
- *
- * Flip this to true once that has landed and been seen working in a room — or set
- * TG_MESHOPT_RUNTIME_READY=1 to override without editing.
+ * The decoder is registered and contract-tested, but no meshopt GLB has been loaded through
+ * a real room yet, and the failure mode is a silent rejection that leaves the talk show
+ * working. So this stays false until one published companion is confirmed rendering in a
+ * room. Set TG_MESHOPT_RUNTIME_READY=1 for that one publish rather than flipping this.
  */
 const MESHOPT_RUNTIME_READY = process.env.TG_MESHOPT_RUNTIME_READY === '1';
 const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);

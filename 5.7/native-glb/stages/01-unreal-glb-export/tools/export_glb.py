@@ -1022,7 +1022,27 @@ def main():
             mi = None
         if mi is None:
             continue
-        params = _read_mi_params(mi)
+        # TELEGAMEZ (telegamez#3701): EFFECTIVE parameters, not the override
+        # array.
+        #
+        # `_read_mi_params` reads what THIS instance overrides. MetaHuman
+        # Creator writes the head-hair colour onto the groom's material
+        # instances, and the cards instance (`MI_WI_<style>_Hair_Cards`)
+        # inherits every colour parameter from the plugin parent -- so its
+        # override array is empty, the `continue` below dropped it, stage 02
+        # logged `mi=None`, and every head groom on the roster shipped the
+        # hard-coded fallback brown. Measured on Julius: effective melanin
+        # 0.80 / redness 0.25, sidecar (0.18, 0.10, 0.05). The clothing dump
+        # below already resolves through the chain for exactly this reason.
+        #
+        # The override array is kept alongside, because "did the operator set
+        # this?" is still a real question (lashes fall through to the head
+        # hair colour only when their own instance says nothing) and after
+        # resolution every instance carries every parameter.
+        overrides = _read_mi_params(mi)
+        params = _resolve_mi_params(mi)
+        if not (params["vectors"] or params["scalars"]):
+            params = overrides
         if not (params["vectors"] or params["scalars"]):
             continue
         mi_name = str(a.asset_name)
@@ -1030,9 +1050,15 @@ def main():
             "asset_path": str(a.package_name),
             "vectors": params["vectors"],
             "scalars": params["scalars"],
+            "textures": params.get("textures") or {},
+            "overrides": {"vectors": overrides.get("vectors") or {},
+                          "scalars": overrides.get("scalars") or {}},
         }
-        _log(f"    groom mi[{mi_name}]: vectors={list(params['vectors'])} "
-             f"scalars={list(params['scalars'])}")
+        _sc = params["scalars"]
+        _log(f"    groom mi[{mi_name}]: melanin={_sc.get('hairMelanin')} "
+             f"redness={_sc.get('hairRedness')} white={_sc.get('WhiteAmount')} "
+             f"highlights={_sc.get('Highlights')} "
+             f"overrides={sorted(overrides.get('scalars') or {})}")
 
     # TELEGAMEZ: the same treatment for CLOTHING.
     #

@@ -73,6 +73,16 @@ const HAIR_OVERRIDES = {
 let _activeHairOverrides = null;   // global params merged into all hair specs
 let _activeHairMaterials = null;   // per-material overrides keyed by label
 let _useAlphaToCoverage = false;
+// TELEGAMEZ (telegamez#3701): what kind of normals the bake put on its hair
+// cards. Stage 02 now transfers hull normals from the scalp onto every card
+// groom and says so in the sidecar (`hair_normals: "hull"`). Those normals
+// already point out of the hair volume, so three's back-face flip on a
+// double-sided material must be undone for them — see injectHullNormals.
+let _hairNormals = null;
+// Sidecar texture format. The compressor can rewrite the sidecar atlases to
+// WebP and declares it as `texture_format`; the atlas stems carry no
+// extension, so the extension is decided here.
+let _texExt = 'png';
 
 function _resolveCharacterId(opts) {
   if (opts && opts.characterId) return String(opts.characterId).toLowerCase();
@@ -313,6 +323,9 @@ function applySkin(mat) {
 // --------------------------------------------------------------- material patch
 
 function patchMaterials(root, mapping, baseUrl) {
+  _hairNormals = (mapping && mapping.hair_normals) || null;
+  _texExt = (mapping && mapping.texture_format === 'webp') ? 'webp' : 'png';
+  if (_hairNormals) console.log('[viewer] hair normals:', _hairNormals, '/ atlas format:', _texExt);
   const specByName = new Map();
   for (const m of mapping.materials || []) {
     if (m.material_name) specByName.set(m.material_name, m);
@@ -577,6 +590,33 @@ function applyCloth(mat, p, t, loadTex) {
 
 // ---------------- hair
 
+// TELEGAMEZ (telegamez#3701): hull-normal bakes.
+//
+// three's <normal_fragment_begin> multiplies the normal by faceDirection on a
+// DOUBLE_SIDED material, so a card seen from behind is lit as if it faced the
+// camera. Right for a flat card; wrong once the cards carry the scalp's
+// normal, which already points out of the hair volume — flipped, it points
+// into the head and the card goes dark. Undo the flip (and the matching
+// flip on the tangent frame, which anisotropy reads) when the sidecar says
+// the bake is a hull bake.
+function injectHullNormals(shader) {
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <normal_fragment_begin>',
+    `
+    #include <normal_fragment_begin>
+    #if defined( DOUBLE_SIDED ) && ! defined( FLAT_SHADED )
+      normal *= faceDirection;
+      nonPerturbedNormal = normal;
+      #if defined( USE_NORMALMAP_TANGENTSPACE ) || defined( USE_CLEARCOAT_NORMALMAP ) || defined( USE_ANISOTROPY )
+        tbn[0] *= faceDirection;
+        tbn[1] *= faceDirection;
+        tbn[2] = normal;
+      #endif
+    #endif
+    `
+  );
+}
+
 function applyHair(mat, p, t, loadTex) {
   // Layer per-character overrides on top of the spec params. Overrides win
   // over spec (stage 02 doesn't emit these tuning scalars, but if it ever
@@ -607,7 +647,7 @@ function applyHair(mat, p, t, loadTex) {
 
   // Try sidecar atlas first (via stem in params), then fall back to whatever
   // stage 03 rewrote into the textures dict (full relative URL).
-  const atlasUrl = p.alpha_stem ? `textures/${p.alpha_stem}.png`
+  const atlasUrl = p.alpha_stem ? `textures/${p.alpha_stem}.${_texExt}`
                  : (t.alpha_r || t.alpha || null);
   const atlas = atlasUrl ? loadTex(atlasUrl, { srgb: false }) : null;
   if (!atlas) {
@@ -652,7 +692,7 @@ function applyHair(mat, p, t, loadTex) {
   // (0.5/0.5-centered, matches KHR_materials_anisotropy), which aligns the
   // GGX highlight along each card's strand direction instead of a round
   // isotropic hotspot. Requires MeshPhysicalMaterial (upgraded in patchMats).
-  const tangentUrl = p.tangent_stem ? `textures/${p.tangent_stem}.png` : null;
+  const tangentUrl = p.tangent_stem ? `textures/${p.tangent_stem}.${_texExt}` : null;
   const tangent = tangentUrl ? loadTex(tangentUrl, { srgb: false }) : null;
   if (tangent && 'anisotropy' in mat) {
     mat.anisotropyMap = tangent;
@@ -697,6 +737,7 @@ function applyHair(mat, p, t, loadTex) {
                          : (_useAlphaToCoverage && !isFacialHair ? 2.5 : 1.0);
     shader.uniforms.uHairDensity   = { value: densityDefault };
     mat.userData.hairUniforms = shader.uniforms;
+    if (_hairNormals === 'hull') injectHullNormals(shader);
 
     // Sample the atlas once at the top of the fragment main and derive the
     // hair-lookup values we'll reuse in both color and alpha replacements.
@@ -808,6 +849,7 @@ function addHairInnerPass(mesh, outerMat, spec) {
     shader.uniforms.uHairRoughFlr  = { value: roughFloor };
     shader.uniforms.uHairRoughSeed = { value: roughSeedAmp };
     innerMat.userData.hairUniforms = shader.uniforms;
+    if (_hairNormals === 'hull') injectHullNormals(shader);
     shader.fragmentShader = `
       uniform float uHairRootDark;
       uniform float uHairSeedAmp;

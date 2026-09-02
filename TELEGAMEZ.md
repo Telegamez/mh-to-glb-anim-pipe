@@ -35,6 +35,8 @@ affect anyone running the pipeline.
 | `"character"` derived, not hardcoded `"ada"` | The sidecar named every character "ada", demos included. |
 | Outfit `Color1` carried into the sidecar | UE's GLTFExporter writes outfit materials with neither a `baseColorTexture` nor a `baseColorFactor`, and glTF defaults absent base colour to **white**. A character whose shirt is navy and chinos khaki in the editor exports dressed entirely in white, with nothing reporting a problem. Stage 01 now records the colour and stage 02 writes it into `mh_materials.json`. |
 | `_resolve_mi_params` reads *effective* params | `_read_mi_params` reads `vector_parameter_values`, which is the **override** array on one instance. Groom MIs override `hairMelanin` directly so it worked there; outfit MIs inherit `Color1` from the parent chain, so it came back empty and the caller's `if not (vectors or scalars): continue` dropped them silently. The resolver walks to the base material and asks `MaterialEditingLibrary` for the resolved value. |
+| Groom MIs resolved the same way (telegamez#3701) | The groom dump still read the override array. Every head-hair cards instance MetaHuman Creator writes inherits its colour from the plugin parent, so it was dropped, stage 02 logged `mi=None`, and every head groom shipped a hard-coded fallback brown. Measured on Julius: effective melanin 0.80 / redness 0.25; sidecar (0.18, 0.10, 0.05). The dump now records effective values plus the instance's own overrides, and stage 02's colour synthesis honours `WhiteAmount` and `Highlights`. |
+| Hull normals on card grooms (telegamez#3701) | UE exports each card with its own plane's normal (within 14° of the face normal, median, on ~4,600 Coil cards), so a PBR renderer lights every card separately — the patchwork and glitter. Stage 02 transfers the scalp's normals onto every card mesh (Data Transfer, nearest face interpolated) and the sidecar declares `hair_normals: "hull"`. `MH_HULL_NORMALS=0` disables it. The reference viewer honours the flag; see the sequencing note below. |
 | Thumbnail step is non-fatal *under capture* too | See "non-fatal only when nobody is looking" below. |
 
 ### B. Telegamez platform contract — do NOT upstream
@@ -62,6 +64,30 @@ project, and is visible in a manifest rather than buried in a `.uasset`. The ove
 before→after so the substitution is never invisible.
 
 ---
+
+## Hair and grooms (telegamez#3701)
+
+Three things changed for every card groom, and one of them has an ordering constraint.
+
+- **The colour is real now.** See the table row above. `mh_materials.json` also carries an
+  `mh` block per hair material with MetaHuman's own shading parameters (Spec0/Spec1, the
+  roughness pair, melanin variation, card opacity gain, white amount, highlights), so a runtime
+  can converge on the editor's look instead of being hand-tuned blind per character.
+- **Cards carry hull normals.** The sidecar says `hair_normals: "hull"` (or `"card"` when the
+  transfer was disabled or found nothing). three.js flips the normal on the back face of a
+  double-sided material; that is right for a flat card and wrong for a hull normal, which
+  already points out of the volume. A renderer must skip the flip on a hull bake. The reference
+  viewer (`stages/04-webview-build/templates/viewer.js`) does; the platform runtime change is
+  tracked on the same ticket.
+- **Sequencing.** Do not publish a hull-normal bake to an environment whose runtime still flips
+  back-face normals on hair — those cards render dark from behind. Runtime first (panda before
+  beta, as always), then re-bakes.
+- **WebP atlases, opt-in.** `compress_companion.mjs --texture-format webp` converts the sidecar
+  textures (lossless for normal and tangent maps, q95 otherwise) and writes
+  `texture_format: "webp"` into the sidecar. Measured on Julius's hair atlas: 2048 PNG 5.9 MB,
+  4096 WebP q95 4.7 MB, 2048 WebP q95 1.5 MB. The publisher refuses such a build until
+  `TG_WEBP_RUNTIME_READY=1`, because the runtime appends `.png` to atlas stems itself until it
+  reads `texture_format`. Same shape as the meshopt gate, for the same silent-failure reason.
 
 ## Running on UE 5.8 and Blender 4.4
 

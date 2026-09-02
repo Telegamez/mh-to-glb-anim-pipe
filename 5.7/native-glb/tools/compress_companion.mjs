@@ -52,6 +52,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const GLTF_TRANSFORM = '@gltf-transform/cli@4.5.0';
+const SHARP_CLI = 'sharp-cli@5.2.0';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
@@ -64,9 +65,18 @@ const ktxBin = flag('ktx-bin', '');
 // The model is `<name>.glb`. In a publishable directory that is the folder name, but the
 // pipeline's stage 06 passes `characters/<id>/03-glb`, where it is not.
 const explicitName = flag('name', '');
+// TELEGAMEZ (telegamez#3701): sidecar texture format. `png` is what every runtime reads
+// today. `webp` is the measured lever on the hair atlases — 2048 PNG 5.9 MB vs 4096 WebP
+// q95 4.7 MB vs 2048 WebP q95 1.5 MB on Julius — and every browser decodes it natively,
+// unlike KTX2. It is opt-in because the runtime resolves atlas STEMS to `.png` itself; until
+// it reads the sidecar's `texture_format`, a WebP build publishes cleanly and renders hair
+// untextured. The publisher refuses such a build for the same reason it refuses `full`.
+const textureFormat = flag('texture-format', 'png');
 
 if (!src || !out) { console.error('--src and --out are required'); process.exit(2); }
 if (!['none', 'meshopt', 'full'].includes(mode)) { console.error(`unknown --mode ${mode}`); process.exit(2); }
+if (!['png', 'webp'].includes(textureFormat)) { console.error(`unknown --texture-format ${textureFormat}`); process.exit(2); }
+if (mode === 'full' && textureFormat !== 'png') { console.error('--texture-format applies to none/meshopt; full carries KTX2'); process.exit(2); }
 if (!fs.existsSync(src)) { console.error(`source not found: ${src}`); process.exit(1); }
 
 const name = explicitName || path.basename(path.resolve(src));
@@ -135,6 +145,10 @@ const MODE_NOTE = {
   full: '  (NOT loadable by the runtime yet)',
 };
 console.log(`mode      : ${mode}${MODE_NOTE[mode]}`);
+if (mode !== 'full') {
+  console.log(`textures  : ${textureFormat}${textureFormat === 'webp'
+    ? '  (NOT publishable until the runtime reads texture_format — telegamez#3701)' : ''}`);
+}
 if (mode === 'full') {
   console.log('WARNING: mode=full carries KTX2, which no surface can load. The publisher will');
   console.log('         refuse it. Build it for measurement only.');
@@ -186,7 +200,31 @@ if (fs.existsSync(srcTex)) {
   fs.mkdirSync(outTex, { recursive: true });
   const files = fs.readdirSync(srcTex);
 
-  if (mode !== 'full') {
+  if (mode !== 'full' && textureFormat === 'webp') {
+    // WebP through sharp, fetched the same way gltf-transform is. Normal and tangent maps are
+    // encoded LOSSLESS: they are vector data, and a lossy codec's chroma handling bends them.
+    // Coverage atlases, base colour and ORM take q95, which on the hair atlas is invisible at
+    // the density gain the runtime applies and a quarter of the PNG bytes.
+    let converted = 0;
+    for (const f of files) {
+      if (!/\.png$/i.test(f)) { fs.copyFileSync(path.join(srcTex, f), path.join(outTex, f)); continue; }
+      const stem = f.replace(/\.png$/i, '');
+      const dst = path.join(outTex, `${stem}.webp`);
+      const lossless = /_N$|_Tangent$/i.test(stem);
+      const args = ['--yes', SHARP_CLI, '-i', path.join(srcTex, f), '-o', dst, '-f', 'webp',
+        ...(lossless ? ['--lossless'] : ['-q', '95'])];
+      try {
+        execFileSync('npx', args, { env, stdio: 'pipe', shell: true });
+      } catch (e) {
+        console.error(`  FAILED ${f}: ${String(e.stderr || e.message).slice(0, 300)}`);
+        process.exit(1);
+      }
+      if (!fs.existsSync(dst)) { console.error(`  FAILED ${f}: sharp wrote nothing at ${dst}`); process.exit(1); }
+      converted++;
+    }
+    texAfter = dirBytes(outTex);
+    console.log(`  textures ${converted} PNG -> WebP: ${MB(texBefore)} MB -> ${MB(texAfter)} MB`);
+  } else if (mode !== 'full') {
     // Copied verbatim. The runtime resolves these by name against the model's directory, and
     // outside `full` nothing about them changes here — stage 03 has already capped and
     // de-alphaed them at bake time, which is where that work belongs.
@@ -222,17 +260,20 @@ if (fs.existsSync(srcTex)) {
 
 // ----------------------------------------------------------------------------- sidecar
 const sidecar = JSON.parse(fs.readFileSync(srcSidecar, 'utf8'));
+// Explicit texture paths are rewritten to the new extension; the atlas STEMS are not touched
+// — the runtime appends the extension to those itself, from `texture_format`, once it reads it.
+const outExt = mode === 'full' ? 'ktx2' : (textureFormat === 'webp' ? 'webp' : null);
 for (const m of sidecar.materials || []) {
   for (const key of ['alpha_stem', 'tangent_stem']) {
     if (typeof m.params?.[key] === 'string') stemRefs++;
   }
-  if (mode === 'full') {
+  if (outExt) {
     for (const [k, v] of Object.entries(m.textures || {})) {
-      if (typeof v === 'string') m.textures[k] = v.replace(/\.png$/i, '.ktx2');
+      if (typeof v === 'string') m.textures[k] = v.replace(/\.png$/i, `.${outExt}`);
     }
   }
 }
-if (mode === 'full') sidecar.texture_format = 'ktx2';
+if (outExt) sidecar.texture_format = outExt;
 fs.writeFileSync(path.join(out, 'mh_materials.json'), JSON.stringify(sidecar, null, 2));
 
 const totalBefore = sizeOf(srcGlb) + texBefore;
@@ -245,10 +286,16 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
   generated_at: new Date().toISOString(),
   source: path.resolve(src),
   texture_px: texturePx || 'unchanged',
+  texture_format: mode === 'full' ? 'ktx2' : textureFormat,
   model: { before_bytes: sizeOf(srcGlb), after_bytes: sizeOf(outGlb), structure: after },
   textures: { before_bytes: texBefore, after_bytes: texAfter },
   total: { before_bytes: totalBefore, after_bytes: totalAfter },
-  runtime: mode === 'meshopt'
+  runtime: textureFormat === 'webp' && mode !== 'full'
+    ? [
+        'NOT loadable until the runtime resolves atlas stems by texture_format (telegamez#3701); '
+          + `${stemRefs} alpha_stem/tangent_stem refs currently resolve to .png in metaHumanMaterials.ts.`,
+      ]
+    : mode === 'meshopt'
     ? ['Loadable: drei useGLTF registers a meshopt decoder; the other surfaces go through '
         + 'the shared companionGltfLoader (telegamez#3682).']
     : [
@@ -262,4 +309,7 @@ console.log(`out   ${path.resolve(out)}`);
 if (mode === 'full') {
   console.log('\nWARNING: mode=full is not loadable by the runtime yet. Publishing it would');
   console.log('upload cleanly, report success, and fail to render. See CONTEXT.md.');
+} else if (textureFormat === 'webp') {
+  console.log('\nWARNING: WebP sidecar textures need a runtime that reads texture_format');
+  console.log('(telegamez#3701). The publisher refuses this build until TG_WEBP_RUNTIME_READY=1.');
 }

@@ -35,7 +35,11 @@
   PRODUCTION session.
 
 .PARAMETER Slugs
-  Companion slugs to check. Defaults to the six MetaHumans.
+  Companion slugs to check, as an array or a comma-separated string.
+
+  Defaults to the six MetaHumans this was written for. That default is why the console now
+  passes what is ticked instead: a newly published companion is the one most likely to need
+  checking, and it was the one case a hardcoded list silently skipped.
 
 .EXAMPLE
   $env:TG_ADMIN_TOKEN = "<value>"
@@ -57,6 +61,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Accept "a,b,c" as well as a real array. `pwsh -File` hands every argument to the script as a
+# plain string and binds only the first to an array parameter, so BOTH obvious ways of passing
+# several slugs from a GUI or a launcher are wrong in different ways: comma-joined arrives as
+# one slug named "mh-a,mh-b", and separate arguments silently drop everything after the first.
+# Splitting here makes the comma form correct rather than making callers know this.
+$Slugs = @($Slugs | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } |
+           Where-Object { $_ })
 
 # ---- helpers ---------------------------------------------------------------------------
 

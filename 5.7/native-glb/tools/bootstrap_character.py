@@ -166,7 +166,11 @@ def main():
     # falls back to output_name -- recorded just below, and still the asset's name even when
     # --id moves the character id -- so the tuning follows the MetaHuman rather than the
     # label. Said here because the opposite used to be true and was printed from this spot.
-    _TUNED_HAIR = ("telly", "tele", "telie", "telee", "tele1", "tele2")
+    # A copy of HAIR_PROFILES' keys, for a warning printed before the sister checkout is
+    # necessarily reachable. hairProfile.ts is the authority and embed_hair_tuning.mjs reads
+    # it directly at stage 03 -- this list only decides whether a NOTE is printed here, so
+    # drifting makes the message wrong, never the bake.
+    _TUNED_HAIR = ("telly", "tele", "telie", "telee", "tele1", "tele2", "tele4")
     _source_key = output_name.lower()
     if char_id not in _TUNED_HAIR:
         if _source_key in _TUNED_HAIR:

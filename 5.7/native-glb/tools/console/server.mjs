@@ -944,11 +944,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/verify' && req.method === 'POST') {
-      const { env } = await readBody(req);
+      const { env, characters } = await readBody(req);
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
-      return stream(res, VERIFIER, ['-ApiBase', target.apiBase], { TG_ADMIN_TOKEN: session.token });
+      // Said rather than spawned. A missing script makes `stream` fail with a spawn error in
+      // the log pane, which reads as "Check is broken" -- and the reason, that the file is
+      // somewhere this console cannot see, is nowhere in that message.
+      if (!fs.existsSync(VERIFIER)) {
+        return send(res, 400, { error: `verifier not found at ${VERIFIER}` });
+      }
+      // Check what is TICKED, not a list compiled when the roster was six characters. The
+      // default in the script is those six by name, so a newly published companion -- the one
+      // most likely to need checking -- was the one case it silently skipped.
+      const args = ['-ApiBase', target.apiBase];
+      if (Array.isArray(characters) && characters.length) {
+        args.push('-Slugs', characters.map((c) => `mh-${c}`).join(','));
+      }
+      return stream(res, VERIFIER, args, { TG_ADMIN_TOKEN: session.token });
     }
 
     /**

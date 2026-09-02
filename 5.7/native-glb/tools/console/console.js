@@ -177,7 +177,13 @@ function refreshButtons() {
   $('pubModel').disabled = !on;
   $('pubPreviews').disabled = !on;
   $('goLive').disabled = !on || !Object.keys(UPLOADED).length;
-  $('verify').disabled = !connected();
+    // Disabled when the script is not on this machine, rather than clickable and inert. The
+  // verifier lived only in tools/deploy for a while, so this console reported it missing in
+  // /api/config and offered the button anyway.
+  $('verify').disabled = !connected() || !(CONFIG && CONFIG.verifierFound);
+  $('verify').title = (CONFIG && CONFIG.verifierFound)
+    ? 'Read the rows back from the environment and fetch what they name.'
+    : 'Test-CompanionsLive.ps1 is not beside this console.';
   $('bake').disabled = !(ASSET && BODY);
   $('capture').disabled = n === 0;
   $('del').hidden = n === 0;
@@ -601,7 +607,10 @@ $('goLive').onclick = async () => {
   await resolveAll();
 };
 
-$('verify').onclick = async () => { setLog(''); await streamTo('/api/verify', { env: env() }); };
+$('verify').onclick = async () => {
+  setLog('');
+  await streamTo('/api/verify', { env: env(), characters: picked().map((c) => c.id) });
+};
 
 // ---------------------------------------------------------------------------------------
 // Pickers. Two jobs, one dialog: choose the packages folder, or choose a MetaHuman to bake.

@@ -18,11 +18,18 @@
   Folder holding the character folders.
 
 .PARAMETER Mode
-  none (default) - no lossy step. Stage 03 already caps and de-alphas the sidecar
-                   textures, which is where the weight actually was.
-  meshopt        - PAUSED. Measurably lossy on morph targets (0.85 mm median RMS on the
-                   largest expression targets); held pending a rendered A/B.
-  full           - meshopt plus KTX2 textures. Also NOT loadable by the runtime yet.
+  none    - no lossy step, and now a near-copy: stage 03 already caps and de-alphas the
+            sidecar textures, which is where most of the weight actually was. Kept as the
+            control for a comparison, not as a way to save anything.
+  meshopt - the real saving, roughly halving a companion again. Lossy on geometry: morph
+            targets drift 0.85 mm median RMS on the largest expression targets, and base
+            vertex positions are quantised too, which is about 87% of the visible
+            difference and lands on hair and eyelash card edges. Compared against the
+            original through the real runtime -- material profile, hair calibration and
+            clothing textures live -- and indistinguishable. The publisher still refuses to
+            upload one until a meshopt companion is confirmed rendering in a real room.
+  full    - meshopt plus KTX2 textures. NOT loadable by the runtime: nothing registers a
+            KTX2Loader, so it uploads cleanly and renders nothing. Measurement only.
 
 .PARAMETER TexturePx
   Resample textures to this square size in `full` mode. 0 leaves them alone.

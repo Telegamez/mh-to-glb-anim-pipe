@@ -49,6 +49,12 @@ function steps(c) {
   return {
     bake: c.ready ? 'ok' : 'warn',
     previews: c.previews ? 'ok' : 'no',
+    // 'warn', not 'ok', for a build that exists but must not be uploaded — stale, or a mode
+    // the runtime cannot load. A green dot on either would be the console asserting a
+    // companion is ready to ship when publishing it would refuse, or worse, succeed.
+    size: !c.compressed ? 'no'
+      : (c.compressed.stale || !c.compressed.publishable) ? 'warn'
+      : 'ok',
     upload: !connected() ? 'unknown'
       : (UPLOADED[c.id] || publishedKey) ? 'ok'
       : 'unknown',
@@ -61,11 +67,28 @@ const cell = (state) => state === 'unknown'
   ? '<span class="unknown">&mdash;</span>'
   : `<span class="dot ${state}"></span>`;
 
+/**
+ * The download, before and after — both measured the same way.
+ *
+ * Both numbers are the whole payload: model, sidecar and clothing textures. The textures are
+ * roughly half of it and are fetched at runtime beside the model, so a model-only figure would
+ * understate the companion and, compared against a compressed build, would flatter the saving.
+ *
+ * A stale build says so instead of showing its size. The number would be true and the
+ * conclusion false: it is the size of a build made from content that has since changed.
+ */
+function sizeLine(c) {
+  const k = c.compressed;
+  if (!k) return `${c.payloadMb} MB`;
+  if (k.stale) return `${c.payloadMb} MB · compressed build is STALE`;
+  return `${c.payloadMb} → ${k.mb} MB · ${k.mode}${k.publishable ? '' : ' (held)'}`;
+}
+
 function renderGrid() {
   const body = $('grid');
   body.innerHTML = '';
   if (!CHARS.length) {
-    body.innerHTML = '<tr><td colspan="7" class="sub">no characters in this folder yet — bake one below</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="sub">no characters in this folder yet — bake one below</td></tr>';
     return;
   }
   for (const c of CHARS) {
@@ -84,11 +107,11 @@ function renderGrid() {
         ${c.previews ? `<img src="/api/asset?char=${encodeURIComponent(c.id)}&file=thumbnail.png&root=${encodeURIComponent(ROOT)}"
              width="46" height="46" style="border-radius:5px;background:#0d1b2e" alt="">`
           : '<div style="width:46px;height:46px;border-radius:5px;background:#0d1b2e"></div>'}
-        <div><div class="who">${c.id}</div><div class="sub">${c.mb} MB${c.body ? ' · ' + c.body : ''}</div></div>
+        <div><div class="who">${c.id}</div><div class="sub">${sizeLine(c)}${c.body ? ' · ' + c.body : ''}</div></div>
       </div>`;
 
     tr.append(tick, who);
-    for (const k of ['bake', 'previews', 'upload', 'assets', 'live']) {
+    for (const k of ['bake', 'previews', 'size', 'upload', 'assets', 'live']) {
       const td = document.createElement('td');
       td.className = 'step';
       td.innerHTML = cell(s[k]);
@@ -159,6 +182,54 @@ function refreshButtons() {
   $('capture').disabled = n === 0;
   $('del').hidden = n === 0;
   $('del').textContent = n > 1 ? `Delete ${n}` : 'Delete';
+
+  // Compress reads the finished package, so it needs a finished one. A character still
+  // missing its sidecar has nothing worth compressing and would produce a build that looks
+  // publishable and renders untextured.
+  const sel = picked();
+  $('compress').disabled = n === 0 || !sel.every((c) => c.ready) || !(CONFIG && CONFIG.compressorFound);
+  $('compress').textContent = n > 1 ? `Compress ${n}` : 'Compress';
+
+  /*
+   * The compressed build is offered only when every ticked character has one that may
+   * actually be uploaded.
+   *
+   * All or nothing on purpose. A part-compressed selection would publish some characters
+   * small and some large in one run, and the only record of which was which is the journal
+   * afterwards — so "why is that one still 87 MB" becomes a question about a batch nobody
+   * can reconstruct.
+   */
+  const builds = sel.map((c) => c.compressed).filter(Boolean);
+  const box = $('useComp');
+  const wrap = $('useCompWrap');
+  wrap.hidden = builds.length === 0;
+  const allGood = n > 0 && builds.length === n && builds.every((k) => k.publishable && !k.stale);
+  box.disabled = !allGood;
+  if (!allGood) box.checked = false;
+  wrap.title = allGood
+    ? 'Upload the compressed build instead of the bake.'
+    : builds.length < n
+      ? 'Not every ticked character has a compressed build.'
+      : builds.some((k) => k.stale)
+        ? 'A compressed build is older than the package it was made from — compress again.'
+        : 'This build is held; see the note under Compress.';
+
+  // Said out loud rather than left in a tooltip. A greyed checkbox with no reason beside it
+  // reads as a broken console, and the reason here is a deliberate hold that somebody has to
+  // lift on purpose.
+  const held = builds.filter((k) => !k.publishable);
+  const note = $('compNote');
+  if (!held.length) {
+    note.hidden = true;
+  } else {
+    note.hidden = false;
+    note.textContent = held.some((k) => k.mode === 'full')
+      ? 'A "full" build carries KTX2 textures, which nothing in web-next can load. It would '
+        + 'upload cleanly and render nothing. Not publishable from here.'
+      : 'meshopt builds are held until one is confirmed rendering in a real room — the failure '
+        + 'is a silent rejection that leaves the talk show working. Once it is confirmed, '
+        + 'restart with  ./Start-Console.ps1 -MeshoptConfirmed';
+  }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -168,7 +239,7 @@ function showDetail(c) {
   const q = `char=${encodeURIComponent(c.id)}&root=${encodeURIComponent(ROOT)}`;
   const row = ROWS[c.id];
   const dlg = $('dlg');
-  dlg.querySelector('.dhead').innerHTML = `<b>${c.id}</b><span class="sub">${c.mb} MB${c.body ? ' · ' + c.body : ''}</span>`;
+  dlg.querySelector('.dhead').innerHTML = `<b>${c.id}</b><span class="sub">${sizeLine(c)}${c.body ? ' · ' + c.body : ''}</span>`;
   $('dList').innerHTML = c.previews
     ? `<div style="padding:12px;display:flex;gap:14px;align-items:flex-start">
          <img src="/api/asset?${q}&file=imagePreview.jpg" style="width:250px;border-radius:6px" alt="">
@@ -355,6 +426,29 @@ $('capture').onclick = async () => {
   await scan();
 };
 
+/**
+ * Compress the ticked characters — #3662.
+ *
+ * Writes a second, smaller copy into `_compressed/` beside the packages and leaves the
+ * original alone, so the bake stays the thing that can always be published and this is a
+ * choice made at upload time rather than a change to the character.
+ *
+ * Always meshopt. `none` is a byte-for-byte copy now that stage 03 caps the sidecar textures,
+ * and `full` cannot be published at all — offering either would be offering a button that
+ * does nothing and a button that produces something unusable.
+ */
+$('compress').onclick = async () => {
+  setLog('');
+  $('compress').disabled = true;
+  for (const c of picked()) {
+    log('\n' + c.id + '\n');
+    const out = await streamTo('/api/compress?root=' + encodeURIComponent(ROOT),
+      { characters: [c.id], mode: 'meshopt' });
+    if (!out || !/\[console\] exit 0\b/.test(out)) { log('\nStopped.\n'); break; }
+  }
+  await scan();
+};
+
 /** Bytes as the operator would say them, so a delete reports a size and not a number. */
 const size = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : Math.round(b / 1048576) + ' MB');
 
@@ -452,14 +546,18 @@ $('mkRecord').onclick = async () => {
 $('pubModel').onclick = async () => {
   const list = picked();
   const e = target();
-  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?')) return;
+  const small = $('useComp').checked;
+  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?'
+      + (small ? '\n\nUploading the COMPRESSED build.' : ''))) return;
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Date.now()).slice(-4);
   setLog('');
+  log(small ? 'uploading the COMPRESSED build\n' : 'uploading the bake\n');
   for (const c of list) {
     log('\n' + c.id + '\n');
     if (!ROWS[c.id] || !ROWS[c.id].avatarId) { log('  no avatar record here yet\n'); break; }
     const out = await streamTo('/api/publish?root=' + encodeURIComponent(ROOT), {
       env: env(), characters: [c.id], bakeHashSuffix: stamp, avatarIds: { [c.id]: ROWS[c.id].avatarId },
+      useCompressed: $('useComp').checked,
     });
     const m = out && out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+\.glb/);
     if (!m) { log('\nNo published path came back. Stopped.\n'); break; }

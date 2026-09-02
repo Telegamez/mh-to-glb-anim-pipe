@@ -101,6 +101,7 @@
       <th>Character</th>
       <th class="step">Bake</th>
       <th class="step">Previews</th>
+      <th class="step">Size</th>
       <th class="step">Upload</th>
       <th class="step">Assets</th>
       <th class="step">Live</th>
@@ -134,7 +135,11 @@
       <button class="body" data-body="male">Male</button>
       <button id="bake" class="go" disabled>Bake</button>
       <button id="capture" class="small" disabled>Previews only</button>
+      <!-- Local like the two beside it: it reads the finished package and writes a smaller
+           copy next to it. Nothing is uploaded until phase 2, and the original is untouched. -->
+      <button id="compress" class="small" disabled>Compress</button>
     </div>
+    <div class="note" id="compNote" hidden></div>
     <div class="note" id="stackNote" hidden></div>
   </div>
 
@@ -152,6 +157,12 @@
       <!-- Before Upload, because Upload cannot run without the row this makes. -->
       <button id="mkRecord" disabled>Create record</button>
       <button id="pubModel" disabled>Upload model</button>
+      <!-- Shown only once there is a compressed build to choose. A checkbox offering
+           something that does not exist is a question the operator cannot answer. -->
+      <label id="useCompWrap" class="sub" hidden
+             style="display:flex;gap:5px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="useComp"> compressed
+      </label>
       <button id="pubPreviews" disabled>Upload previews</button>
       <button id="goLive" class="go" disabled>Go live</button>
       <button id="verify" class="small" disabled>Check</button>

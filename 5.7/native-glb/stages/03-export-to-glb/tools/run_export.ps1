@@ -47,6 +47,22 @@ $ErrorActionPreference = $PrevEap
 $code = $LASTEXITCODE
 Write-Host "[run_export] exit code: $code"
 
+# Bake the per-character hair calibration into the sidecar, so it no longer depends on the
+# character id. The runtime derives that id from the model FILENAME and looks it up in
+# HAIR_PROFILES; a name with no entry renders with default hair and says nothing. Writing the
+# values into mh_materials.json uses a path that already exists -- the sidecar wins over the
+# id-keyed table in resolveHairTuning -- so a bake can be renamed freely afterwards.
+#
+# Only on success: patching the sidecar of a failed export would describe something that was
+# not produced. Advisory, so a missing sister checkout warns rather than failing a good bake.
+if ($code -eq 0) {
+    $Embed = Join-Path $Workspace "tools/embed_hair_tuning.mjs"
+    $Sidecar = Join-Path $Workspace "characters/$Char/03-glb/mh_materials.json"
+    if ((Test-Path $Embed) -and (Test-Path $Sidecar)) {
+        & node $Embed --sidecar $Sidecar --char $Char 2>&1 | ForEach-Object { Write-Host $_ }
+    }
+}
+
 # Write the per-character manifest before exiting so stage completion
 # survives a Claude/dispatcher crash. The launcher is the source of
 # truth for stage state — agents only verify, they don't write.

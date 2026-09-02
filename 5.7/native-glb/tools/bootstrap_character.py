@@ -114,9 +114,16 @@ def _derive_output_name(mh_folder: str) -> str:
 
 def _parse_args():
     p = argparse.ArgumentParser()
-    src = p.add_mutually_exclusive_group(required=True)
-    src.add_argument("--asset", help="UE asset path, e.g. /Game/Ada/MHC_Ada or /Game/Ada")
-    src.add_argument("--id", help="Character id (will default mh_folder to /Game/<Id> capitalised)")
+    # --asset and --id were mutually exclusive, which meant the character id was always the
+    # asset's own name. Giving one UE asset two differently-named bakes -- an A/B, a variant,
+    # a rebuild kept alongside the original -- was not expressible.
+    #
+    # Now --id may accompany --asset and overrides only the ID. mh_folder and output_name
+    # still come from the asset, because those address the thing in Unreal and renaming them
+    # would point the export at something that does not exist.
+    p.add_argument("--asset", help="UE asset path, e.g. /Game/Ada/MHC_Ada or /Game/Ada")
+    p.add_argument("--id", help="Character id. Alone, defaults mh_folder to /Game/<Id>; "
+                                "with --asset, overrides the id the asset would have given.")
     p.add_argument("--workspace", help="Pipeline root (defaults to the directory containing this script's parent)")
     p.add_argument("--body", choices=("female", "male"), required=True,
                    help="Body archetype. Chooses the animation library at runtime; a wrong "
@@ -134,14 +141,36 @@ def main():
     workspace = os.path.abspath(workspace)
     template_dir = os.path.join(workspace, "characters", "_template")
 
-    if args.id:
-        char_id = args.id.lower()
-        mh_folder = f"/Game/{args.id[0].upper() + args.id[1:]}"
-        output_name = args.id[0].upper() + args.id[1:]
-    else:
+    if not args.asset and not args.id:
+        raise SystemExit("one of --asset or --id is required")
+
+    if args.asset:
         char_id = _derive_id_from_asset(args.asset)
         mh_folder = _derive_mh_folder_from_asset(args.asset)
         output_name = _derive_output_name(mh_folder)
+        if args.id:
+            # Only the id moves. The asset still says what to open in Unreal.
+            char_id = args.id.lower()
+    else:
+        char_id = args.id.lower()
+        mh_folder = f"/Game/{args.id[0].upper() + args.id[1:]}"
+        output_name = args.id[0].upper() + args.id[1:]
+
+    # The id is not just a folder name: the runtime derives it from the model FILENAME and
+    # uses it to look up per-character hair calibration (HAIR_PROFILES in hairProfile.ts).
+    # A companion whose id has no entry renders with untuned hair -- straw instead of its
+    # tuned groom, with no error anywhere. Worth saying out loud at the moment someone
+    # chooses a name, because nothing downstream will mention it.
+    _TUNED_HAIR = ("telly", "tele", "telie", "telee", "tele1", "tele2")
+    if char_id not in _TUNED_HAIR:
+        print(f"[bootstrap] NOTE: '{char_id}' has no entry in HAIR_PROFILES, so this "
+              f"companion will render with DEFAULT hair calibration.")
+        print(f"[bootstrap]       Tuned ids are: {', '.join(_TUNED_HAIR)}.")
+        if args.id and args.asset:
+            derived = _derive_id_from_asset(args.asset)
+            if derived in _TUNED_HAIR:
+                print(f"[bootstrap]       '{derived}' IS tuned -- renaming to '{char_id}' "
+                      f"gives up that calibration.")
 
     char_dir = os.path.join(workspace, "characters", char_id)
     _log(f"workspace: {workspace}")

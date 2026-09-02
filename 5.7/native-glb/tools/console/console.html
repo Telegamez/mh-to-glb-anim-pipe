@@ -125,6 +125,11 @@
     <p class="hint">Unreal and Blender make the model; the local stack photographs it.</p>
     <div class="row">
       <button id="pickAsset">Choose MetaHuman…</button>
+      <!-- Optional. Empty means the asset's own name, which is what it always used to be.
+           Filled, one UE asset can produce two companions side by side. -->
+      <input id="charName" placeholder="name (optional)" spellcheck="false"
+             title="Leave empty to use the asset's name. A different name gives this bake its own character id, so one MetaHuman can be baked twice under different names."
+             style="padding:6px 9px;font:12px ui-monospace,monospace;max-width:190px">
       <button class="body" data-body="female">Female</button>
       <button class="body" data-body="male">Male</button>
       <button id="bake" class="go" disabled>Bake</button>

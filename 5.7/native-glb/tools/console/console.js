@@ -329,7 +329,22 @@ for (const b of document.querySelectorAll('.body')) {
 $('bake').onclick = async () => {
   setLog('');
   $('bake').disabled = true;
-  await streamTo('/api/bake', { asset: ASSET, body: BODY, force: true, capture: true });
+  const custom = ($('charName').value || '').trim();
+  // The id is the hair-calibration key: the runtime derives it from the model filename and
+  // looks it up in HAIR_PROFILES. A name with no entry renders with default hair -- straw
+  // instead of a tuned groom, and nothing anywhere reports it. So say so before baking
+  // rather than leaving it to be noticed in a render.
+  const TUNED = ['telly','tele','telie','telee','tele1','tele2'];
+  const derived = (ASSET.split(/[\/]/).pop() || '').replace(/\.uasset$/i,'').toLowerCase();
+  if (custom && custom.toLowerCase() !== derived && TUNED.includes(derived)
+      && !TUNED.includes(custom.toLowerCase())) {
+    if (!confirm(
+        'Naming this "' + custom + '" gives it a new character id.\n\n'
+      + '"' + derived + '" has tuned hair calibration; "' + custom + '" does not, so this '
+      + 'bake will render with DEFAULT hair.\n\nBake anyway?')) return;
+  }
+  await streamTo('/api/bake', { asset: ASSET, body: BODY, force: true, capture: true,
+                                ...(custom ? { id: custom } : {}) });
   await scan();
   await resolveAll();
 };

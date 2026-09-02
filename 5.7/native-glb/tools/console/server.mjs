@@ -534,7 +534,7 @@ const STAGES = [
   { label: 'Stage 04 — Webview build', script: 'stages/04-webview-build/tools/run_site.ps1' },
 ];
 
-async function bake(res, { asset, body, force, capture }) {
+async function bake(res, { asset, body, force, capture, charId }) {
   const stop = (msg) => { res.write(`\n[bake] ${msg}\n`); res.end(); busy = null; };
 
   // Bootstrap first: it derives the character id, and everything after is keyed on it.
@@ -546,7 +546,11 @@ async function bake(res, { asset, body, force, capture }) {
     label: 'Bootstrap',
     cmd: 'python',
     args: [path.join(PIPELINE_ROOT, 'tools', 'bootstrap_character.py'),
-      '--asset', asset, '--body', body, ...(force ? ['--force'] : [])],
+      '--asset', asset, '--body', body,
+      // Optional: give this bake a different id from the asset's own name, so one UE asset
+      // can produce two companions side by side.
+      ...(charId ? ['--id', charId] : []),
+      ...(force ? ['--force'] : [])],
   });
 
   if (boot.code !== 0) {
@@ -972,15 +976,20 @@ const server = http.createServer(async (req, res) => {
 
 
     if (url.pathname === '/api/bake' && req.method === 'POST') {
-      const { asset, body, force, capture } = await readBody(req);
+      const { asset, body, force, capture, id } = await readBody(req);
       if (!asset) return send(res, 400, { error: 'pick a MetaHuman first' });
+      // Same charset the publish path validates, and it becomes a directory name and a
+      // filename, so it is checked here rather than trusted.
+      if (id && !/^[A-Za-z0-9._-]{1,64}$/.test(id)) {
+        return send(res, 400, { error: 'name must be 1-64 chars of [A-Za-z0-9._-]' });
+      }
       // Refused rather than defaulted: the value decides the animation library, and a wrong
       // or missing one ships silently as female (telegamez#3285).
       if (body !== 'female' && body !== 'male') return send(res, 400, { error: 'choose female or male first' });
       if (busy) return send(res, 409, { error: `already baking ${busy} — one at a time` });
       busy = asset;
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-      return bake(res, { asset, body, force: Boolean(force), capture: capture !== false });
+      return bake(res, { asset, body, force: Boolean(force), capture: capture !== false, charId: id });
     }
 
     /** Previews on their own, for a model that baked while the stack was down. */

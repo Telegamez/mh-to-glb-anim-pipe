@@ -31,6 +31,21 @@ import sys
 
 import bpy
 import bmesh
+# Canonical slot for a UE texture PARAMETER name, used when the asset filename
+# carries no _BC/_N/_ORM suffix. Keys are lowercased with non-letters stripped,
+# so "Base Color", "BaseColor" and "base_color" all collapse to one entry.
+_TEX_SLOT_BY_PARAM = {
+    "basecolor": "base_color",
+    "albedo": "base_color",
+    "diffuse": "base_color",
+    "color": "base_color",
+    "normal": "normal",
+    "normalmap": "normal",
+    "orm": "orm",
+    "ormmap": "orm",
+}
+
+
 def _manifest_body(char_id):
     """The character's body archetype, as declared in its manifest.
 
@@ -830,12 +845,26 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
             continue
         scalars = rec.get("scalars") or {}
 
-        # Classify the exported maps into canonical slots. The MI parameter
-        # names vary by base material, but the texture ASSET names carry a
-        # reliable suffix: _BC (fabric base colour, greyscale-ish, meant to be
-        # tinted by Color1), _N (normal), _ORM (occlusion/roughness/metallic
-        # packed R/G/B — already three.js' convention). Anything unrecognised
-        # is kept under its parameter name rather than dropped.
+        # Classify the exported maps into canonical slots.
+        #
+        # Two rules, suffix first. The texture ASSET name usually carries one:
+        # _BC (fabric base colour, greyscale-ish, meant to be tinted by
+        # Color1), _N (normal), _ORM (occlusion/roughness/metallic packed
+        # R/G/B — already three.js' convention).
+        #
+        # That was the only rule, and the comment here called the suffix
+        # "reliable". It is not. A texture authored as
+        # TG-T_HS_Polo_Shirt_62_Aged_BC_PNG-Blue ends in _PNG-BLUE, so the
+        # albedo fell through to its PARAMETER name and the sidecar carried
+        # "BaseColor" where the runtime reads "base_color". The material then
+        # rendered with no albedo at all — a whole batch of companions wore
+        # plain white shirts, and nothing failed or warned. The logo was in
+        # the package the entire time.
+        #
+        # So the parameter name is a fallback rather than a dead end. UE names
+        # vary by base material, which is why it cannot be the primary rule,
+        # but the spellings in _TEX_SLOT_BY_PARAM cover what MetaHuman garment
+        # materials actually use.
         tex = {}
         for pname, relpath in sorted((rec.get("textures") or {}).items()):
             stem = os.path.splitext(os.path.basename(relpath))[0].upper()
@@ -846,7 +875,22 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
             elif stem.endswith("_ORM"):
                 tex["orm"] = relpath
             else:
-                tex.setdefault(pname, relpath)
+                slot = _TEX_SLOT_BY_PARAM.get(
+                    re.sub(r"[^a-z]", "", str(pname).lower()))
+                if slot:
+                    # Never let the fallback overwrite a suffix match: the
+                    # suffix identified the file itself, this only identifies
+                    # the socket it was plugged into.
+                    tex.setdefault(slot, relpath)
+                    _log(f"  clothing: {mi_name} texture "
+                         f"'{os.path.basename(relpath)}' has no _BC/_N/_ORM "
+                         f"suffix; mapped to '{slot}' by parameter '{pname}'")
+                else:
+                    tex.setdefault(pname, relpath)
+                    _log(f"  clothing: {mi_name} texture "
+                         f"'{os.path.basename(relpath)}' matched no suffix and "
+                         f"no known parameter '{pname}' - kept UNMAPPED, so the "
+                         f"runtime will not read it")
 
         materials.append({
             "material_name": mi_name,

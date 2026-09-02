@@ -45,6 +45,14 @@
   Skip previews for every character. Useful when the local stack is not running; the models
   are still finished and correct, and previews can be captured afterwards from the console.
 
+.PARAMETER FromStage
+  Resume every character at a later stage instead of baking from scratch. 0-based index into
+  the stage list: 0 Unreal assemble, 1 Unreal GLB export, 2 Blender assemble, 3 FBX reweight,
+  4 webview. Implies -Force, since the characters already exist.
+
+  For a fix that only affects a late stage, stages 00 and 01 reproduce byte-identical Unreal
+  output and cost about six of every ten minutes per character.
+
 .PARAMETER StopOnFailure
   Stop at the first failure rather than recording it and continuing.
 
@@ -68,6 +76,7 @@ param(
     [switch]$Force,
     [switch]$NoCapture,
     [switch]$StopOnFailure,
+    [ValidateRange(0, 4)][int]$FromStage = 0,
     [string]$Packages,
     [string]$Stack = 'http://localhost:3000',
     [string]$LogDir,
@@ -179,8 +188,9 @@ foreach ($e in $entries) {
     $done = Test-Path (Join-Path $pkg "$($e.name).glb")
     $queue += [pscustomobject]@{
         Asset = $e.asset; Name = $e.name; Body = $e.body
-        Skip  = ($done -and -not $Force)
-        Note  = if ($done -and -not $Force) { 'already baked - skipping (use -Force to replace)' }
+        Skip  = ($done -and -not $Force -and $FromStage -eq 0)
+        Note  = if ($FromStage -gt 0) { "resume from stage $FromStage" }
+                elseif ($done -and -not $Force) { 'already baked - skipping (use -Force to replace)' }
                 elseif ($done) { 're-bake, replaces the existing package' }
                 else { '' }
     }
@@ -241,6 +251,7 @@ foreach ($q in $todo) {
     $bakeArgs = @('-NoProfile', '-File', $baker,
                   '-Asset', $q.Asset, '-Name', $q.Name, '-Body', $q.Body,
                   '-Packages', $Packages, '-Stack', $Stack, '-Force')
+    if ($FromStage -gt 0) { $bakeArgs += @('-FromStage', $FromStage) }
     if ($NoCapture -or -not $stackUp) { $bakeArgs += '-NoCapture' }
 
     # Teed rather than swallowed: an unattended batch still has to be watchable, and a failure

@@ -109,6 +109,30 @@ const COMPRESSOR = findBeside('compress_companion.ps1');
  * published alongside the original and double the payload instead of cutting it.
  */
 const COMPRESSED_DIR = '_compressed';
+
+/**
+ * Whether the RUNTIME can load a meshopt-compressed companion yet.
+ *
+ * It cannot, at the time of writing, and the failure is silent in the worst way: three of the
+ * four surfaces that draw a companion build their own GLTFLoader and register only a Draco
+ * decoder — `Agent3DHead` (the room), `SupportTele3DHead`, and `ProgramAgent3DRenderer`.
+ * `EXT_meshopt_compression` is listed in extensionsRequired, so a loader without the decoder
+ * rejects the file outright. Only `TalkShowCompanionAvatar` works, because it goes through
+ * drei's `useGLTF`, which registers one by default.
+ *
+ * A meshopt companion published today would therefore upload cleanly, report success
+ * everywhere, render in the talk show, and fail to appear in a room. That is the same shape
+ * as beta's G13, and nothing downstream would catch it.
+ *
+ * The fix is two lines in each of those three files:
+ *
+ *     import { MeshoptDecoder } from 'three-stdlib';
+ *     loader.setMeshoptDecoder(MeshoptDecoder());
+ *
+ * Flip this to true once that has landed and been seen working in a room — or set
+ * TG_MESHOPT_RUNTIME_READY=1 to override without editing.
+ */
+const MESHOPT_RUNTIME_READY = process.env.TG_MESHOPT_RUNTIME_READY === '1';
 const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
@@ -206,7 +230,7 @@ function scanRoot(root) {
         // calibration and clothing textures live — and is indistinguishable. `full` carries
         // KTX2, which no surface can load: it would upload cleanly, report success and then
         // fail to render.
-        publishable: compMode === 'none' || compMode === 'meshopt',
+        publishable: compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY),
       };
     }
 
@@ -655,11 +679,17 @@ const server = http.createServer(async (req, res) => {
             fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
           ).mode;
         } catch { /* falls through to the refusal below */ }
-        if (compMode !== 'none' && compMode !== 'meshopt') {
+        const allowed = compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY);
+        if (!allowed) {
+          const why = compMode === 'meshopt'
+            ? 'the room does not load meshopt yet: Agent3DHead, SupportTele3DHead and '
+              + 'ProgramAgent3DRenderer each build their own GLTFLoader and register only a '
+              + 'Draco decoder, so this would publish cleanly and then fail to render in a '
+              + 'room. Publish mode=none until they call setMeshoptDecoder()'
+            : 'the runtime cannot load KTX2 (no KTX2Loader in web-next), so it would publish '
+              + 'and then fail to render';
           return send(res, 400, {
-            error: `compressed build for ${char} is mode="${compMode}", and the runtime `
-              + 'cannot load KTX2 (no KTX2Loader in web-next) - it would publish and then '
-              + 'fail to render. Re-compress with mode=meshopt.',
+            error: `compressed build for ${char} is mode="${compMode}" - ${why}.`,
           });
         }
         source = compDir;

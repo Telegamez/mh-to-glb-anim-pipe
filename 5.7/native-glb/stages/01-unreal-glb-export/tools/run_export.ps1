@@ -12,7 +12,8 @@
   AssetExportTask is synchronous.
 #>
 param(
-    [Parameter(Mandatory=$true)][string]$Char
+    [Parameter(Mandatory=$true)][string]$Char,
+    [switch]$AllowUnrealRunning
 )
 
 $ErrorActionPreference = "Stop"
@@ -112,6 +113,12 @@ Write-Host "[stage01] workspace   : $Workspace"
 # headless without a renderer, which makes the bake silently skip and
 # produces GLBs with NO textures. -AllowCommandletRendering spins up
 # the Slate-less renderer so the bake can execute.
+# Refuse before doing the work, not after. A second editor holds Unreal's Remote
+# Control port; this stage's headless editor then cannot bind it, and UE exits 1 even
+# when the export succeeded -- a complete bake reported as a failure, minutes in.
+. (Join-Path $Workspace "tools\Assert-NoUnrealRunning.ps1")
+Assert-NoUnrealRunning -Stage "stage01" -Allow:$AllowUnrealRunning
+
 $ScriptArg = "C:/tmp/mh/export_glb.py -- --char=$Char"
 # TELEGAMEZ: this file sets $ErrorActionPreference = "Stop", and PowerShell
 # converts a native command's stderr into an ErrorRecord whenever the CALLER

@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "The launch roster: which MetaHuman becomes which companion.",
+    "",
+    "`asset` is what Unreal opens. `name` is the character id this bake gets -- the folder,",
+    "the .glb filename and what the runtime calls it. They are allowed to differ, and here",
+    "they all do.",
+    "",
+    "`body` decides the animation library and is NOT derived from the name. It describes the",
+    "rig, and a wrong one ships silently as female whatever the character is (telegamez#3285).",
+    "Every value below was read back from the character's own manifest.json rather than",
+    "inferred from the person the name suggests.",
+    "",
+    "Hair calibration follows the ASSET. Stage 03 embeds it into the sidecar keyed on the",
+    "asset's name, so a rename costs nothing -- see embed_hair_tuning.mjs. Tele3 and Tele4",
+    "have no HAIR_PROFILES entry under any name, so Julius and Kathy render with default hair;",
+    "that predates this roster and is not caused by renaming them."
+  ],
+  "characters": [
+    { "asset": "/Game/Tele",  "name": "tim",    "body": "male"   },
+    { "asset": "/Game/Tele1", "name": "dre",    "body": "male"   },
+    { "asset": "/Game/Tele2", "name": "kenzo",  "body": "male"   },
+    { "asset": "/Game/Tele3", "name": "julius", "body": "male"   },
+    { "asset": "/Game/Tele4", "name": "kathy",  "body": "female" },
+    { "asset": "/Game/Telee", "name": "ume",    "body": "female" },
+    { "asset": "/Game/Telie", "name": "roy",    "body": "male"   },
+    { "asset": "/Game/Telly", "name": "clara",  "body": "female" }
+  ]
+}

@@ -161,16 +161,24 @@ def main():
     # A companion whose id has no entry renders with untuned hair -- straw instead of its
     # tuned groom, with no error anywhere. Worth saying out loud at the moment someone
     # chooses a name, because nothing downstream will mention it.
+    #
+    # A RENAME no longer costs the calibration. Stage 03 runs embed_hair_tuning.mjs, which
+    # falls back to output_name -- recorded just below, and still the asset's name even when
+    # --id moves the character id -- so the tuning follows the MetaHuman rather than the
+    # label. Said here because the opposite used to be true and was printed from this spot.
     _TUNED_HAIR = ("telly", "tele", "telie", "telee", "tele1", "tele2")
+    _source_key = output_name.lower()
     if char_id not in _TUNED_HAIR:
-        print(f"[bootstrap] NOTE: '{char_id}' has no entry in HAIR_PROFILES, so this "
-              f"companion will render with DEFAULT hair calibration.")
-        print(f"[bootstrap]       Tuned ids are: {', '.join(_TUNED_HAIR)}.")
-        if args.id and args.asset:
-            derived = _derive_id_from_asset(args.asset)
-            if derived in _TUNED_HAIR:
-                print(f"[bootstrap]       '{derived}' IS tuned -- renaming to '{char_id}' "
-                      f"gives up that calibration.")
+        if _source_key in _TUNED_HAIR:
+            print(f"[bootstrap] '{char_id}' has no HAIR_PROFILES entry of its own, but it is "
+                  f"baked from '{output_name}', which is tuned.")
+            print(f"[bootstrap] Stage 03 will embed that calibration into the sidecar, which "
+                  f"wins over the id at runtime. Nothing is lost by the rename.")
+        else:
+            print(f"[bootstrap] NOTE: neither '{char_id}' nor its source '{output_name}' has "
+                  f"an entry in HAIR_PROFILES, so this companion will render with DEFAULT "
+                  f"hair calibration.")
+            print(f"[bootstrap]       Tuned ids are: {', '.join(_TUNED_HAIR)}.")
 
     char_dir = os.path.join(workspace, "characters", char_id)
     _log(f"workspace: {workspace}")

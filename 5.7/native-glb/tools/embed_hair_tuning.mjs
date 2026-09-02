@@ -1,7 +1,9 @@
 /**
  * Bake per-character hair calibration INTO the sidecar, so it stops depending on the name.
  *
- *   node embed_hair_tuning.mjs --sidecar <mh_materials.json> --char <id> [--profiles <hairProfile.ts>]
+ *   node embed_hair_tuning.mjs --sidecar <mh_materials.json> --char <id>
+ *                              [--source <asset name>] [--manifest <manifest.json>]
+ *                              [--profiles <hairProfile.ts>]
  *
  * ## The problem this removes
  *
@@ -30,6 +32,20 @@
  * After this, `HAIR_PROFILES` becomes a fallback for assets baked before this step, and the
  * id is just a label.
  *
+ * ## The rename is exactly when the lookup must NOT use the new name
+ *
+ * This tool exists so a bake can be renamed. It was then keyed on the renamed id, which meant
+ * the rename it enables is the thing that breaks it: bake `Tele` as `tim` and the lookup asks
+ * for HAIR_PROFILES['tim'], finds nothing, embeds nothing, and the companion renders with
+ * straw hair — the same silent failure, reintroduced by the feature meant to remove it, and
+ * only visible by looking at the render.
+ *
+ * The calibration belongs to the MetaHuman, not to the label on this build. So the source
+ * asset's own name is tried when the id has no profile. `bootstrap_character.py` records it as
+ * `output_name` in the character's manifest — `--id` moves only the id and leaves `mh_folder`
+ * and `output_name` describing the asset — and the manifest sits one level above the sidecar,
+ * so nothing has to be passed in for the common case.
+ *
  * ## Where the numbers come from
  *
  * `hairProfile.ts` in the telegamez checkout, which is the live source. It is read rather
@@ -48,6 +64,28 @@ const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d :
 const sidecarPath = flag('sidecar');
 const charId = (flag('char') || '').toLowerCase();
 if (!sidecarPath || !charId) { console.error('--sidecar and --char are required'); process.exit(2); }
+
+/**
+ * The name of the MetaHuman this was baked from, when it differs from the id.
+ *
+ * Read from the character's manifest by default: the sidecar lives at
+ * `characters/<id>/03-glb/mh_materials.json`, so the manifest is one directory up. Explicit
+ * flags win, for a caller that knows better or a layout that moves.
+ */
+function sourceName() {
+  const explicit = flag('source');
+  if (explicit) return explicit.toLowerCase();
+  const manifestPath = flag('manifest')
+    ?? path.resolve(path.dirname(sidecarPath), '..', 'manifest.json');
+  try {
+    const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    return String(m.output_name || '').toLowerCase() || null;
+  } catch {
+    // No manifest is not an error. It means the id is all we know, which is the behaviour
+    // this had before the fallback existed.
+    return null;
+  }
+}
 
 /** Same rules as hairClassOf() in hairProfile.ts. Kept in step with it deliberately. */
 function hairClassOf(materialName) {
@@ -113,10 +151,20 @@ try {
   process.exit(0);
 }
 
-const profile = profiles[charId];
+// The id first, so a character tuned under its own name is unaffected. Then the asset it was
+// baked from, which is what a renamed bake needs and the only place the calibration survives.
+const source = sourceName();
+let tuningKey = charId;
+let profile = profiles[charId];
+if (!profile && source && source !== charId && profiles[source]) {
+  tuningKey = source;
+  profile = profiles[source];
+  console.log(`[hair] '${charId}' has no profile of its own; using '${source}', the MetaHuman`);
+  console.log('[hair] it was baked from. Calibration belongs to the asset, not to the name.');
+}
 if (!profile) {
   const known = Object.keys(profiles).join(', ');
-  console.log(`[hair] no tuned profile for '${charId}' — nothing to embed.`);
+  console.log(`[hair] no tuned profile for '${charId}'${source && source !== charId ? ` or '${source}'` : ''} — nothing to embed.`);
   console.log(`[hair] tuned ids: ${known}`);
   process.exit(0);
 }
@@ -144,17 +192,20 @@ for (const m of sidecar.materials || []) {
 }
 
 if (!touched) {
-  console.log(`[hair] '${charId}' has a profile but no hair material needed it — unchanged.`);
+  console.log(`[hair] '${tuningKey}' has a profile but no hair material needed it — unchanged.`);
   process.exit(0);
 }
 
 sidecar.hair_tuning_source = {
   character_id: charId,
+  // Which profile the values came from. Worth recording separately: on a renamed bake these
+  // differ, and "why does Tim's hair look like Tele's" has no answer without it.
+  tuned_as: tuningKey,
   from: 'hairProfile.ts HAIR_PROFILES',
   embedded_at: new Date().toISOString(),
   note: 'Embedded so calibration survives a rename. The sidecar wins over HAIR_PROFILES in '
       + 'resolveHairTuning, so the character id no longer decides how this hair renders.',
 };
 fs.writeFileSync(sidecarPath, `${JSON.stringify(sidecar, null, 2)}\n`);
-console.log(`[hair] embedded '${charId}' calibration into ${path.basename(sidecarPath)} — ${touched} material(s)`);
+console.log(`[hair] embedded '${tuningKey}' calibration into ${path.basename(sidecarPath)} — ${touched} material(s)`);
 for (const n of notes) console.log(`[hair]   ${n}`);

@@ -131,27 +131,6 @@ const STAGE_OUT = path.join(PIPELINE_ROOT, 'docs', 'characters');
  */
 const PACKAGES = path.resolve(arg('packages', bakedPackages));
 
-/**
- * What the export leaves behind in `docs/`, and why. Two groups, for two different reasons.
- *
- * The viewer site's own files. `preview.png` is a 1280x800 Playwright screenshot taken to
- * prove the character loads in a browser — render validation, not artwork, and on the site's
- * dark ground rather than the one previews are shown against. `index.html` is that site's page
- * for the character. Nothing in the product reads either from a published directory.
- *
- * And the three previews, which belong to capture and not to the pipeline. Stage 04 copies a
- * thumbnail in for its gallery, and older runs left previews in `docs/` too, so carrying them
- * across would hand a re-bake its PREDECESSOR's previews. That is exactly what happened on the
- * first run through this console: capture failed, the export had already supplied stale
- * previews, and the package looked complete while depicting a different bake. Excluded here, a
- * failed capture leaves a package visibly missing its previews — which the ready list reports
- * and offers a button to fix.
- */
-const NOT_EXPORTED = new Set([
-  'preview.png', 'index.html',
-  'thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4',
-]);
-
 /** Where the local stack serves the capture page. Detected, never started — see the UI. */
 const STACK = arg('stack', 'http://localhost:3000');
 
@@ -591,16 +570,16 @@ async function bake(res, { asset, body, force, capture, charId }) {
   // under it.
   const dir = path.join(PACKAGES, id);
   res.write(`\n=== Export to ${dir}\n`);
-  try {
-    fs.mkdirSync(PACKAGES, { recursive: true });
-    // Cleared first so a re-bake cannot leave a file from the previous one behind — a
-    // stale texture nothing references still gets published with the character.
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.cpSync(built, dir, { recursive: true, filter: (from) => !NOT_EXPORTED.has(path.basename(from)) });
-  } catch (e) {
-    return stop(`Export failed: ${e.message}`);
-  }
-  res.write(`${fs.readdirSync(dir).length} entries copied\n`);
+  // Shelled out like every other step rather than done inline. It used to be inline, which
+  // meant a package could only be refreshed by baking the character again from Unreal --
+  // ten minutes for a file copy -- after re-running any single stage.
+  const packaged = await runStep(res, {
+    label: `Package — ${id}`,
+    cmd: 'pwsh',
+    args: ['-NoProfile', '-File', path.join(PIPELINE_ROOT, 'tools', 'package_character.ps1'),
+      '-Char', id, '-Packages', PACKAGES],
+  });
+  if (packaged.code !== 0) return stop(`Export failed (exit ${packaged.code}).`);
   res.write(`\n[bake] model ready: ${path.join(dir, `${id}.glb`)}\n`);
 
   if (capture) {

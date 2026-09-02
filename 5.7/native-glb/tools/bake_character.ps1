@@ -41,6 +41,19 @@
   Skip the preview photographs. The model is finished and correct either way; previews are a
   separate step that needs the local stack.
 
+.PARAMETER FromStage
+  Resume an already-bootstrapped character at a later stage, by 0-based index into the stage
+  list: 0 Unreal assemble, 1 Unreal GLB export, 2 Blender assemble, 3 FBX reweight, 4 webview.
+
+  For a change that only affects a late stage -- a sidecar rule, a material mapping -- stages
+  00 and 01 reproduce byte-identical Unreal output and cost about six of every ten minutes.
+  This skips them.
+
+  Bootstrap is skipped too, and must be: it deletes and recreates the character directory, so
+  running it would destroy the stage 01 output this depends on. The character has to exist
+  already, and the id is taken from -Name (or derived from -Asset) rather than read back from
+  bootstrap, so it is checked against the directory before anything runs.
+
 .PARAMETER Packages
   Where finished packages go. Defaults to the `characters` folder beside the repo, which is
   what the console uses.
@@ -58,6 +71,7 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('female', 'male')][string]$Body,
     [switch]$Force,
     [switch]$NoCapture,
+    [ValidateRange(0, 4)][int]$FromStage = 0,
     [string]$Packages,
     [string]$Stack = 'http://localhost:3000',
     [string]$Bg = '18385d'
@@ -90,6 +104,22 @@ function Write-Step($label) {
 }
 
 # --- Bootstrap first: it derives the character id, and everything after is keyed on it -------
+#
+# Unless we are resuming. Bootstrap deletes and recreates the character directory, which is
+# where stage 01's output lives -- running it on a resume would delete exactly what the resume
+# exists to reuse.
+
+if ($FromStage -gt 0) {
+    if ($Name) { $Char = $Name.ToLower() }
+    else { $Char = ($Asset -split '/')[-1].ToLower() }
+    $charDir = Join-Path $PipelineRoot "characters/$Char"
+    if (-not (Test-Path $charDir)) {
+        throw "-FromStage $FromStage needs an existing character, and $charDir is not there. Run a full bake first."
+    }
+    Write-Host ''
+    Write-Host "[bake] resuming '$Char' at stage $($Stages[$FromStage].Label)" -ForegroundColor Green
+    Write-Host '[bake] bootstrap and earlier stages skipped; their output is reused as it stands.'
+} else {
 
 Write-Step 'Bootstrap'
 $bootArgs = @((Join-Path $PipelineRoot 'tools/bootstrap_character.py'), '--asset', $Asset, '--body', $Body)
@@ -113,9 +143,11 @@ $Char = $idLine.Matches[0].Groups[1].Value
 Write-Host ''
 Write-Host "[bake] character id: $Char" -ForegroundColor Green
 
+}
+
 # --- The five stages -------------------------------------------------------------------------
 
-foreach ($stage in $Stages) {
+foreach ($stage in $Stages[$FromStage..($Stages.Count - 1)]) {
     $script = Join-Path $PipelineRoot $stage.Script
     if (-not (Test-Path $script)) { throw "Missing launcher: $($stage.Script)" }
     Write-Step $stage.Label

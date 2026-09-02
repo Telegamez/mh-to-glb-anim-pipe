@@ -28,12 +28,29 @@
 .PARAMETER Allow
   Skip the check. Also honoured via TG_ALLOW_UNREAL_RUNNING=1, for the case where someone
   knowingly wants both — accepting that the stage may fail this way.
+
+.PARAMETER GraceSeconds
+  How long to wait for a RUNNING editor to finish exiting before refusing.
+
+  Stage 00 reports "UE process exit code: 0" and returns while its editor is still shutting
+  down — flushing shader cache and DDC takes it well past the point the launcher stops
+  watching. Stage 01 then starts within the second, finds that editor alive, and refuses.
+
+  Measured on the first batch of eight (2026-09-01): five of eight failed this way, and the
+  guard named the same PID stage 00 had just reported exiting. It is the reverse of the bug
+  this file was written for — a guard against a false failure, producing false failures.
+
+  So refusing is now the answer to "an editor is STILL there", not to "an editor is there".
+  An editor someone left open does not exit on its own, so the real case still refuses; it
+  just costs a couple of minutes first, against the seven-to-ten-minute stage the refusal
+  saves. Set TG_UNREAL_GRACE_SECONDS to change it, 0 to refuse immediately.
 #>
 function Assert-NoUnrealRunning {
     [CmdletBinding()]
     param(
         [string]$Stage = 'stage',
-        [switch]$Allow
+        [switch]$Allow,
+        [int]$GraceSeconds = $(if ($env:TG_UNREAL_GRACE_SECONDS) { [int]$env:TG_UNREAL_GRACE_SECONDS } else { 240 })
     )
 
     if ($Allow -or $env:TG_ALLOW_UNREAL_RUNNING -eq '1') {
@@ -42,10 +59,28 @@ function Assert-NoUnrealRunning {
     }
 
     # Both the GUI editor and the -Cmd variant hold the port. Match either.
-    $running = @(Get-Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.ProcessName -like 'UnrealEditor*' })
+    $find = { @(Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProcessName -like 'UnrealEditor*' }) }
 
+    $running = & $find
     if ($running.Count -eq 0) { return }
+
+    # Wait it out before deciding. Said out loud rather than waited silently: a stage that
+    # appears to hang for four minutes with no explanation is its own kind of failure.
+    if ($GraceSeconds -gt 0) {
+        Write-Host ("[$Stage] an Unreal editor is running (PID {0}) - waiting up to {1}s in case it is still shutting down" -f (($running | ForEach-Object { $_.Id }) -join ', '), $GraceSeconds)
+        $waited = 0
+        while ($waited -lt $GraceSeconds) {
+            Start-Sleep -Seconds 3
+            $waited += 3
+            $running = & $find
+            if ($running.Count -eq 0) {
+                Write-Host "[$Stage] editor exited after ${waited}s - carrying on"
+                return
+            }
+        }
+        Write-Host "[$Stage] still running after ${GraceSeconds}s - this is not a shutdown in progress"
+    }
 
     $lines = foreach ($p in $running) {
         $started = try { $p.StartTime.ToString('yyyy-MM-dd HH:mm:ss') } catch { 'unknown' }
@@ -61,8 +96,10 @@ function Assert-NoUnrealRunning {
         if ($conn) { $holder = "  Port 30010 is held by PID $($conn.OwningProcess)." }
     } catch { }
 
+    $waitNote = if ($GraceSeconds -gt 0) { " It did not exit within ${GraceSeconds}s, so it is not simply finishing a previous stage." } else { '' }
+
     throw @"
-[$Stage] An Unreal editor is already running, so this stage would fail.
+[$Stage] An Unreal editor is already running, so this stage would fail.$waitNote
 
 $($lines -join "`n")
 $holder

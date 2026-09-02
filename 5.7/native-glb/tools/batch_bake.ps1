@@ -141,11 +141,21 @@ if (-not (Test-Path $baker)) { throw "bake_character.ps1 not found beside this s
 
 # Stage 01 drives a live editor over port 30010. A second one already open takes that port, and
 # the export then fails after doing all its work -- or worse, succeeds against the wrong editor.
+#
+# Dot-sourced and CALLED. The file only defines a function, so running it with `pwsh -File`
+# defines it in a throwaway scope and exits 0 -- a preflight that always passes. It did
+# exactly that on the first batch, and the check that actually mattered happened four
+# characters later inside stage 01.
 $guard = Join-Path $here 'Assert-NoUnrealRunning.ps1'
 if ((Test-Path $guard) -and -not $AllowUnrealRunning) {
-    & pwsh -NoProfile -File $guard
-    if ($LASTEXITCODE -ne 0) {
+    . $guard
+    try {
+        # No grace here: nothing of ours is shutting down yet, so anything running is
+        # somebody's editor and waiting four minutes to say so helps no one.
+        Assert-NoUnrealRunning -Stage 'batch' -GraceSeconds 0
+    } catch {
         Write-Host ''
+        Write-Host $_.Exception.Message -ForegroundColor Yellow
         Write-Host 'Close the editor and run again, or pass -AllowUnrealRunning if you are sure.' -ForegroundColor Yellow
         exit 1
     }

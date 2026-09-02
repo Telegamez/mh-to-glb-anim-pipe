@@ -16,7 +16,8 @@
 #>
 param(
     [Parameter(Mandatory=$true)][string]$Char,
-    [string]$Pipeline = "cinematic"
+    [string]$Pipeline = "cinematic",
+    [switch]$AllowUnrealRunning
 )
 
 $ErrorActionPreference = "Stop"
@@ -126,6 +127,12 @@ if ($DeclaredEngine -and $EngineBuild -and $DeclaredEngine -ne $EngineBuild) {
 
 # For MetaHumanCharacter plugin assemble we need the GUI editor (not -Cmd),
 # because build_meta_human relies on Slate ticks.
+# Refuse before doing the work, not after. A second editor holds Unreal's Remote
+# Control port; this stage's headless editor then cannot bind it, and UE exits 1 even
+# when the export succeeded -- a complete bake reported as a failure, minutes in.
+. (Join-Path $Workspace "tools\Assert-NoUnrealRunning.ps1")
+Assert-NoUnrealRunning -Stage "stage00" -Allow:$AllowUnrealRunning
+
 $UEEditor  = $UEEditor -replace "UnrealEditor-Cmd\.exe$", "UnrealEditor.exe"
 
 $CharManifest = Join-Path $Workspace "characters\$Char\manifest.json"

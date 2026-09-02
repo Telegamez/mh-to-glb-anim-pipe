@@ -91,8 +91,18 @@ function Get-UrlStatus {
 function Test-Published {
   # Mirrors PUBLISHED_PATH in packages/shared/db/src/seed-metahuman-roster.ts. A path the
   # seeder wrote (`models/<id>/<id>.glb`) is NOT a publish, however plausible it looks.
+  #
+  # The host is stripped first because modelPath comes back in two shapes: the admin route
+  # returns the raw key, the public route returns it already expanded to a CDN URL. Anchoring
+  # on '^avatars/' therefore called every correctly published companion a PLACEHOLDER on any
+  # route that expands it -- while the very next lines fetched that same URL and got 200. The
+  # code below already knew both shapes exist; this check did not.
   param([string]$Path)
-  return [bool]($Path -and $Path -match '^avatars/[0-9a-f-]{36}/[A-Za-z0-9._-]+/')
+  if (-not $Path) { return $false }
+  $key = $Path -replace '^https?://[^/]+/+', ''
+  # Still the discriminator after stripping: the seeder's placeholder ends at the object
+  # (`avatars/<uuid>/model.glb`), while a publish carries a bake directory between the two.
+  return [bool]($key -match '^avatars/[0-9a-f-]{36}/[A-Za-z0-9._-]+/')
 }
 
 function Get-ManifestUrl {

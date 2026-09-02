@@ -640,6 +640,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/config') {
       return send(res, 200, {
         defaultRoot: DEFAULT_ROOT,
+        // Where `bake` actually writes. Reported because it is chosen independently of the
+        // browse root, and when the two diverge a bake succeeds and simply does not appear:
+        // the grid rescans, correctly, in a folder nothing was written to. That is a silent
+        // failure with a completed bake behind it, which is the worst kind to debug.
+        packagesRoot: PACKAGES,
         environments: Object.entries(ENVIRONMENTS).map(([k, v]) => ({ key: k, ...v })),
         hasToken: Boolean(session.token),
         publisherFound: fs.existsSync(PUBLISHER),

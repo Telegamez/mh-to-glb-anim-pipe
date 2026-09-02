@@ -97,8 +97,20 @@
       <th style="width:26px"></th><th>Character</th><th>Size</th><th>What will happen</th>
     </tr></thead><tbody id="chars"></tbody></table>
     <div class="row" style="margin-top:16px">
+      <button id="compress">Compress</button>
+      <select id="compressMode" title="none is lossless and the only publishable mode. meshopt is paused pending a fidelity A/B; full also needs a KTX2 loader.">
+        <option value="meshopt">meshopt &mdash; default, ~50% smaller</option>
+        <option value="none">none &mdash; lossless, no size change</option>
+        <option value="full">full (+KTX2) &mdash; not loadable yet</option>
+      </select>
+      <span class="dim" id="compressNote" style="font-size:12px">the weight is handled at bake time now &mdash; stage 03 caps and de-alphas the sidecar textures (168&nbsp;MB &rarr; 22&nbsp;MB). Compression here is paused.</span>
+    </div>
+    <div class="row" style="margin-top:10px">
       <button id="publish" class="go">Publish</button>
       <button id="pubPreviews">Publish previews</button>
+      <label class="dim" style="font-size:13px" title="Publishes _compressed/&lt;char&gt; instead of the bake.">
+        <input type="checkbox" id="useCompressed"> publish the compressed build
+      </label>
       <span class="dim" id="pubCount" style="font-size:13px"></span>
     </div>
   </div>
@@ -234,7 +246,13 @@ function render() {
     tr.innerHTML = '<td><input type="checkbox" data-char="' + c.id + '"'
       + (tick ? ' checked' : '') + (c.ready ? '' : ' disabled') + '></td>'
       + '<td>' + c.id + (c.inRoster ? '' : ' <span class="dim">&middot; extra</span>') + '</td>'
-      + '<td class="mono dim">' + c.mb + ' MB</td>'
+      + '<td class="mono dim">' + c.mb + ' MB'
+      + (c.compressed
+          ? '<br><span class="' + (c.compressed.stale ? 'warn' : 'ok') + '" style="font-size:11px">&rarr; '
+            + c.compressed.mb + ' MB ' + c.compressed.mode
+            + (c.compressed.stale ? ' (stale)' : '') + '</span>'
+          : '')
+      + '</td>'
       + '<td>' + action
       + (needsName ? '<br><input class="nm" data-char="' + c.id + '" value="' + title(c.id)
           + '" style="margin-top:5px;padding:5px 8px;font-size:13px;max-width:220px">' : '')
@@ -258,6 +276,25 @@ function count() {
 }
 
 $('publish').onclick = async () => {
+  if ($('useCompressed').checked) {
+    const list0 = picked();
+    const bad = list0.filter((c) => {
+      const r = CHARS.find((x) => x.id === c);
+      return !r || !r.compressed || !r.compressed.publishable;
+    });
+    if (bad.length) {
+      setLog('No publishable compressed build for: ' + bad.join(', ')
+        + '\nCompress them with mode=meshopt first, or untick "publish the compressed build".\n');
+      return;
+    }
+    const stale = list0.filter((c) => {
+      const r = CHARS.find((x) => x.id === c);
+      return r && r.compressed && r.compressed.stale;
+    });
+    if (stale.length && !confirm(
+        'The compressed build is older than the bake for: ' + stale.join(', ')
+        + '\n\nPublishing it would ship the previous content. Continue anyway?')) return;
+  }
   const list = picked();
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?')) return;
@@ -296,7 +333,8 @@ $('publish').onclick = async () => {
     const res = await fetch('/api/publish?root=' + encodeURIComponent($('root').value), {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp,
-                             avatarIds: { [c]: RESOLVED[c].avatarId } }),
+                             avatarIds: { [c]: RESOLVED[c].avatarId },
+                             useCompressed: $('useCompressed').checked }),
     });
     if (!res.ok) { log((await res.json()).error + '\n'); break; }
 
@@ -313,6 +351,50 @@ $('publish').onclick = async () => {
 
   $('publish').disabled = false;
   if (Object.keys(PUBLISHED).length) show('s5', true);
+};
+
+/**
+ * Compress the ticked characters before publishing them (#3662).
+ *
+ * A MetaHuman costs ~87 MB to download and beta serves Avaturn avatars at ~11.5 MB, so
+ * publishing a raw bake multiplies the mobile payload roughly eightfold. `meshopt` is where
+ * nearly all of that is: about 73% of the model is uncompressed morph-target data.
+ *
+ * One character per request, like publish, so a failure stops at a character anyone can name.
+ */
+$('compress').onclick = async () => {
+  const list = picked();
+  if (!list.length) return;
+  const mode = $('compressMode').value;
+
+  const WHY = {
+    meshopt: 'meshopt is PAUSED.\n\n'
+      + 'It is measurably lossy on morph targets - 0.85 mm median RMS on the largest '
+      + 'expression targets - and is held until a rendered A/B says whether that is visible.',
+    full: 'mode=full adds KTX2 textures, which nothing in web-next can load yet.\n\n'
+      + 'A companion published this way uploads cleanly, reports success everywhere, and '
+      + 'then renders nothing.',
+  };
+  if (mode === 'full' && !confirm(
+      WHY[mode] + '\n\nThe publisher will refuse to publish it.\n\n'
+      + 'Build it anyway (for measurement)?'
+  )) return;
+
+  $('compress').disabled = true;
+  setLog('Compressing ' + list.length + ' (' + mode + ')\n');
+  for (const c of list) {
+    log('\n=== compress ' + c + ' (' + mode + ') ===\n');
+    const res = await fetch('/api/compress?root=' + encodeURIComponent($('root').value), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ characters:[c], mode }),
+    });
+    if (!res.ok) { log((await res.json()).error + '\n'); break; }
+    const rd = res.body.getReader(); const dec = new TextDecoder();
+    for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value,{stream:true})); }
+  }
+  $('compress').disabled = false;
+  // Re-scan so the size column shows the build that was just made.
+  await load();
 };
 
 /**

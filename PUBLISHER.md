@@ -21,6 +21,10 @@ page is for the things it can't show you.
 `dist/TelegamesPublisher.zip` is ready to send. They unzip it and run `Start-Publisher.ps1` —
 no repo, no install, nothing to build. They need Node.js and PowerShell 7 and nothing else.
 
+One exception, and only if they use **Compress**: the first run fetches `gltf-transform`
+through `npx`, so that machine needs to be online once. `full` mode additionally needs the
+`ktx` CLI installed; `meshopt` mode — the publishable one — does not.
+
 The first time, press **Browse** and point it at wherever the character folders are. It marks
 which folders hold characters as you go, so you are looking for the one that says *6 characters*
 rather than reading paths. It remembers that folder from then on.
@@ -111,6 +115,43 @@ Folder problems:
 | *stray manifest.json* | delete that file — the publisher makes its own, and one sitting in the folder would be uploaded unchecked |
 
 ---
+
+## Compressing before you publish
+
+A MetaHuman bake costs about **87 MB** to download. Beta serves Avaturn avatars at ~11.5 MB
+each, so publishing these as they come out of the bake multiplies the mobile payload by
+roughly eight. Nearly three quarters of the model is uncompressed morph-target data — the
+geometry is already Draco'd and is not the problem.
+
+**Compress**, beside Publish. Tick the characters, press it, and it writes a compressed copy
+to `_compressed/<character>/` next to the bakes. The size column then shows both:
+
+```
+telly    49 MB
+         -> 16 MB meshopt
+```
+
+Then tick **publish the compressed build** and publish as usual. It is the ordinary publish
+pointed at the compressed folder — same upload, same SQL, same rollback.
+
+### The two modes, and why only one of them can be published
+
+| | |
+|---|---|
+| **meshopt** | geometry and morph targets. **Publishable today** — this is the big win. |
+| **full (+KTX2)** | also compresses the textures. **Cannot be published** — nothing in the web app can load KTX2 yet. |
+
+The console will refuse to publish a `full` build rather than warn about it. A companion
+published that way uploads fine, reports success everywhere, and then renders nothing —
+exactly the shape of the G13 failure above, and nothing downstream would catch it either.
+`full` exists so the texture saving can be measured while the loader work is outstanding.
+
+### A stale compressed build
+
+The compressed copy is made from the bake, so it can fall behind it — same as a thumbnail.
+If the bake changed after it was compressed, the size column marks it **stale** and
+publishing asks first. Re-compress rather than shipping it: a stale build publishes the
+previous companion while reporting success.
 
 ## Publishing doesn't go live
 

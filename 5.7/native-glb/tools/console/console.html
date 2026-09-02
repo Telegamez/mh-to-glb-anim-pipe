@@ -110,6 +110,9 @@
   <div class="row" style="margin-top:8px">
     <span class="sub" id="rootPath"></span>
     <button id="browseRoot" class="small">Change folder</button>
+    <!-- Shown only when the browse root is not where bake writes. In that state a bake
+         completes and never appears here, which looks like a failed bake and is not. -->
+    <button id="gotoPackages" class="small" hidden></button>
     <!-- Hidden until something is ticked: a delete button with nothing selected is only ever
          a question about what it would delete. -->
     <button id="del" class="small danger" hidden>Delete</button>

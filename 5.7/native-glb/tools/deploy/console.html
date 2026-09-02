@@ -99,8 +99,8 @@
     <div class="row" style="margin-top:16px">
       <button id="compress">Compress</button>
       <select id="compressMode" title="none is lossless and the only publishable mode. meshopt is paused pending a fidelity A/B; full also needs a KTX2 loader.">
-        <option value="none">none &mdash; lossless, publishable</option>
-        <option value="meshopt">meshopt &mdash; PAUSED (lossy on morphs)</option>
+        <option value="meshopt">meshopt &mdash; default, ~50% smaller</option>
+        <option value="none">none &mdash; lossless, no size change</option>
         <option value="full">full (+KTX2) &mdash; not loadable yet</option>
       </select>
       <span class="dim" id="compressNote" style="font-size:12px">the weight is handled at bake time now &mdash; stage 03 caps and de-alphas the sidecar textures (168&nbsp;MB &rarr; 22&nbsp;MB). Compression here is paused.</span>
@@ -375,7 +375,7 @@ $('compress').onclick = async () => {
       + 'A companion published this way uploads cleanly, reports success everywhere, and '
       + 'then renders nothing.',
   };
-  if (mode !== 'none' && !confirm(
+  if (mode === 'full' && !confirm(
       WHY[mode] + '\n\nThe publisher will refuse to publish it.\n\n'
       + 'Build it anyway (for measurement)?'
   )) return;

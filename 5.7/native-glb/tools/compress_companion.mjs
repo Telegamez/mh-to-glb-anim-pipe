@@ -11,7 +11,17 @@
  *
  * ## Why there are two modes
  *
- * `meshopt` (default) is SAFE TO PUBLISH TODAY. drei's `useGLTF` defaults to
+ * `meshopt` (default) is SAFE TO PUBLISH, and that is a measured claim rather than an
+ * assumption. It IS lossy on geometry — 0.85 mm median RMS on the largest morph targets, and
+ * base vertex positions are quantised too, which turns out to be ~87% of the visible effect.
+ * The differences land on hair- and eyelash-card edges, where a sub-pixel shift becomes a
+ * whole pixel.
+ *
+ * Judged where it counts: both models loaded through the real runtime side by side
+ * (`/dev/model-ab` in the telegamez repo) with the MetaHuman material profile, per-character
+ * hair calibration and clothing textures all live. Indistinguishable. A Blender render said
+ * the same thing but could not be trusted on its own, because it does not run the hair shader
+ * — which is exactly where the differences are. drei's `useGLTF` defaults to
  * `useMeshopt = true` and wires `MeshoptDecoder` from three-stdlib, so every surface that
  * loads a companion through it already accepts `EXT_meshopt_compression`. This is also
  * where nearly all the win is: ~73% of a MetaHuman GLB is uncompressed FLOAT32 morph-target
@@ -48,7 +58,7 @@ const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d :
 
 const src = flag('src');
 const out = flag('out');
-const mode = flag('mode', 'none');
+const mode = flag('mode', 'meshopt');
 const texturePx = Number(flag('texture-px', 0));
 const ktxBin = flag('ktx-bin', '');
 // The model is `<name>.glb`. In a publishable directory that is the folder name, but the
@@ -120,17 +130,14 @@ fs.mkdirSync(out, { recursive: true });
 
 console.log(`companion : ${name}`);
 const MODE_NOTE = {
-  none: '  (lossless — the bake is already lean)',
-  meshopt: '  (PAUSED pending the fidelity A/B — see below)',
+  none: '  (lossless — model copied unchanged)',
+  meshopt: '  (default — verified visually, see below)',
   full: '  (NOT loadable by the runtime yet)',
 };
 console.log(`mode      : ${mode}${MODE_NOTE[mode]}`);
-if (mode !== 'none') {
-  // meshopt is measurably lossy on morph targets: 0.85 mm median RMS on the largest
-  // expression targets, 4.58 mm worst, against a no-op control at exactly 0.0000 mm. It is
-  // held until a rendered A/B says whether that is visible. Not removed — the numbers are
-  // real and the decision is someone's to make with pictures in hand.
-  console.log('WARNING: this mode applies a LOSSY step to morph targets. Paused by default.');
+if (mode === 'full') {
+  console.log('WARNING: mode=full carries KTX2, which no surface can load. The publisher will');
+  console.log('         refuse it. Build it for measurement only.');
 }
 
 // ------------------------------------------------------------------------------- model

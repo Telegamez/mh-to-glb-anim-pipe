@@ -201,11 +201,12 @@ function scanRoot(root) {
         mode: compMode,
         mb: Math.round(bytes / 1048576),
         stale: fs.statSync(compGlb).mtimeMs < contentTime,
-        // Only the lossless build is publishable. `meshopt` is paused pending a rendered
-        // fidelity A/B (it is measurably lossy on morph targets), and `full` carries KTX2,
-        // which no surface can load yet — that one would upload cleanly, report success and
-        // then fail to render.
-        publishable: compMode === 'none',
+        // `none` and `meshopt` are both publishable. meshopt is lossy on geometry but was
+        // compared against the original through the real runtime — material profile, hair
+        // calibration and clothing textures live — and is indistinguishable. `full` carries
+        // KTX2, which no surface can load: it would upload cleanly, report success and then
+        // fail to render.
+        publishable: compMode === 'none' || compMode === 'meshopt',
       };
     }
 
@@ -615,7 +616,7 @@ const server = http.createServer(async (req, res) => {
       // at a character anyone can name.
       const char = characters[0];
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      const args = ['-Char', char, '-Root', root, '-Mode', mode || 'none'];
+      const args = ['-Char', char, '-Root', root, '-Mode', mode || 'meshopt'];
       if (Number(texturePx) > 0) args.push('-TexturePx', String(Number(texturePx)));
       return stream(res, COMPRESSOR, args);
     }
@@ -654,16 +655,11 @@ const server = http.createServer(async (req, res) => {
             fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
           ).mode;
         } catch { /* falls through to the refusal below */ }
-        if (compMode !== 'none') {
-          const why = compMode === 'meshopt'
-            ? 'meshopt is PAUSED: it is measurably lossy on morph targets (0.85 mm median '
-              + 'RMS on the largest expression targets) and is held until a rendered A/B '
-              + 'says whether that is visible'
-            : 'the runtime cannot load KTX2 (no KTX2Loader in web-next), so it would publish '
-              + 'and then fail to render';
+        if (compMode !== 'none' && compMode !== 'meshopt') {
           return send(res, 400, {
-            error: `compressed build for ${char} is mode="${compMode}" - ${why}. `
-              + 'Re-compress with mode=none.',
+            error: `compressed build for ${char} is mode="${compMode}", and the runtime `
+              + 'cannot load KTX2 (no KTX2Loader in web-next) - it would publish and then '
+              + 'fail to render. Re-compress with mode=meshopt.',
           });
         }
         source = compDir;

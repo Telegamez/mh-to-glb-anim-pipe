@@ -23,7 +23,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Char,
-    [ValidateSet('none', 'meshopt', 'full')][string]$Mode = 'none',
+    [ValidateSet('none', 'meshopt', 'full')][string]$Mode = 'meshopt',
     [int]$TexturePx = 0,
     [string]$KtxBin = ''
 )

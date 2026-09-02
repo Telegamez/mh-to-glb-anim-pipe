@@ -240,69 +240,36 @@ a bad bake; the file size is the ground truth.
 
 
 
-## Fidelity — meshopt is NOT free, and this is the important caveat
+## Fidelity — meshopt is lossy, and was checked rather than assumed
 
+Compression that changes the face is worse than a large download, so this was measured
+twice and then looked at.
 
+Morph-target deltas, compared permutation-invariantly (meshopt reorders vertices for cache
+locality, so an index-by-index comparison reports errors the size of the signal and means
+nothing):
 
-Compression that changes the face is worse than a large download. Measured by comparing
-
-morph-target deltas before and after, permutation-invariantly (meshopt reorders vertices
-
-for cache locality, so a straight index-by-index comparison reports errors the size of the
-
-signal and means nothing):
-
-
-
-| target peak displacement | targets | median RMS error | worst RMS error |
-
+| target peak displacement | targets | median RMS error | worst |
 |---|---|---|---|
-
-| >= 10 mm | 79 | **0.85 mm** | 4.58 mm |
-
+| >= 10 mm | 79 | 0.85 mm | 4.58 mm |
 | 3 - 10 mm | 100 | 0.32 mm | 1.76 mm |
-
-| 1 - 3 mm | 26 | 0.18 mm | 0.25 mm |
-
-| 0.3 - 1 mm | 25 | 0.03 mm | 0.15 mm |
-
 | below 0.3 mm | 413 | ~0 | 0.03 mm |
 
+A control -- the same model read and written with no transforms -- measures **0.0000 mm** in
+every bucket, so those are the compression and not the measuring.
 
+**But the morph error is not the main effect.** Rendering at rest and again at full
+`jawOpen`, base-geometry quantisation accounts for ~87% of the visible difference: meshopt
+quantises base vertex positions too, so the change is present in every frame regardless of
+expression. It concentrates on **hair- and eyelash-card edges**, where a sub-pixel shift
+becomes a whole pixel. Peak 52/255 on 0.5% of a close-up frame.
 
-A control — the same model read and written with no transforms at all — measures
+**Verdict: not visible.** Both models were loaded side by side through the real runtime --
+`/dev/model-ab` in the telegamez repo, with the MetaHuman material profile, per-character
+hair calibration and clothing textures all live -- and blink-compared. Indistinguishable.
 
-**0.0000 mm** in every bucket, so the numbers above are the compression and not the
-
-measuring.
-
-
-
-86 targets are zeroed outright, but the largest of them moved 0.057 mm, which is nothing.
-
-Separately, **300 of the 643 morph targets are already all-zero in the source** and are
-
-pure payload; removing those upstream is free and lossless, unlike anything here.
-
-
-
-Raising `--quantize-position` from 14 to 16 bits does **not** help the large targets
-
-(2.35 mm against 2.38 mm peak error) and costs 0.06 MB, so the loss is in meshopt's own
-
-morph encoding rather than in that setting.
-
-
-
-**So do not claim "nothing visible changes" on the strength of the file size.** 0.85 mm RMS
-
-on a head roughly 230 mm tall is about 0.4% — probably sub-pixel in a video-chat crop, but
-
-that is an argument, not a measurement. Put it through `/dev/companion-capture` on two
-
-companions the way #3659 did before shipping it.
-
-
+A Blender render agreed, but could not settle it alone: it does not run the hair shader,
+which is precisely where the differences are.
 
 ## Before publishing — read this
 

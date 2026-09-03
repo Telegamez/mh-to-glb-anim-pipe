@@ -49,12 +49,12 @@ function steps(c) {
   return {
     bake: c.ready ? 'ok' : 'warn',
     previews: c.previews ? 'ok' : 'no',
-    // 'warn', not 'ok', for a build that exists but must not be uploaded — stale, or a mode
-    // the runtime cannot load. A green dot on either would be the console asserting a
-    // companion is ready to ship when publishing it would refuse, or worse, succeed.
-    size: !c.compressed ? 'no'
-      : (c.compressed.stale || !c.compressed.publishable) ? 'warn'
-      : 'ok',
+    // telegamez#3728: the bake makes the meshopt build and publish remakes a missing or stale
+    // one, so neither blocks anything. 'warn' means "publish will compress first"; 'no' is a
+    // package the compressor cannot help because it is not finished.
+    size: !c.compressed ? (c.ready ? 'warn' : 'no')
+      : (c.compressed.stale || !c.compressed.publishable || c.compressed.mode !== 'meshopt') ? 'warn'
+        : 'ok',
     upload: !connected() ? 'unknown'
       : (UPLOADED[c.id] || publishedKey) ? 'ok'
       : 'unknown',
@@ -79,9 +79,10 @@ const cell = (state) => state === 'unknown'
  */
 function sizeLine(c) {
   const k = c.compressed;
-  if (!k) return `${c.payloadMb} MB`;
-  if (k.stale) return `${c.payloadMb} MB · compressed build is STALE`;
-  return `${c.payloadMb} → ${k.mb} MB · ${k.mode}${k.publishable ? '' : ' (held)'}`;
+  if (!k) return `${c.payloadMb} MB · compresses on publish`;
+  if (k.stale) return `${c.payloadMb} MB · compressed build is STALE — remade on publish`;
+  if (k.mode !== 'meshopt') return `${c.payloadMb} MB · ${k.mode} build — remade as meshopt on publish`;
+  return `${c.payloadMb} → ${k.mb} MB · meshopt${k.publishable ? '' : ' (held — remade on publish)'}`;
 }
 
 function renderGrid() {
@@ -196,45 +197,20 @@ function refreshButtons() {
   $('compress').disabled = n === 0 || !sel.every((c) => c.ready) || !(CONFIG && CONFIG.compressorFound);
   $('compress').textContent = n > 1 ? `Compress ${n}` : 'Compress';
 
-  /*
-   * The compressed build is offered only when every ticked character has one that may
-   * actually be uploaded.
-   *
-   * All or nothing on purpose. A part-compressed selection would publish some characters
-   * small and some large in one run, and the only record of which was which is the journal
-   * afterwards — so "why is that one still 87 MB" becomes a question about a batch nobody
-   * can reconstruct.
-   */
-  const builds = sel.map((c) => c.compressed).filter(Boolean);
-  const box = $('useComp');
-  const wrap = $('useCompWrap');
-  wrap.hidden = builds.length === 0;
-  const allGood = n > 0 && builds.length === n && builds.every((k) => k.publishable && !k.stale);
-  box.disabled = !allGood;
-  if (!allGood) box.checked = false;
-  wrap.title = allGood
-    ? 'Upload the compressed build instead of the bake.'
-    : builds.length < n
-      ? 'Not every ticked character has a compressed build.'
-      : builds.some((k) => k.stale)
-        ? 'A compressed build is older than the package it was made from — compress again.'
-        : 'This build is held; see the note under Compress.';
-
-  // Said out loud rather than left in a tooltip. A greyed checkbox with no reason beside it
-  // reads as a broken console, and the reason here is a deliberate hold that somebody has to
-  // lift on purpose.
-  const held = builds.filter((k) => !k.publishable);
+  // telegamez#3728: there is no choice of source any more. Publish uploads the meshopt build
+  // and makes it first when it is missing, stale or in another mode. The one hold left is
+  // WebP sidecar textures (telegamez#3701), said out loud rather than left in a tooltip.
+  const held = sel.map((c) => c.compressed).filter((k) => k && !k.publishable);
   const note = $('compNote');
   if (!held.length) {
     note.hidden = true;
   } else {
     note.hidden = false;
-    note.textContent = held.some((k) => k.mode === 'full')
-      ? 'A "full" build carries KTX2 textures, which nothing in web-next can load. It would '
-        + 'upload cleanly and render nothing. Not publishable from here.'
-      : 'meshopt builds are held until one is confirmed rendering in a real room — the failure '
-        + 'is a silent rejection that leaves the talk show working. Once it is confirmed, '
-        + 'restart with  ./Start-Console.ps1 -MeshoptConfirmed';
+    note.textContent = held.some((k) => k.textureFormat === 'webp')
+      ? 'A build with WebP textures is held until one is confirmed rendering in a real room '
+        + '(telegamez#3701). Publish remakes it with PNG textures.'
+      : 'A "full" build carries KTX2 textures, which nothing in web-next can load. Publish '
+        + 'remakes it as meshopt.';
   }
 }
 
@@ -552,18 +528,15 @@ $('mkRecord').onclick = async () => {
 $('pubModel').onclick = async () => {
   const list = picked();
   const e = target();
-  const small = $('useComp').checked;
-  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?'
-      + (small ? '\n\nUploading the COMPRESSED build.' : ''))) return;
+  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?\n\nUploading the meshopt build.')) return;
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Date.now()).slice(-4);
   setLog('');
-  log(small ? 'uploading the COMPRESSED build\n' : 'uploading the bake\n');
+  log('uploading the meshopt build — made or refreshed first when needed\n');
   for (const c of list) {
     log('\n' + c.id + '\n');
     if (!ROWS[c.id] || !ROWS[c.id].avatarId) { log('  no avatar record here yet\n'); break; }
     const out = await streamTo('/api/publish?root=' + encodeURIComponent(ROOT), {
       env: env(), characters: [c.id], bakeHashSuffix: stamp, avatarIds: { [c.id]: ROWS[c.id].avatarId },
-      useCompressed: $('useComp').checked,
     });
     const m = out && out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+\.glb/);
     if (!m) { log('\nNo published path came back. Stopped.\n'); break; }

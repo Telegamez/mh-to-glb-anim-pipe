@@ -111,39 +111,67 @@ const COMPRESSOR = findBeside('compress_companion.ps1');
 const COMPRESSED_DIR = '_compressed';
 
 /**
- * Whether the RUNTIME can load a meshopt-compressed companion yet.
- *
- * It cannot, at the time of writing, and the failure is silent in the worst way: three of the
- * four surfaces that draw a companion build their own GLTFLoader and register only a Draco
- * decoder — `Agent3DHead` (the room), `SupportTele3DHead`, and `ProgramAgent3DRenderer`.
- * `EXT_meshopt_compression` is listed in extensionsRequired, so a loader without the decoder
- * rejects the file outright. Only `TalkShowCompanionAvatar` works, because it goes through
- * drei's `useGLTF`, which registers one by default.
- *
- * A meshopt companion published today would therefore upload cleanly, report success
- * everywhere, render in the talk show, and fail to appear in a room. That is the same shape
- * as beta's G13, and nothing downstream would catch it.
- *
- * Fixed platform-side in telegamez#3682: one shared companion loader
- * (`services/RoomManager/Agent/companionGltfLoader.ts`) used by all three surfaces plus the
- * dev harnesses. It takes the decoder from `three` itself —
- * `three/examples/jsm/libs/meshopt_decoder.module.js` — and passes it UNCALLED, because
- * three exports the built object where three-stdlib exports a factory. Calling three's would
- * pass undefined and silently disable meshopt, which is this exact failure again.
- * (`three-stdlib` is only a transitive dep via drei and does not resolve from web-next.)
- *
- * The decoder is registered and contract-tested, but no meshopt GLB has been loaded through
- * a real room yet, and the failure mode is a silent rejection that leaves the talk show
- * working. So this stays false until one published companion is confirmed rendering in a
- * room. Set TG_MESHOPT_RUNTIME_READY=1 for that one publish rather than flipping this.
+ * meshopt is the standard (telegamez#3728). The per-run hold that used to live here did its
+ * job - telegamez#3682 gave every surface the shared loader, and nine compressed roster
+ * publishes are in the journals - so there is no flag: Publish uploads the meshopt build and
+ * makes it first when it is missing or older than the package. `full` (KTX2) stays refused.
  */
-const MESHOPT_RUNTIME_READY = process.env.TG_MESHOPT_RUNTIME_READY === '1';
 // TELEGAMEZ (telegamez#3701): WebP sidecar textures. The compressor can write them
 // (`--texture-format webp`); the runtime resolves atlas stems to `.png` itself until it reads
 // the sidecar's `texture_format`, so a WebP build uploads cleanly and renders hair untextured.
 // Same shape as the meshopt flag: the record of what has been confirmed in a room, not a bypass.
 const WEBP_RUNTIME_READY = process.env.TG_WEBP_RUNTIME_READY === '1';
 const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);
+
+/** Newest of the model, the sidecar and the textures - what a compressed build must postdate. */
+function contentTimeOf(dir, name) {
+  const sidecar = path.join(dir, 'mh_materials.json');
+  const texDir = path.join(dir, 'textures');
+  return [
+    fs.statSync(path.join(dir, `${name}.glb`)).mtimeMs,
+    ...(fs.existsSync(sidecar) ? [fs.statSync(sidecar).mtimeMs] : []),
+    ...(fs.existsSync(texDir)
+      ? fs.readdirSync(texDir).map((f) => fs.statSync(path.join(texDir, f)).mtimeMs)
+      : []),
+  ].reduce((a, b) => Math.max(a, b), 0);
+}
+
+/** The build in `_compressed/<name>/`, or null; `current` is what Publish sends as it stands. */
+function compressedInfo(root, name, contentTime) {
+  const dir = compressedPath(root, name);
+  const glb = path.join(dir, `${name}.glb`);
+  if (!fs.existsSync(glb)) return null;
+  let mode = 'unknown';
+  let textureFormat = 'png';
+  try {
+    const cm = JSON.parse(fs.readFileSync(path.join(dir, 'compression_manifest.json'), 'utf8'));
+    mode = cm.mode || 'unknown';
+    textureFormat = cm.texture_format || 'png';
+  } catch { /* a build without a readable manifest still has a size worth showing */ }
+  const tex = path.join(dir, 'textures');
+  const bytes = fs.statSync(glb).size + (fs.existsSync(tex)
+    ? fs.readdirSync(tex).reduce((a, f) => a + fs.statSync(path.join(tex, f)).size, 0)
+    : 0);
+  const stale = fs.statSync(glb).mtimeMs < contentTime;
+  const publishable = (mode === 'none' || mode === 'meshopt')
+    && (textureFormat !== 'webp' || WEBP_RUNTIME_READY);
+  return {
+    dir, mode, textureFormat, stale, publishable, mb: Math.round(bytes / 1048576),
+    current: mode === 'meshopt' && !stale && publishable,
+  };
+}
+
+/** One child, streamed into a response that stays open for the next step. */
+function runInto(res, label, file, args) {
+  return new Promise((resolve) => {
+    res.write(`\n=== ${label}\n`);
+    const child = spawn('pwsh', ['-NoProfile', '-File', file, ...args], { windowsHide: true });
+    child.stdout.on('data', (d) => res.write(d));
+    child.stderr.on('data', (d) => res.write(d));
+    child.on('error', (e) => { res.write(`\n[console] could not start: ${e.message}\n`); resolve(-1); });
+    child.on('close', (code) => resolve(code));
+  });
+}
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
@@ -245,7 +273,9 @@ function scanRoot(root) {
         // fail to render.
         textureFormat: compTexFmt,
         // WebP sidecar textures are gated the same way (telegamez#3701).
-        publishable: (compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY))
+        publishable: (compMode === 'none' || compMode === 'meshopt')
+          && (compTexFmt !== 'webp' || WEBP_RUNTIME_READY),
+        current: compMode === 'meshopt' && fs.statSync(compGlb).mtimeMs >= contentTime
           && (compTexFmt !== 'webp' || WEBP_RUNTIME_READY),
       };
     }
@@ -406,7 +436,7 @@ function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, prev
 }
 
 function stream(res, file, args, extraEnv = {}, onClose) {
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+  if (!res.headersSent) res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
   const child = spawn('pwsh', ['-NoProfile', '-File', file, ...args], {
     env: { ...process.env, ...extraEnv },
     windowsHide: true,
@@ -649,20 +679,21 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      if (mode && !['none', 'meshopt', 'full'].includes(mode)) {
-        return send(res, 400, { error: `unknown mode: ${mode}` });
+      // meshopt only (telegamez#3728): `none` saves nothing and `full` cannot be published.
+      if (mode && mode !== 'meshopt') {
+        return send(res, 400, { error: `only meshopt builds are made here (asked for ${mode})` });
       }
       // One per request, like publish: the page drives the loop so a failure stops the batch
       // at a character anyone can name.
       const char = characters[0];
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      const args = ['-Char', char, '-Root', root, '-Mode', mode || 'meshopt'];
+      const args = ['-Char', char, '-Root', root, '-Mode', 'meshopt'];
       if (Number(texturePx) > 0) args.push('-TexturePx', String(Number(texturePx)));
       return stream(res, COMPRESSOR, args);
     }
 
     if (url.pathname === '/api/publish' && req.method === 'POST') {
-      const { env, characters, bakeHashSuffix, avatarIds, useCompressed } = await readBody(req);
+      const { env, characters, bakeHashSuffix, avatarIds } = await readBody(req);
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
@@ -679,57 +710,45 @@ const server = http.createServer(async (req, res) => {
       if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
 
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      let source = path.join(root, char);
+      const pkgDir = path.join(root, char);
+      if (!fs.existsSync(path.join(pkgDir, `${char}.glb`))) {
+        return send(res, 400, { error: `no package for ${char} in ${root}` });
+      }
 
-      if (useCompressed) {
-        const compDir = compressedPath(root, char);
-        if (!fs.existsSync(path.join(compDir, `${char}.glb`))) {
-          return send(res, 400, { error: `no compressed build for ${char} — compress it first` });
-        }
-        // Refuse `full` outright rather than warn. It carries KTX2, which no surface can load:
-        // it would upload cleanly, report success everywhere, and render nothing — the same
-        // silent failure as beta's G13, and nothing downstream would catch it either.
-        let compMode = 'unknown';
-        let compTexFmt = 'png';
-        try {
-          const cm = JSON.parse(
-            fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
-          );
-          compMode = cm.mode;
-          compTexFmt = cm.texture_format || 'png';
-        } catch { /* falls through to the refusal below */ }
-        const modeAllowed = compMode === 'none' || (compMode === 'meshopt' && MESHOPT_RUNTIME_READY);
-        // WebP sidecar textures (telegamez#3701): refused for the same reason as `full` — the
-        // runtime would resolve the atlas stems to .png, find nothing, and render hair bare.
-        const allowed = modeAllowed && (compTexFmt !== 'webp' || WEBP_RUNTIME_READY);
-        if (!allowed) {
-          const why = !modeAllowed ? (compMode === 'meshopt'
-            ? 'the room does not load meshopt yet: Agent3DHead, SupportTele3DHead and '
-              + 'ProgramAgent3DRenderer each build their own GLTFLoader and register only a '
-              + 'Draco decoder, so this would publish cleanly and then fail to render in a '
-              + 'room. Publish mode=none until they call setMeshoptDecoder()'
-            : 'the runtime cannot load KTX2 (no KTX2Loader in web-next), so it would publish '
-              + 'and then fail to render')
-            : 'its sidecar textures are WebP and the runtime still resolves atlas stems to .png '
-              + '(telegamez#3701), so hair and clothing would publish and then render untextured. '
-              + 'Compress with --texture-format png, or set TG_WEBP_RUNTIME_READY=1 once a WebP '
-              + 'companion has been confirmed rendering in a room';
+      // telegamez#3728: what goes up is the meshopt build, always. A missing build, a stale one
+      // or one made in another mode is remade here first, so a publish is one action and the
+      // journal can only ever say "compressed". A page that still sends `useCompressed` is
+      // ignored: there is no other source.
+      let build = compressedInfo(root, char, contentTimeOf(pkgDir, char));
+      if (!build || !build.current) {
+        if (!fs.existsSync(COMPRESSOR)) {
           return send(res, 400, {
-            error: `compressed build for ${char} is mode="${compMode}" textures="${compTexFmt}" - ${why}.`,
+            error: `compress_companion.ps1 is not beside this publisher and ${char} has no current meshopt build`,
           });
         }
-        source = compDir;
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+        const why = !build ? 'no compressed build yet'
+          : build.stale ? 'compressed build is older than the package'
+            : `compressed build is mode="${build.mode}" textures="${build.textureFormat}"`;
+        const code = await runInto(res, `Compress — ${char} (${why})`, COMPRESSOR,
+          ['-Char', char, '-Root', root, '-Mode', 'meshopt']);
+        build = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char)) : null;
+        if (!build || !build.current) {
+          res.write(`\n[console] compress failed (exit ${code}) — nothing was uploaded\n[console] exit 1\n`);
+          res.end();
+          return undefined;
+        }
       }
 
       return stream(res, PUBLISHER, [
         '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
-        '-Source', source,
+        '-Source', build.dir,
         '-BakeHash', `${char}-${bakeHashSuffix}`,
       ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
         env, apiBase: target.apiBase, char, avatarId,
         bakeSuffix: bakeHashSuffix, bakeHash: `${char}-${bakeHashSuffix}`,
         previous: session.prior[`${env}/${char}`] ?? null,
-        output, code, compressed: !!useCompressed,
+        output, code, compressed: true,
       }));
     }
 

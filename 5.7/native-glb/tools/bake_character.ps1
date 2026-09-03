@@ -174,6 +174,18 @@ if ($LASTEXITCODE -ne 0) { throw "Packaging failed (exit $LASTEXITCODE)." }
 if ($Packages) { $pkgDir = Join-Path $Packages $Char }
 else { $pkgDir = Join-Path (Split-Path -Parent $RepoRoot) "characters/$Char" }
 
+# --- Compress ---------------------------------------------------------------------------------
+#
+# telegamez#3728: every bake ends with a meshopt build in <packages>/_compressed/<id>/. Upload
+# sends that build and would make it then anyway; making it here means the package is complete
+# as it stands. Not fatal: the package is finished and correct without it.
+Write-Step "Compress - $Char (meshopt)"
+& pwsh -NoProfile -File (Join-Path $here 'compress_companion.ps1') -Char $Char -Root (Split-Path -Parent $pkgDir) -Mode meshopt
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ''
+    Write-Host '[bake] Compress failed. The package is finished and correct; Upload will compress it again.' -ForegroundColor Yellow
+}
+
 # --- Previews -----------------------------------------------------------------------------------
 #
 # Skipped rather than failed when the stack is down. The model is finished and correct by this

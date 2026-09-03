@@ -116,6 +116,15 @@ New character-manifest keys (all optional):
 
 Stage 03's `target_tri_budget` is still advisory and `max_texture_px` still global; a per-character override and an opt-in "delete body faces under rigid armour" pass are tracked on the same ticket and not in this change.
 
+## meshopt is the standard (telegamez#3728)
+
+| Change | Why |
+|---|---|
+| `tools/console/server.mjs` and `tools/deploy/server.mjs`: the `TG_MESHOPT_RUNTIME_READY` hold is gone; `/api/publish` always uploads `_compressed/<id>/` and runs `compress_companion.ps1 -Mode meshopt` first when the build is missing, older than the package (model, sidecar or any texture) or not meshopt; `/api/compress` makes meshopt builds only; the console's bake ends with a Compress step | The hold was the record of an unconfirmed runtime. telegamez#3682 gave every surface the shared loader and nine compressed roster publishes are in the journals, so the flag had become a trap: start the console without it and "compressed" is greyed with a note telling you to restart. A companion is 87 MB uncompressed and 50 MB as meshopt; there is no case for the other one. `full` (KTX2) and WebP-texture builds are still refused, and Upload remakes them rather than sending them. |
+| `bake_character.ps1` ends with the same Compress step (non-fatal) | The CLI bake and the console bake produce the same package. |
+| `Start-Console.ps1 -MeshoptConfirmed` is an ignored no-op | Old shortcuts keep starting the console. |
+| Console page: no "compressed" checkbox; the size column says "compresses on publish" / "STALE - remade on publish"; the publisher bundle's page loses its mode select and checkbox | The UI states the policy instead of offering a choice that no longer exists. |
+
 ## Running on UE 5.8 and Blender 4.4
 
 Upstream targets UE 5.7 and states Blender 5.x. This fork is verified on **UE 5.8.1** and

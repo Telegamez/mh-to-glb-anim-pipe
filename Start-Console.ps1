@@ -26,17 +26,9 @@
   Start the server but don't open a browser.
 
 .PARAMETER MeshoptConfirmed
-  Allow publishing meshopt-compressed builds.
-
-  Named for what it asserts, not for what it turns on. The console refuses a meshopt build by
-  default because the failure is silent: three of the four surfaces that draw a companion
-  build their own GLTFLoader, `EXT_meshopt_compression` sits in extensionsRequired, and a
-  loader without the decoder rejects the file outright while the talk show carries on working.
-  So the build would upload cleanly, report success everywhere, and never appear in a room.
-
-  Pass this only once a meshopt companion has been seen rendering in a real room. Per run,
-  deliberately -- so it is a decision somebody makes each time rather than a setting that
-  quietly stays on.
+  Ignored. meshopt is the standard (telegamez#3728): every bake ends with a meshopt build and
+  Upload sends that build, making or refreshing it first when it has to. The switch stays so
+  an old shortcut still starts the console.
 
 .EXAMPLE
   ./Start-Console.ps1
@@ -95,7 +87,7 @@ if (-not $NoBrowser) {
   } -ArgumentList $Port | Out-Null
 }
 
-if ($MeshoptConfirmed) { $env:TG_MESHOPT_RUNTIME_READY = '1' }
+if ($MeshoptConfirmed) { Write-Host '  -MeshoptConfirmed is no longer needed: meshopt builds publish by default.' -ForegroundColor DarkGray }
 
 # Foreground, so its output is right here and Ctrl+C stops it.
 $serverArgs = @($server, '--port', $Port)

@@ -113,6 +113,47 @@ def _auto_map(data):
     return mapping
 
 
+def _repair_unweighted(obj, fpos, offsets, indices, weights, target, groups, blend_name):
+    """Copy the nearest weighted vertex's influences onto every vertex that has none."""
+    from mathutils.kdtree import KDTree
+    n = len(fpos)
+    has_weight = np.zeros(n, bool)
+    for v in range(n):
+        for k in range(offsets[v], offsets[v + 1]):
+            if float(weights[k]) > 0.0:
+                has_weight[v] = True
+                break
+    bad = np.where(~has_weight)[0]
+    if len(bad) == 0:
+        _log(f"{blend_name}: no unweighted vertices")
+        return 0
+    good = np.where(has_weight)[0]
+    if len(good) == 0:
+        raise RuntimeError(f"{blend_name}: every vertex is unweighted - the FBX carries no skin")
+    kd = KDTree(len(good))
+    for i in good:
+        kd.insert(fpos[i], int(i))
+    kd.balance()
+    worst = 0.0
+    for v in bad:
+        _, src, dist = kd.find(fpos[v])
+        worst = max(worst, float(dist))
+        for k in range(offsets[src], offsets[src + 1]):
+            w = float(weights[k])
+            if w <= 0.0:
+                continue
+            name = target[int(indices[k])]
+            vg = groups.get(name)
+            if vg is None:
+                vg = obj.vertex_groups.new(name=name)
+                groups[name] = vg
+            vg.add([int(v)], w, "REPLACE")
+    _log(f"{blend_name}: REPAIRED {len(bad)} unweighted vertex/vertices from their nearest "
+         f"weighted neighbour (farthest {worst * 1000:.1f}mm) - the source asset ships them "
+         f"without influences")
+    return len(bad)
+
+
 def main():
     npz_path, mapping = _args()
     data = np.load(npz_path, allow_pickle=True)
@@ -189,6 +230,16 @@ def main():
             replaced += 1
         _log(f"{blend_name}: rebuilt {len(groups)} bone groups over {replaced} verts "
              f"(position gate {delta * 1000:.4f}mm)")
+
+        # TELEGAMEZ (telegamez#3725): Fab outfits can ship vertices with NO
+        # influences (Tommy's Roman Soldier: 24 on the breastplate, 56 on the
+        # greaves; Unreal raises the ClothAsset.cpp:552 ensure on every build).
+        # Unweighted vertices bind to root and spike the moment the body
+        # animates. Give each one the weights of its nearest weighted vertex
+        # on the same mesh - the seam next to it is the best available guess
+        # and a few millimetres of drift beats a spike to the origin. Logged
+        # loudly, because a large count means the source asset is broken.
+        _repair_unweighted(obj, fpos, offsets, indices, weights, target, groups, blend_name)
 
     bpy.ops.wm.save_mainfile()
     _log(f"saved {bpy.data.filepath}")

@@ -89,6 +89,33 @@ Three things changed for every card groom, and one of them has an ordering const
   `TG_WEBP_RUNTIME_READY=1`, because the runtime appends `.png` to atlas stems itself until it
   reads `texture_format`. Same shape as the meshopt gate, for the same silent-failure reason.
 
+---
+
+## Accessories, masked clothing and unweighted Fab outfits (telegamez#3725)
+
+Tommy (`/Game/tommy`: Fab *Roman Soldier* Chaos outfit plus a horsehair crest worn as a
+legacy **SkeletalMesh wardrobe item**) exposed four assumptions the pipeline made about a
+MetaHuman. None of them is about him; they are what any accessory item, masked garment or
+Fab outfit hits. All four changes are default-off for the existing roster.
+
+| Change | Why it is general |
+|---|---|
+| Stage 01 discovers skinned meshes from the built `BP_<Name>` (`_discover_from_blueprint`) and merges them with the folder listing | The SkeletalMesh wardrobe pipeline references its asset *in place* (`/Game/Characters/RomanPlume/SK_RomanPlume`) and copies nothing into the build folder, so a folder listing can never see it. The outfit pipeline does copy into `Clothing/`, and that difference is the role rule: `Body`→body, `Face`→face, `SkeletalMesh*` inside the build→outfit, outside→**accessory**. No Blueprint, or one without body and face, falls back to the old listing. |
+| `export_fbx_weights.py` includes accessories | Same corrupt-glTF-weights problem, same fix; `dump_fbx_weights.py` and the `auto=auto` mapping already enumerate every `*_weights.fbx`. |
+| Stage 01 records `blend_mode`/`two_sided` per clothing material; stage 02 writes `blend_mode`, `alpha_clip`, `alpha_channel`, `alpha_source` and `double_sided` on `clothing` records whose material is not opaque (every MetaHuman garment is two-sided in Unreal, so opaque records are left exactly as before) | The GLB cannot carry a Masked blend mode, and a card-mesh accessory is nothing else. Plain `Material`s (hand-built accessories have no instance) now resolve their textures via `get_used_textures` and default `Color1` to white instead of being dropped as "unmatched". The **runtime** side (alpha test on clothing, and not flipping back-face normals on `double_sided` records, as #3703 did for hair) is a separate telegamez change with the same deploy-before-publish gate. |
+| Stage 02 accepts Fab's spelled-out map names (`_BaseColor`, `_Normal`, `_OcclusionRoughnessMetallic`) alongside `_BC`/`_N`/`_ORM` | Every Fab garment material is a plain `Material` sampling maps named that way; with the suffix rule alone the whole Roman outfit came out unmapped. |
+| `dump_fbx_weights.py` imports the weight FBX with `ignore_leaf_bones=False` | Unreal's FBX carries no marker end bones, so Blender's leaf-bone option drops real bones that have no children and folds their weights into the parent. The MetaHuman build reduces each clothing mesh to its required bones, which leaves `head` a leaf: Tommy's crest and helmet came out bound to `neck_02`. Roster outfits carry no head weights, so nothing showed. |
+| The garment `Head`→`Neck` remap (stage 03 fold and `solve_skin.py`) exempts vertices that are at least 75% `Head`-weighted (`RIGID_HEAD_SHARE`), but only on a mesh where at least 5% of the vertices are Head-dominated (`RIGID_HEAD_MESH_FRACTION`) | The remap keeps collars off the runtime's procedural nods. A helmet is a garment mesh too, and it must ride those nods with the face and the crest; without the exemption Tommy's helmet solved to 79% Neck and would drift away from its own crest on every head turn. A polo collar has a handful of vertices above the per-vertex threshold (8 of 14,110 on tg-tom); the per-mesh gate keeps the collar rule on every one of them, so roster outfits solve exactly as before. Tommy's outfit mesh is 21% Head-dominated. |
+| Stage 01 writes `groom_materials` and `clothing_materials` sorted; stage 02 picks the eyelash MI whose style matches the exported coverage texture | The AssetRegistry returns assets in a different order on every run and stage 02 took the first name match. Two same-day bakes of the same Tele build resolved the eyebrows to `_Facial_Hair` on one and `_Hair` on the other, and the lashes to `Eyelashes_S_Fine` (a stale instance) on one and `Eyelashes_S_Sparse` (what the character wears) on the other. Sorting makes a bake reproducible; the coverage texture makes the lash pick correct. |
+| `reweight_from_fbx.py` repairs unweighted vertices from their nearest weighted neighbour | Fab outfits ship them (Roman Soldier: 24 breastplate + 56 greave vertices; Unreal raises the `ClothAsset.cpp:552` ensure on every build). They bind to root and spike under animation. Logged loudly with the count and the farthest copy distance. |
+
+New character-manifest keys (all optional):
+
+- `extra_assets`: `[{"asset_path": "/Game/...", "role": "accessory"}]` for anything discovery cannot see. A missing asset is an error, not a skip.
+- `wardrobe_overrides` unchanged; it applies to accessory materials too since they are matched by MI name substring.
+
+Stage 03's `target_tri_budget` is still advisory and `max_texture_px` still global; a per-character override and an opt-in "delete body faces under rigid armour" pass are tracked on the same ticket and not in this change.
+
 ## Running on UE 5.8 and Blender 4.4
 
 Upstream targets UE 5.7 and states Blender 5.x. This fork is verified on **UE 5.8.1** and

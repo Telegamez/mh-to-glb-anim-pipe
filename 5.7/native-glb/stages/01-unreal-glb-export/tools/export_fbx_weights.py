@@ -46,7 +46,9 @@ def main():
         manifest = json.load(f)
     os.makedirs(out_dir, exist_ok=True)
 
-    targets = [a for a in manifest["assets"] if a.get("role") in ("body", "outfit")]
+    # TELEGAMEZ (telegamez#3725): accessories (legacy SkeletalMesh wardrobe
+    # items) are skinned meshes too and need the same trustworthy weights.
+    targets = [a for a in manifest["assets"] if a.get("role") in ("body", "outfit", "accessory")]
     if len(targets) < 2:
         raise RuntimeError(f"manifest lists {len(targets)} of body/outfit — need both")
 

@@ -54,6 +54,16 @@ import numpy as np
 from scipy.optimize import nnls
 
 MAX_INFLUENCES = 4
+# TELEGAMEZ (telegamez#3725): a garment vertex carrying at least this share of its weight on
+# `Head` is part of a rigid head piece (a helmet), not a collar. The Head->Neck garment remap
+# exists so collars do not ride the runtime's procedural nods; a helmet MUST ride them, exactly
+# as the face and a head-bound accessory do. Tommy's helmet came out 79% Neck without this.
+RIGID_HEAD_SHARE = 0.75
+# ...and only on a mesh that actually carries a rigid head piece: at least this fraction of its
+# vertices must be Head-dominated. A polo collar has a handful of such vertices (8 of 14,110 on
+# tg-tom); a helmet has thousands (3,932 of 23,573 on Tommy). Below the fraction the collar rule
+# applies to every vertex, so roster outfits solve exactly as before.
+RIGID_HEAD_MESH_FRACTION = 0.05
 
 # Bones whose translation is root motion, not a corrective. The runtime pins these.
 ROOT_BONES = {"Hips", "root", "Root", "Armature"}
@@ -265,6 +275,24 @@ def solve_mesh(positions, offsets, indices, weights, joints, joints_truth, live_
     frames = joints.shape[0]
     out_idx = np.zeros((n, max_influences), dtype=np.int32)
     out_w = np.zeros((n, max_influences), dtype=np.float64)
+    rigid_head_kept = [0]
+    rigid_head_mesh = False
+    if cand_remap is not None:
+        moved_src = np.where(cand_remap != np.arange(len(cand_remap)))[0]
+        if len(moved_src):
+            dominated = 0
+            for vv in range(n):
+                tot = 0.0; head = 0.0
+                for i in range(offsets[vv], offsets[vv + 1]):
+                    ww = float(weights[i]); tot += ww
+                    if live_map[int(indices[i])] in moved_src or int(indices[i]) in moved_src:
+                        head += ww
+                if tot > 0 and head / tot >= RIGID_HEAD_SHARE:
+                    dominated += 1
+            rigid_head_mesh = dominated / max(n, 1) >= RIGID_HEAD_MESH_FRACTION
+            if dominated:
+                _log(f"  head-dominated vertices: {dominated}/{n} "
+                     f"({100 * dominated / max(n, 1):.1f}%) -> rigid head piece: {rigid_head_mesh}")
     err_trunc = np.zeros(n)
     err_solved = np.zeros(n)
 
@@ -322,7 +350,17 @@ def solve_mesh(positions, offsets, indices, weights, joints, joints_truth, live_
 
         # Candidates live in the SHIPPED skeleton. Duplicates collapse: several frozen helpers
         # under one live parent are one candidate, which also frees slots for distinct bones.
-        mapped = live_map[cand] if cand_remap is None else cand_remap[live_map[cand]]
+        if cand_remap is None:
+            mapped = live_map[cand]
+        else:
+            lm = live_map[cand]
+            moved = cand_remap[lm] != lm                       # what the garment rule would remap (Head)
+            share = float(w0[moved].sum() / max(w0.sum(), 1e-9)) if moved.any() else 0.0
+            if rigid_head_mesh and share >= RIGID_HEAD_SHARE:
+                mapped = lm                                     # rigid head piece: keep Head
+                rigid_head_kept[0] += 1
+            else:
+                mapped = cand_remap[lm]
         cand_live, inverse = np.unique(mapped, return_inverse=True)
         w_live = np.bincount(inverse, weights=w0, minlength=len(cand_live))
 
@@ -378,6 +416,9 @@ def solve_mesh(positions, offsets, indices, weights, joints, joints_truth, live_
 
         out_idx[members, :len(chosen)] = cand_live[chosen]
         out_w[members, :len(chosen)] = sol
+    if rigid_head_kept[0]:
+        _log(f"  rigid head piece: {rigid_head_kept[0]} vertex/vertices kept on Head "
+             f"(>= {RIGID_HEAD_SHARE:.0%} Head-weighted; the garment Head->Neck rule is for collars)")
     return out_idx, out_w, err_trunc, err_solved
 
 

@@ -583,6 +583,40 @@ def _read_mi_params(mi):
     return out
 
 
+def _material_surface(mi):
+    """TELEGAMEZ (telegamez#3725): blend mode and two-sidedness of a material
+    or instance, resolved through `base_property_overrides` for instances.
+    Returned as {"blend_mode": "opaque"|"masked"|"translucent"|..., "two_sided": bool}.
+    A masked, two-sided garment (a card-mesh accessory) needs alpha clipping
+    at the far end, and the sidecar is the only place that fact can travel."""
+    blend, two = None, None
+    try:
+        base = mi.get_base_material() if hasattr(mi, "get_base_material") else mi
+    except Exception:
+        base = mi
+    try:
+        bpo = mi.get_editor_property("base_property_overrides")
+        if bpo.get_editor_property("override_blend_mode"):
+            blend = bpo.get_editor_property("blend_mode")
+        if bpo.get_editor_property("override_two_sided"):
+            two = bool(bpo.get_editor_property("two_sided"))
+    except Exception:
+        pass
+    if blend is None:
+        try:
+            blend = base.get_editor_property("blend_mode")
+        except Exception:
+            blend = None
+    if two is None:
+        try:
+            two = bool(base.get_editor_property("two_sided"))
+        except Exception:
+            two = False
+    raw = getattr(blend, "name", None) or (str(blend) if blend is not None else "BLEND_OPAQUE")
+    name = re.sub(r"[^a-z]", "", raw.split(".")[-1].lower().replace("blend_", "").split(":")[0])
+    return {"blend_mode": name or "opaque", "two_sided": bool(two)}
+
+
 def _resolve_mi_params(mi):
     """Like `_read_mi_params`, but returns the EFFECTIVE parameter values
     rather than only the instance's own overrides.
@@ -643,6 +677,20 @@ def _resolve_mi_params(mi):
     # outfit's base material is M_HS_ORM_Colorable, i.e. a fabric BaseColor
     # meant to be TINTED by Color1, plus a normal map and a packed ORM. Carry
     # the tint without the maps and the garment renders as a flat swatch.
+    # TELEGAMEZ (telegamez#3725): a plain Material (no instance) has no
+    # parameter values to resolve; take the textures it samples instead, keyed
+    # by texture name so stage 02's _BC/_N/_ORM suffix rule still applies.
+    if not isinstance(mi, unreal.MaterialInstance):
+        try:
+            for t in mel.get_used_textures(mi) or []:
+                path = t.get_path_name()
+                if path.startswith("/Engine/"):
+                    continue        # dither noise, default textures: not part of the garment
+                out["textures"][t.get_name()] = path
+        except Exception:
+            pass
+        return out
+
     try:
         tex_names = mel.get_texture_parameter_names(base) or []
     except Exception:
@@ -767,6 +815,19 @@ def main():
 
     # SkeletalMeshes — body, face, outfits
     skm = _list_under(mh_folder, "SkeletalMesh")
+    # TELEGAMEZ (telegamez#3725): the built Blueprint knows every skinned mesh
+    # the character wears, including accessories referenced outside the build
+    # folder. Merge it with the folder listing (never replace it), and keep the
+    # role each component implies so `_infer_role` only has to guess for
+    # meshes the Blueprint did not mention.
+    role_by_path = {}
+    discovered = _discover_from_blueprint(mh_folder)
+    for rec in (discovered or []) + _extra_assets(args.workspace, args.char):
+        path = rec["asset"].get_path_name()
+        role_by_path[path] = rec["role"]
+        if all(a.get_path_name() != path for a in skm):
+            skm.append(rec["asset"])
+            _log(f"  + {rec['role']} from {rec['component']}: {path}")
     skm_names = [a.get_name() for a in skm]
     # A MetaHuman character ALWAYS has a face mesh + body mesh; outfits
     # are optional (base humans without clothes don't ship one). If
@@ -814,7 +875,9 @@ def main():
                 "file_path": rel,
                 "size_bytes": sz,
                 "mesh_type": type(asset).__name__,
-                "role": _infer_role(asset),
+                "role": role_by_path.get(asset.get_path_name(), _infer_role(asset)),
+                "component": next((r["component"] for r in (discovered or [])
+                                   if r["asset"].get_path_name() == asset.get_path_name()), None),
             })
         except Exception as e:
             warnings.append(f"{name}: {e}")
@@ -1103,7 +1166,8 @@ def main():
             mesh_name = mesh_asset.get_name()
         except Exception:
             continue
-        if "outfit" not in mesh_name.lower():
+        _role = role_by_path.get(mesh_asset.get_path_name(), _infer_role(mesh_asset))
+        if _role not in ("outfit", "accessory") and "outfit" not in mesh_name.lower():
             continue
         try:
             slots = mesh_asset.get_editor_property("materials") or []
@@ -1228,12 +1292,19 @@ def main():
             cloth_tex[pname] = rel
             _log(f"    + clothing tex[{pname}]: {rel} ({sz/1024:.0f} KB)")
 
+        surface = _material_surface(mi)
         clothing_materials[mi_name] = {
             "asset_path": str(mi.get_path_name()),
+            "class": cls,
             "vectors": params["vectors"],
             "scalars": params["scalars"],
             "textures": cloth_tex,
+            "blend_mode": surface["blend_mode"],
+            "two_sided": surface["two_sided"],
         }
+        if surface["blend_mode"] != "opaque" or surface["two_sided"]:
+            _log(f"    clothing mi[{mi_name}]: blend={surface['blend_mode']} "
+                 f"two_sided={surface['two_sided']}")
 
     for a in tex_assets:
         try:
@@ -1284,8 +1355,11 @@ def main():
         "mh_folder": mh_folder,
         "assets": manifest_records,
         "sidecar_textures": sidecar_records,
-        "groom_materials": groom_materials,
-        "clothing_materials": clothing_materials,
+        # TELEGAMEZ (telegamez#3725): sorted, because the AssetRegistry hands these back in
+        # a different order on every run and stage 02 takes the first name match. tg-tom's
+        # eyebrows and eyelashes resolved to different MIs on two same-day bakes of one build.
+        "groom_materials": dict(sorted(groom_materials.items())),
+        "clothing_materials": dict(sorted(clothing_materials.items())),
         "arkit_sources": arkit_sources,
         "warnings": warnings,
     }
@@ -1293,6 +1367,112 @@ def main():
         json.dump(mh_manifest, f, indent=2)
     _log(f"wrote {os.path.join(out_dir, 'mh_manifest.json')}  "
          f"({len(manifest_records)} assets, {len(warnings)} warnings)")
+
+
+def _discover_from_blueprint(mh_folder):
+    """TELEGAMEZ (telegamez#3725): list the character's skinned meshes from the
+    built Blueprint's components instead of by listing the build folder.
+
+    The folder listing misses anything the build references *in place*. The
+    MetaHuman SkeletalMesh wardrobe pipeline (legacy clothing items, e.g. a
+    helmet crest) does exactly that: `BP_<Name>` carries the item as a
+    `SkeletalMesh<N>` component pointing at its source asset, and nothing is
+    copied under /Game/Unpacked/<Name>/. The outfit pipeline, by contrast,
+    writes its meshes into <build>/Clothing/. That difference is the reliable
+    way to tell an accessory from an outfit, so it is the rule used here:
+
+        component `Body`            -> body
+        component `Face`            -> face
+        `SkeletalMesh*`, in folder  -> outfit
+        `SkeletalMesh*`, elsewhere  -> accessory
+
+    Groom components carry GroomAssets, not meshes; card fallbacks are still
+    found under <build>/Grooms/ by the static-mesh scan. Returns a list of
+    {asset, role, component} or None when there is no Blueprint or the
+    component data cannot be read (callers fall back to the folder listing,
+    which is what every roster character was baked with)."""
+    leaf = mh_folder.rstrip("/").rsplit("/", 1)[-1]
+    bp_path = f"{mh_folder}/BP_{leaf}"
+    try:
+        if not unreal.EditorAssetLibrary.does_asset_exist(bp_path):
+            _log(f"  discovery: no Blueprint at {bp_path} - using the folder listing")
+            return None
+        bp = unreal.EditorAssetLibrary.load_asset(bp_path)
+    except Exception as e:
+        _log(f"  discovery: loading {bp_path} raised: {e} - using the folder listing")
+        return None
+    if bp is None:
+        return None
+    found = []
+    try:
+        sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+        lib = unreal.SubobjectDataBlueprintFunctionLibrary
+        for handle in sds.k2_gather_subobject_data_for_blueprint(bp):
+            data = sds.k2_find_subobject_data_from_handle(handle)
+            obj = lib.get_object(data)
+            if obj is None or not isinstance(obj, unreal.SkinnedMeshComponent):
+                continue
+            try:
+                comp = str(lib.get_variable_name(data))
+            except Exception:
+                comp = obj.get_name()
+            comp = comp.replace("_GEN_VARIABLE", "")
+            try:
+                asset = obj.get_skinned_asset()
+            except Exception:
+                asset = None
+            if asset is None:
+                _log(f"  discovery: component {comp} has no mesh - skipped")
+                continue
+            path = asset.get_path_name()
+            if any(r["component"] == comp and r["asset"].get_path_name() == path for r in found):
+                continue        # the gather hands back each node twice; keep one record per component
+            in_build = path.startswith(mh_folder.rstrip("/") + "/")
+            if comp == "Body":
+                role = "body"
+            elif comp == "Face":
+                role = "face"
+            elif comp.startswith("SkeletalMesh"):
+                role = "outfit" if in_build else "accessory"
+            else:
+                role = "other"
+            found.append({"asset": asset, "role": role, "component": comp})
+            _log(f"  discovery: {comp:14s} -> {role:9s} {path}")
+    except Exception as e:
+        _log(f"  discovery: reading {bp_path} components raised: {e} - using the folder listing")
+        return None
+    if not any(r["role"] == "body" for r in found) or not any(r["role"] == "face" for r in found):
+        _log("  discovery: Blueprint listed no body/face component - using the folder listing")
+        return None
+    return found
+
+
+def _extra_assets(workspace, char):
+    """TELEGAMEZ (telegamez#3725): hand-assigned meshes from the character
+    manifest, for anything discovery cannot see. Each entry is
+    {"asset_path": "/Game/...", "role": "accessory"|"outfit"|"hair"}."""
+    out = []
+    try:
+        cm = json.load(open(os.path.join(os.path.abspath(workspace), "characters", char,
+                                         "manifest.json"), encoding="utf-8"))
+    except Exception as e:
+        _log(f"  extra_assets: could not read the character manifest: {e}")
+        return out
+    for entry in cm.get("extra_assets") or []:
+        path = str(entry.get("asset_path") or "").strip()
+        role = str(entry.get("role") or "accessory")
+        if not path:
+            continue
+        try:
+            asset = unreal.EditorAssetLibrary.load_asset(path)
+        except Exception as e:
+            asset = None
+            _log(f"  extra_assets: {path} raised: {e}")
+        if asset is None:
+            raise RuntimeError(f"extra_assets: {path} does not exist - fix the manifest")
+        out.append({"asset": asset, "role": role, "component": "manifest"})
+        _log(f"  extra_assets: {path} -> {role}")
+    return out
 
 
 def _infer_role(asset):

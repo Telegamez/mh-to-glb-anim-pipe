@@ -875,6 +875,15 @@ def _hide_body_under_clothing():
                 # pulled back onto the collar and the face deforms.
                 if tuck_veto or not outside or nearest is None or nearest[3] is None:
                     continue
+                # TELEGAMEZ (telegamez#3725): never tuck skin that is already covered. A
+                # vertex whose own outward ray hits cloth is hidden behind that cloth, whichever
+                # surface happens to be nearest. Fab armour is double-walled: for a cheek sitting
+                # properly inside the helmet the nearest surface is the INNER wall, whose normal
+                # faces the head, so "outside" was true and the tuck moved the cheek 4mm past
+                # that wall - straight out through the outer one. The poke-through Tommy showed
+                # on his cheek guards was manufactured here; his face is clean before this pass.
+                if hit is not None and hit[0] is not None:
+                    continue
                 location, normal, _, _ = nearest
                 pokes.append((co - location).length)
                 v.co = inv @ (location - normal * TUCK_DEPTH)

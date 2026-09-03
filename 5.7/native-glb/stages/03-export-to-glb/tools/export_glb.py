@@ -639,6 +639,10 @@ NO_SMOOTH_MESH = re.compile(
 GARMENT_MESH = re.compile(r"outfit|cloth|shirt|chino|trouser|pant|skirt|dress|jacket|boot|shoe",
                           re.IGNORECASE)
 GARMENT_BONE_REMAP = {"Head": "Neck"}
+# TELEGAMEZ (telegamez#3725): a garment vertex carrying at least this share of its bone weight
+# on Head belongs to a rigid head piece (a helmet) and keeps Head; the remap is for collars.
+RIGID_HEAD_SHARE = 0.75
+RIGID_HEAD_MESH_FRACTION = 0.05     # ...on a mesh where at least this share of vertices is Head-dominated
 # Skin meshes whose covered faces get removed.
 #
 # Head_Mesh is in here deliberately and it is not obvious: MetaHuman's head mesh does not stop at
@@ -1288,9 +1292,28 @@ def _fold_frozen_bones(workspace):
         per_vertex = []      # sparse {target group name -> weight} for every vertex
         untouched = {}       # non-bone group name -> [(vertex index, weight), ...]
         collapsed_verts = 0
+        rigid_head_mesh = False
+        if is_garment:
+            dominated = 0
+            for vert in obj.data.vertices:
+                bw = [(alias[index_to_name[g.group]], g.weight) for g in vert.groups
+                      if g.group in bone_indices and g.weight > 0.0]
+                tw = sum(w for _, w in bw)
+                if tw > 0.0 and sum(w for tg, w in bw if tg == "Head") / tw >= RIGID_HEAD_SHARE:
+                    dominated += 1
+            rigid_head_mesh = dominated / max(len(obj.data.vertices), 1) >= RIGID_HEAD_MESH_FRACTION
+            if dominated:
+                _log(f"fold:   {obj.name}: {dominated} Head-dominated vertices -> rigid head piece: {rigid_head_mesh}")
         for vert in obj.data.vertices:
             acc = {}
             distinct_before = 0
+            rigid_head = False
+            if is_garment and rigid_head_mesh:
+                bone_w = [(alias[index_to_name[g.group]], g.weight) for g in vert.groups
+                          if g.group in bone_indices and g.weight > 0.0]
+                tot_w = sum(w for _, w in bone_w)
+                head_w = sum(w for t, w in bone_w if t == "Head")
+                rigid_head = tot_w > 0.0 and head_w / tot_w >= RIGID_HEAD_SHARE
             for g in vert.groups:
                 weight = g.weight
                 if weight <= 0.0:
@@ -1301,7 +1324,7 @@ def _fold_frozen_bones(workspace):
                 if g.group in bone_indices:
                     distinct_before += 1
                     target = alias[name]
-                    if is_garment:
+                    if is_garment and not rigid_head:
                         target = GARMENT_BONE_REMAP.get(target, target)
                         if GARMENT_FORBIDDEN_BONE.match(target):
                             target = "Neck"

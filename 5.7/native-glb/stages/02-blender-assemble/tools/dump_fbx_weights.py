@@ -48,7 +48,13 @@ def main():
     result = {}
     for fbx in fbxs:
         bpy.ops.wm.read_factory_settings(use_empty=True)
-        bpy.ops.import_scene.fbx(filepath=fbx, ignore_leaf_bones=True)
+        # TELEGAMEZ (telegamez#3725): NEVER ignore leaf bones here. Unreal's FBX
+        # carries no marker "end" bones, so Blender's `ignore_leaf_bones` drops
+        # real bones that simply have no children - `head` in the body skeleton,
+        # every fingertip, `ball_l/r` - and folds their weights into the parent.
+        # Tommy's helmet crest came out bound to neck_02 instead of head; on the
+        # roster the same option has been quietly stiffening fingertips.
+        bpy.ops.import_scene.fbx(filepath=fbx, ignore_leaf_bones=False)
         meshes = [o for o in bpy.data.objects if o.type == "MESH"]
         if len(meshes) != 1:
             raise RuntimeError(f"{fbx}: expected exactly 1 mesh, found {[m.name for m in meshes]}")

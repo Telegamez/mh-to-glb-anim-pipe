@@ -660,12 +660,23 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
                     return n
         return None
 
-    def _hair_color_for(mi_pattern, require_melanin=False):
+    def _hair_color_for(mi_pattern, require_melanin=False, prefer=None):
         """Find an MI matching pattern, return synth color via 5.6 formula.
         If `require_melanin` is set, skip MIs that don't override
         hairMelanin (so eyelash MIs can fall through to the head hair
-        MI's color rather than getting the synth default brown)."""
-        for mi_name, params in groom_mis.items():
+        MI's color rather than getting the synth default brown).
+
+        TELEGAMEZ (telegamez#3725): `prefer` is a style substring (e.g.
+        "eyelashes_s_sparse", from the exported coverage texture) tried
+        before any other match. A build can hold instances for a style the
+        character no longer wears, and "first match" then depends on scan
+        order: tg-tom's lashes resolved to Fine on one bake and Sparse on the
+        next from the same build."""
+        ordered = list(groom_mis.items())
+        if prefer:
+            ordered = ([kv for kv in ordered if prefer in kv[0].lower()]
+                       + [kv for kv in ordered if prefer not in kv[0].lower()])
+        for mi_name, params in ordered:
             if mi_pattern not in mi_name.lower():
                 continue
             if require_melanin and "hairMelanin" not in _explicit_scalars(params):
@@ -784,7 +795,10 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
             # Lashes coloured on purpose keep that; otherwise they take the
             # head hair's EFFECTIVE colour (which is now real, see
             # _explicit_scalars), and only then the dark default.
-            color = (_hair_color_for("mi_wi_eyelashes_", require_melanin=True)
+            # The coverage texture names the style the character actually wears
+            # (T_Eyelashes_S_Sparse_Coverage -> eyelashes_s_sparse).
+            style = re.sub(r"^t_", "", stem.lower()).split("_coverage")[0]
+            color = (_hair_color_for("mi_wi_eyelashes_", require_melanin=True, prefer=style)
                      or _hair_color_for("mi_wi_hair_")
                      or [0.05, 0.03, 0.02, 1.0])
             materials.append({
@@ -837,12 +851,20 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
     for mi_name, rec in sorted(cloth_mis.items()):
         vectors = rec.get("vectors") or {}
         col = vectors.get("Color1")
-        if not col:
-            continue
         if live_mats and mi_name not in live_mats:
             _log(f"  clothing: {mi_name} declared by stage 01 but on no "
                  f"exported mesh - skipping")
             continue
+        # TELEGAMEZ (telegamez#3725): a plain Material (an accessory built by
+        # hand rather than a MetaHuman garment instance) has no Color1. Its
+        # albedo is entirely in the _BC map, so the tint is white. Before this
+        # the record was dropped and the runtime reported the mesh unmatched.
+        if not col:
+            if not (rec.get("textures") or {}):
+                continue
+            col = [1.0, 1.0, 1.0]
+            _log(f"  clothing: {mi_name} has no Color1 ({rec.get('class', 'Material')}) "
+                 f"- white tint, colour from its maps")
         scalars = rec.get("scalars") or {}
 
         # Classify the exported maps into canonical slots.
@@ -868,11 +890,14 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
         tex = {}
         for pname, relpath in sorted((rec.get("textures") or {}).items()):
             stem = os.path.splitext(os.path.basename(relpath))[0].upper()
-            if stem.endswith("_BC"):
+            # TELEGAMEZ (telegamez#3725): Fab garments spell the same three maps
+            # out in full (Roman_Soldier_1_Mi_Helmet_BaseColor / _Normal /
+            # _OcclusionRoughnessMetallic); accept both spellings.
+            if stem.endswith(("_BC", "_BASECOLOR", "_ALBEDO", "_DIFFUSE")):
                 tex["base_color"] = relpath
-            elif stem.endswith("_N"):
+            elif stem.endswith(("_N", "_NORMAL", "_NRM")):
                 tex["normal"] = relpath
-            elif stem.endswith("_ORM"):
+            elif stem.endswith(("_ORM", "_OCCLUSIONROUGHNESSMETALLIC")):
                 tex["orm"] = relpath
             else:
                 slot = _TEX_SLOT_BY_PARAM.get(
@@ -892,17 +917,39 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
                          f"no known parameter '{pname}' - kept UNMAPPED, so the "
                          f"runtime will not read it")
 
+        # TELEGAMEZ (telegamez#3725): surface flags. A masked material clips on
+        # its base-colour alpha; a two-sided one must be drawn from behind
+        # without flipping normals (the crest carries hull normals, as card
+        # grooms do). Both are facts the runtime cannot recover from the GLB,
+        # so they ride in the sidecar; opaque single-sided garments (every
+        # roster outfit) write the same record as before.
+        blend = str(rec.get("blend_mode") or "opaque").lower()
+        params = {
+            "base_color": [float(col[0]), float(col[1]), float(col[2])],
+            "roughness": float(scalars.get("Roughness", 1.0)),
+        }
+        # Only a non-opaque material gets the new fields. Every MetaHuman garment
+        # is two-sided in Unreal, so writing `double_sided` unconditionally would
+        # change the roster's sidecars (and, once the runtime honours it, their
+        # shading) for a fact the runtime already handles its own way.
+        if blend != "opaque":
+            params["blend_mode"] = blend
+            if blend == "masked":
+                params["alpha_clip"] = True
+                params["alpha_channel"] = "a"
+                params["alpha_source"] = "base_color"
+            if rec.get("two_sided"):
+                params["double_sided"] = True
         materials.append({
             "material_name": mi_name,
             "kind": "clothing",
-            "params": {
-                "base_color": [float(col[0]), float(col[1]), float(col[2])],
-                "roughness": float(scalars.get("Roughness", 1.0)),
-            },
+            "params": params,
             "textures": tex,
         })
         _log(f"  clothing: {mi_name} base_color="
-             f"({col[0]:.3f},{col[1]:.3f},{col[2]:.3f}) maps={sorted(tex)}")
+             f"({col[0]:.3f},{col[1]:.3f},{col[2]:.3f}) maps={sorted(tex)}"
+             + (f" blend={blend}" if blend != "opaque" else "")
+             + (" two_sided" if (blend != "opaque" and rec.get("two_sided")) else ""))
 
     if not materials:
         return []
@@ -2860,7 +2907,11 @@ def _merge_armatures():
     if not body_arms:
         _log("  armatures: NO full-body armature found (no hand_l) - cannot merge")
         return {"keeper": "(none)", "retargeted": 0, "joined": 0, "deleted": 0}
-    keeper = max(body_arms, key=lambda a: len(a.data.bones))
+    # TELEGAMEZ (telegamez#3725): an accessory (legacy SkeletalMesh wardrobe
+    # item) arrives with the full body skeleton too, so several armatures tie
+    # on bone count. Prefer the body's own on a tie so the keeper is the same
+    # object for a character with accessories as for one without.
+    keeper = max(body_arms, key=lambda a: (len(a.data.bones), "bodymesh" in a.name.lower()))
 
     meshes = [o for o in bpy.data.objects if o.type == "MESH"]
 

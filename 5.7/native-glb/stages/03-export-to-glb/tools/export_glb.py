@@ -467,11 +467,46 @@ def _emit_sidecar_for_viewer(char_dir, out_dir, sidecar_cap=0, drop_alpha=True):
             elif isinstance(ref, str):
                 stem = os.path.splitext(ref)[0]
                 needed.add(stem)
+    # TELEGAMEZ (telegamez#3725): per-character texture overrides. The character manifest may
+    # carry `texture_overrides: {"<stem>": "<path to png>"}`; a listed stem ships that file
+    # instead of the one Unreal exported, through the same cap and de-alpha as any other
+    # sidecar texture. This is how one Unreal asset becomes two companions that differ only in
+    # their maps (Tommy's steel armour and Tommy-Gold's polished gold, both from /Game/tommy)
+    # without touching the Fab assets in the project. Relative paths resolve against the
+    # character directory, then the workspace. A listed file that is missing is an error, not
+    # a skip: the operator asked for it, and silently shipping the export instead would look
+    # exactly like the override never existed.
+    overrides = {}
+    try:
+        overrides = json.loads((char_dir / "manifest.json").read_text(encoding="utf-8")).get(
+            "texture_overrides") or {}
+    except Exception as e:
+        _log(f"  texture_overrides: could not read the character manifest: {e}")
+    workspace_dir = char_dir.parent.parent
+
+    def _override_path(stem):
+        raw = overrides.get(stem)
+        if not raw:
+            return None
+        cand = Path(str(raw))
+        if not cand.is_absolute():
+            for base in (char_dir, workspace_dir):
+                if (base / cand).exists():
+                    cand = base / cand
+                    break
+        if not cand.exists():
+            raise RuntimeError(f"texture_overrides: {stem} -> {raw} does not exist")
+        return cand
+
     copied = 0
     before_bytes = 0
     after_bytes = 0
     for stem in sorted(needed):
         src = src_tex_dir / f"{stem}.png"
+        override = _override_path(stem)
+        if override is not None:
+            _log(f"  sidecar {stem}: override {override}")
+            src = override
         if not src.exists():
             _log(f"  sidecar miss: {src}")
             continue

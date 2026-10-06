@@ -252,6 +252,182 @@ def _process_sidecar_texture(src, dst, cap, drop_alpha_allowed):
             pass
 
 
+# Palm/sole tone match (2026-10-06, owner: "option 2"). MetaHuman Creator's body skin gives the
+# palms and soles one fixed, light pinkish-tan tone that does not follow the skin tone: on
+# tg-jules the palm area renders far lighter than the back of the same hand (measured identical
+# in Unreal's own T_Body_BC, so it is the source, not this pipeline).
+# The reference is the adjacent LIMB (forearm for a hand, calf for a foot), never the hand itself:
+# the first version measured against the hand's own darker pixels, which are already pale, and
+# stopped at the hand region, so the palm stayed light and the pale inner wrist kept a hard seam.
+# Now, over hand + forearm (feathered toward the elbow), each pixel lighter than the forearm tone
+# moves, by how palm-like its brightness is, toward a per-channel gain that maps the palm tone onto
+# forearm tone x PALM_TONE_LIGHTER: hue follows the skin, crease detail stays (a gain, not a fill).
+# Back-of-hand pixels already sit at the forearm tone and do not move. Skin whose palm is not
+# clearly lighter than its forearm (light skin) is left untouched.
+PALM_TONE_STRENGTH = float(os.environ.get("MH_PALM_TONE", "1.0"))
+PALM_TONE_LIGHTER = 1.15     # palms stay this much lighter than the forearm (real palms are lighter)
+PALM_TONE_MIN_RATIO = 1.25   # palm (hand p90) / forearm (median) luminance below this: already matches
+PALM_TONE_MASK_PX = 1024     # mask raster resolution (upsampled to the texture)
+PALM_TONE_FEATHER_PX = 6     # at mask resolution: soft edge where the zone meets the elbow/knee
+PALM_TONE_PAD_PX = 16        # at mask resolution: reach into the UV padding round the islands, which
+                             # mips/KTX2 blocks bleed into the finger edges (pale fringes otherwise)
+# MetaHuman hands/feet are mostly skinned to helper bones (index_01_palm_l, pinky_02_side_inn_l,
+# middle_01_bulge_l, ring_02_pip_l, wrist_inner_l, ...), not just the finger chain: matching only
+# the chain left the finger sides, knuckle pads and pinky edge pale (owner screenshot, 2026-10-05).
+HAND_BONE = re.compile(r"^(hand\w*_[lr]|LeftHand|RightHand|wrist_\w+_[lr]"
+                       r"|(thumb|index|middle|ring|pinky)_(0[1-3]|metacarpal)\w*_[lr])$")
+FOOT_BONE = re.compile(r"^(foot\w*_[lr]|ball\w*_[lr]|ankle\w*_[lr]|(big|index|middle|ring|little)toe_0[1-3]\w*_[lr])$")
+FOREARM_BONE = re.compile(r"^lowerarm.*_[lr]$")
+CALF_BONE = re.compile(r"^calf.*_[lr]$")
+
+
+def _body_basecolor_image(obj):
+    for slot in obj.material_slots:
+        m = slot.material
+        if not m or not m.use_nodes:
+            continue
+        bsdf = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if not bsdf or not bsdf.inputs["Base Color"].links:
+            continue
+        node = bsdf.inputs["Base Color"].links[0].from_node
+        seen = 0
+        while node is not None and node.type != "TEX_IMAGE" and seen < 8:
+            nxt = next((i.links[0].from_node for i in node.inputs if i.links), None)
+            node, seen = nxt, seen + 1
+        if node is not None and node.type == "TEX_IMAGE" and node.image:
+            return node.image
+    return None
+
+
+def _raster_uv_mask(body, faces, R):
+    """1.0 where any of `faces` covers the 0..1 UV square (rasterised at R x R)."""
+    import numpy as np
+    uvl = body.data.uv_layers[0].data
+    m = np.zeros((R, R), dtype=np.float32)
+    for poly in faces:
+        uv = np.array([uvl[li].uv[:] for li in poly.loop_indices], dtype=np.float64)
+        uv[:, 0] = np.mod(uv[:, 0], 1.0)  # UDIM 1002 -> 0..1
+        pts = uv * (R - 1)
+        for k in range(1, len(pts) - 1):  # fan-triangulate, rasterize by barycentrics
+            a, b, c = pts[0], pts[k], pts[k + 1]
+            x0, y0 = np.floor(np.minimum(np.minimum(a, b), c)).astype(int)
+            x1, y1 = np.ceil(np.maximum(np.maximum(a, b), c)).astype(int)
+            xs, ys = np.meshgrid(np.arange(max(x0, 0), min(x1, R - 1) + 1),
+                                 np.arange(max(y0, 0), min(y1, R - 1) + 1))
+            den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+            if abs(den) < 1e-12:
+                continue
+            l1 = ((b[1] - c[1]) * (xs - c[0]) + (c[0] - b[0]) * (ys - c[1])) / den
+            l2 = ((c[1] - a[1]) * (xs - c[0]) + (a[0] - c[0]) * (ys - c[1])) / den
+            inside = (l1 >= -0.02) & (l2 >= -0.02) & (1 - l1 - l2 >= -0.02)
+            m[ys[inside], xs[inside]] = 1.0
+    return m
+
+
+def _shift_reduce(m, steps, op):
+    """`steps` rounds of 4-neighbour grow (op=np.maximum) or box blur (op=None), edge-clamped
+    (np.roll would wrap the left-hand island onto the right-hand one at the texture border)."""
+    import numpy as np
+    for _ in range(steps):
+        p = np.pad(m, 1, mode="edge")
+        nb = (p[:-2, 1:-1], p[2:, 1:-1], p[1:-1, :-2], p[1:-1, 2:])
+        m = (op(op(m, nb[0]), op(op(nb[1], nb[2]), nb[3])) if op is not None
+             else (m + nb[0] + nb[1] + nb[2] + nb[3]) / 5.0)
+    return m
+
+
+def _tone_match_palms():
+    import numpy as np
+    if PALM_TONE_STRENGTH <= 0:
+        _log("palm tone: disabled (MH_PALM_TONE=0)")
+        return
+    for body in [o for o in bpy.data.objects if o.type == "MESH" and re.match(r"^Body_Mesh", o.name)]:
+        img = _body_basecolor_image(body)
+        if img is None or img.size[0] == 0:
+            _log(f"palm tone: {body.name} has no base colour image - skipped")
+            continue
+        names = {g.index: g.name for g in body.vertex_groups}
+        region = {}  # vertex -> (hand|forearm|foot|calf, side)
+        for v in body.data.vertices:
+            if not v.groups:
+                continue
+            g = names[max(v.groups, key=lambda x: x.weight).group]
+            side = "l" if g.endswith("_l") or g.startswith("Left") else "r"
+            for kind, rx in (("hand", HAND_BONE), ("forearm", FOREARM_BONE),
+                             ("foot", FOOT_BONE), ("calf", CALF_BONE)):
+                if rx.match(g):
+                    region[v.index] = (kind, side)
+                    break
+        faces = {}
+        for poly in body.data.polygons:
+            rs = {region.get(i) for i in poly.vertices}
+            for kind, side in {r for r in rs if r}:
+                # hand/foot: any vertex, so the wrist/ankle ring is in; limb: all vertices
+                if kind in ("hand", "foot") or len(rs) == 1:
+                    faces.setdefault((kind, side), []).append(poly)
+        w, h = img.size[0], img.size[1]
+        px = np.empty(w * h * 4, dtype=np.float32)
+        img.pixels.foreach_get(px)
+        px = px.reshape(h, w, 4)
+        lum = 0.2126 * px[..., 0] + 0.7152 * px[..., 1] + 0.0722 * px[..., 2]
+        R = PALM_TONE_MASK_PX
+        iy = (np.arange(h) * R // h).clip(0, R - 1)
+        ix = (np.arange(w) * R // w).clip(0, R - 1)
+        m_all = None  # every body face: the padding reach must stop at other islands
+        changed = []
+        for ext, limb in (("hand", "forearm"), ("foot", "calf")):
+            for side in ("l", "r"):
+                key = f"{ext}_{side}"
+                if (ext, side) not in faces:
+                    continue
+                if (limb, side) not in faces:
+                    _log(f"palm tone: {body.name} {key}: no {limb} faces for a reference - left as is")
+                    continue
+                m_ext = _raster_uv_mask(body, faces[(ext, side)], R)
+                m_limb = _raster_uv_mask(body, faces[(limb, side)], R)
+                hard_ext = m_ext[np.ix_(iy, ix)] > 0
+                hard_limb = (m_limb[np.ix_(iy, ix)] > 0) & ~hard_ext
+                if hard_ext.sum() < 64 or hard_limb.sum() < 64:
+                    continue
+                ref_rgb = np.median(px[hard_limb][:, :3], axis=0)
+                ref_lum = float(0.2126 * ref_rgb[0] + 0.7152 * ref_rgb[1] + 0.0722 * ref_rgb[2])
+                ext_lum = lum[hard_ext]
+                palm_lum = float(np.percentile(ext_lum, 90))
+                ratio = palm_lum / max(ref_lum, 1e-4)
+                if ratio < PALM_TONE_MIN_RATIO:
+                    _log(f"palm tone: {body.name} {key}: palm/{limb} {ratio:.2f} < {PALM_TONE_MIN_RATIO} - left as is")
+                    continue
+                palm_rgb = px[hard_ext & (lum >= np.percentile(ext_lum, 75))][:, :3].mean(0)
+                if m_all is None:
+                    m_all = _raster_uv_mask(body, body.data.polygons, R)
+                target_lum = ref_lum * PALM_TONE_LIGHTER
+                gain = ref_rgb * PALM_TONE_LIGHTER / np.maximum(palm_rgb, 1e-4)
+                own = np.maximum(m_ext, m_limb)
+                soft = _shift_reduce(own, PALM_TONE_PAD_PX, np.maximum)  # into the UV padding
+                soft = _shift_reduce(soft, PALM_TONE_FEATHER_PX, None)    # feather toward the elbow/knee
+                soft = np.minimum(soft * 2.0, 1.0) * (1.0 - ((m_all > 0) & (own == 0)))  # never other islands
+                zone = soft[np.ix_(iy, ix)]
+                t = np.clip((lum - target_lum) / max(palm_lum - target_lum, 1e-4), 0.0, 1.0)
+                t = t * t * (3.0 - 2.0 * t)  # smoothstep: no edge where pixels cross the forearm tone
+                k = (PALM_TONE_STRENGTH * zone * t)[..., None]
+                px[..., :3] = px[..., :3] * (1.0 + k * (gain - 1.0))
+                changed.append(f"{key} palm {ratio:.2f}x {limb}, gain {np.round(gain, 2).tolist()}")
+        if not changed:
+            continue
+        img.pixels.foreach_set(px.ravel())
+        # update() marks the edited buffer as the image's content. Without it, pack() went back to
+        # the (now cleared) source path, failed ("Image "" not available"), and the glTF exporter
+        # silently dropped the body's baseColorTexture - an untextured white body (2026-10-06).
+        img.update()
+        img.pack()
+        img.filepath_raw = ""
+        img.filepath = ""
+        if not img.packed_file:
+            raise RuntimeError(f"palm tone: {img.name} did not pack - the body would ship untextured")
+        _log(f"palm tone: {body.name} ({img.name}): palms/soles toned to the limb x {PALM_TONE_LIGHTER} "
+             f"at {PALM_TONE_STRENGTH:.0%}: {'; '.join(changed)}")
+
+
 def _downsample_images(max_px):
     """Scale every image > its cap down (preserving aspect). After
     scaling, repack the image so the glTF exporter uses the in-memory
@@ -771,11 +947,100 @@ OPENING_VETO_RATIO = 3.0
 # Skin that has pushed through the fabric is moved this far behind it rather than deleted, so
 # the surviving fringe of a partly-covered face is hidden instead of leaving a gap.
 TUCK_DEPTH = 0.004
+# Arm skin is never DELETED here, only tucked. Coverage is measured at bind pose, and a short sleeve
+# rides up the arm whenever the arm is raised, so skin covered at bind is on show in an overhead
+# wave. Upstream, the outfit's Body Hidden Face Map used to remove the whole upper arm at
+# MetaHuman assembly (the see-through slit on tg-drake / tg-jen, 2026-10-05); once that mask keeps
+# the arms, this pass must not delete them again - it otherwise removes every covered vertex more
+# than OPENING_VETO from the hem. A vertex counts as arm skin when at least ARM_KEEP_MIN_WEIGHT of
+# its skin weight sits on upper-arm / forearm / clavicle groups; 0.25 rather than 0.5 keeps the
+# upper armpit too (the "transparent slices in the underarm during a Shrug" case below).
+ARM_KEEP_GROUPS = re.compile(r"upperarm|lowerarm|clavicle", re.IGNORECASE)
+ARM_KEEP_MIN_WEIGHT = 0.25
+# Kept arm skin under a sleeve FOLLOWS THE SLEEVE: it takes the cloth's own skin weights at its
+# nearest cloth point, so skin and sleeve deform identically and skin that is inside the sleeve at
+# bind stays inside it in every pose. That is the one static fix the pose-dependent poke-through
+# admits: tools/solve_body_tuck.py proved bind-space OFFSETS cannot work because body and cloth
+# are skinned by different weights; this removes the difference instead of compensating for it.
+# The cloth weights fade in with distance from the opening (the hem), so skin at the hem keeps
+# its body weights and stays continuous with the visible arm below it - no seam, no hole.
+FOLLOW_RIM_START = 0.005   # m from the opening: below this, body weights only
+FOLLOW_RIM_FULL = 0.03     # m from the opening: beyond this, cloth weights only
+FOLLOW_MIN_DEPTH = 0.004   # m: cloth-following skin sits at least this far under the cloth
 
+
+
+def _follow_cloth_weights(body, follow):
+    """Blend each covered arm vertex's skin weights toward the cloth it sits under (see
+    FOLLOW_RIM_*). Runs after the fold, so both sides hold <= 4 influences; the blend is limited
+    back to the 4 largest and renormalised, which is what the exporter would do anyway."""
+    names = {g.index: g.name for g in body.vertex_groups}
+    by_name = {g.name: g for g in body.vertex_groups}
+    bmw = body.matrix_world
+    inv = bmw.inverted()
+    changed = 0
+    full = 0
+    deepened = 0
+    for vi, (garment, tri, point, _dist, rim, gverts, cloth_n) in follow.items():
+        span = FOLLOW_RIM_FULL - FOLLOW_RIM_START
+        t = min(1.0, max(0.0, (rim - FOLLOW_RIM_START) / span))
+        w = t * t * (3 - 2 * t)  # smoothstep: no kink where the blend starts or ends
+        if w <= 0.0:
+            continue
+        # Barycentric weights of the cloth point within its triangle.
+        a, b, c = (gverts[i] for i in tri)
+        v0, v1, v2 = b - a, c - a, point - a
+        d00, d01, d11 = v0.dot(v0), v0.dot(v1), v1.dot(v1)
+        d20, d21 = v2.dot(v0), v2.dot(v1)
+        den = d00 * d11 - d01 * d01
+        if abs(den) < 1e-18:
+            bary = (1.0, 0.0, 0.0)
+        else:
+            bv = (d11 * d20 - d01 * d21) / den
+            bw = (d00 * d21 - d01 * d20) / den
+            bary = (1.0 - bv - bw, bv, bw)
+        gnames = {g.index: g.name for g in garment.vertex_groups}
+        cloth: dict[str, float] = {}
+        for corner, lam in zip(tri, bary):
+            for g in garment.data.vertices[corner].groups:
+                cloth[gnames[g.group]] = cloth.get(gnames[g.group], 0.0) + lam * g.weight
+        skin = {names[g.group]: g.weight for g in body.data.vertices[vi].groups}
+        mix = {k: (1 - w) * skin.get(k, 0.0) + w * cloth.get(k, 0.0) for k in set(skin) | set(cloth)}
+        top = sorted(((k, x) for k, x in mix.items() if x > 1e-6), key=lambda kv: -kv[1])[:4]
+        total = sum(x for _, x in top)
+        if total <= 0:
+            continue
+        for k in skin:
+            by_name[k].remove([vi])
+        for k, x in top:
+            g = by_name.get(k) or body.vertex_groups.new(name=k)
+            by_name[k] = g
+            g.add([vi], x / total, "REPLACE")
+        changed += 1
+        full += w >= 0.999
+        # Guaranteed depth. Skin that moves exactly like the cloth but sits a fraction of a mm
+        # under it still flickers through (z-fighting). With matched weights a bind-space offset
+        # rotates WITH the cloth, so a depth set here holds in every pose - which is exactly what
+        # the disproven bind-space tuck lacked (its weights did not match). Scaled by w so the
+        # body-weighted skin at the hem is not moved.
+        co = bmw @ body.data.vertices[vi].co
+        n = cloth_n.normalized()
+        depth = (point - co).dot(n)  # > 0: skin is inside the cloth
+        want = FOLLOW_MIN_DEPTH * w
+        if depth < want:
+            body.data.vertices[vi].co = inv @ (co - n * (want - depth))
+            deepened += 1
+    _log(f"hide-body: {body.name}: {changed} covered arm verts now follow the cloth's weights "
+         f"({full} fully, rest blended toward the hem); {deepened} set >= "
+         f"{FOLLOW_MIN_DEPTH * 1000:.0f}mm under it")
 
 
 def _hide_body_under_clothing():
-    """Delete body faces that sit under a garment, so skin cannot poke through it.
+    """Delete body faces that sit under a garment, so skin cannot poke through it - except arm skin.
+
+    NOTE (2026-10-05): the section "Why nothing is deleted" below describes the intent, not the
+    code. Covered faces away from an opening ARE deleted (bmesh.ops.delete at the end of this
+    function). Arm skin is exempt - see ARM_KEEP_GROUPS - because a raised arm exposes it.
 
     ## The measurement that justifies this
 
@@ -825,6 +1090,14 @@ def _hide_body_under_clothing():
 
     for body in bodies:
         covered = set()
+        # Arm skin: tucked like any other skin, never deleted (ARM_KEEP_GROUPS).
+        arm_groups = {g.index for g in body.vertex_groups if ARM_KEEP_GROUPS.search(g.name)}
+        arm_keep = {
+            v.index for v in body.data.vertices
+            if sum(g.weight for g in v.groups if g.group in arm_groups) >= ARM_KEEP_MIN_WEIGHT
+        }
+        spared = set()
+        follow: dict[int, tuple] = {}  # arm vert -> (garment, tri, point, dist, rim, garment verts)
         for garment in garments:
             gm = garment.data
             gmw = garment.matrix_world
@@ -850,6 +1123,29 @@ def _hide_body_under_clothing():
                 for i, vi in enumerate(boundary):
                     kd.insert(verts[vi], i)
                 kd.balance()
+            # REAL openings for the cloth-follow fade: the same boundary test after welding
+            # vertices by position. The imported garment is split along every UV seam, so the raw
+            # test above also reports the seams as openings - measured on the HS_Casual polo:
+            # 4848 raw boundary edges, 444 after welding. With the raw set, armpit skin sat
+            # "next to an opening" (the armhole seam), got no cloth weights, and kept poking.
+            # (Left out of the deletion/tuck veto above on purpose: changing that changes every
+            # character, and is its own decision.)
+            weld_id: dict[tuple, int] = {}
+            weld = [weld_id.setdefault(tuple(round(c, 5) for c in gv.co), gv.index) for gv in gm.vertices]
+            open_use: dict[tuple[int, int], int] = {}
+            for poly in gm.polygons:
+                idx = [weld[i] for i in poly.vertices]
+                for k in range(len(idx)):
+                    a, b = idx[k], idx[(k + 1) % len(idx)]
+                    if a != b:
+                        key = (min(a, b), max(a, b))
+                        open_use[key] = open_use.get(key, 0) + 1
+            openings = {v for (a, b), n in open_use.items() if n == 1 for v in (a, b)}
+            kd_open = KDTree(len(openings)) if openings else None
+            if kd_open is not None:
+                for i, vi in enumerate(openings):
+                    kd_open.insert(verts[vi], i)
+                kd_open.balance()
 
             bmw = body.matrix_world
             inv = bmw.inverted()
@@ -893,13 +1189,24 @@ def _hide_body_under_clothing():
                     covered_here = outside
                 if not covered_here:
                     continue
+                if v.index in arm_keep:
+                    # Remember the cloth this arm skin sits under, for the weight transfer below.
+                    near = bvh.find_nearest(co, RAY_REACH)
+                    if near is not None and near[3] is not None:
+                        rim = kd_open.find(near[0])[2] if kd_open is not None else RAY_REACH
+                        prev = follow.get(v.index)
+                        if prev is None or near[3] < prev[3]:
+                            follow[v.index] = (garment, tris[near[2]], near[0], near[3], rim, verts, near[1])
                 # Deletable only well away from an opening. Near one, the skin is legitimately on
                 # show - a chin in front of a collar, a forearm below a cuff - and removing it
                 # was what opened holes under the jaw and through the underarm during a Shrug.
                 # It can still be TUCKED, which is what stops it poking through the fabric.
                 if not near_opening and v.index not in covered:
-                    covered.add(v.index)
-                    hits += 1
+                    if v.index in arm_keep:
+                        spared.add(v.index)
+                    else:
+                        covered.add(v.index)
+                        hits += 1
                 # Only skin that is OUTSIDE the fabric moves. Anything already inside is left
                 # exactly where it is - pulling it out to meet the cloth would inflate the body
                 # to fill the garment.
@@ -931,6 +1238,12 @@ def _hide_body_under_clothing():
             _log(f"hide-body: {garment.name} covers {hits} more {body.name} verts, "
                  f"tucked {tucked} that had pushed through it")
 
+        if spared:
+            _log(f"hide-body: {body.name}: kept {len(spared)} covered arm verts "
+                 f"(of {len(arm_keep)} arm-weighted) - tucked, not deleted")
+        # Cloth-follow weights (_follow_cloth_weights) are deliberately NOT applied. Measured on the
+        # tg-drake-armfix pilot 2026-10-05: the blend band crumples the VISIBLE inner upper arm just
+        # below the hem on a raised arm, and the armpit specks persisted. Kept for reference.
         if not covered:
             continue
         # Peel rings off the covered set so the cut edge retreats under the fabric, away from
@@ -1484,6 +1797,9 @@ def main():
 
         # Skin that is under cloth should not be drawn at all.
         _hide_body_under_clothing()
+
+        # Before the downsample, so the tone match works on the full-resolution source.
+        _tone_match_palms()
 
         flipped = _flip_normal_maps_g()
         _log(f"flipped G on {flipped} normal maps (DX -> GL)")

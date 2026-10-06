@@ -617,7 +617,12 @@ async function adminCall(target, method, apiPath, json) {
     ...(json === undefined ? {} : { body: JSON.stringify(json) }),
   });
   const body = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, body: unwrapApi(body), error: body?.error ?? body?.message ?? null };
+  const err = body?.error ?? body?.message ?? null;
+  const code = typeof body?.code === 'string' ? ` [${body.code}]` : '';
+  return {
+    ok: r.ok, status: r.status, body: unwrapApi(body),
+    error: err === null ? null : (typeof err === 'string' ? err : JSON.stringify(err)) + code,
+  };
 }
 
 async function adminGet(target, apiPath) {
@@ -1158,7 +1163,7 @@ const server = http.createServer(async (req, res) => {
           const now = back?.body?.companion?.avatarId ?? back?.body?.avatarId ?? null;
           if (!r.ok || now !== rep.id) {
             say(`  companion ${c.name}: reassign failed (${r.status}${r.error ? ` ${r.error}` : ''}${r.ok ? `, now ${now}` : ''}) — stopped\n`);
-            journal.push(`- companion \`${c.id}\` (${c.name}): reassign FAILED`, '');
+            journal.push(`- companion \`${c.id}\` (${c.name}): reassign FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}${r.ok ? `, read back avatarId ${now}` : ''}`, '');
             return finish(1);
           }
           say(`  companion ${c.name} -> ${rep.slug}\n`);
@@ -1168,7 +1173,7 @@ const server = http.createServer(async (req, res) => {
           const r = await adminCall(target, 'PUT', `/api/admin/talk-shows/${s.showId}/companions/${s.slotId}`, { avatarId: rep.id });
           if (!r.ok) {
             say(`  talk show ${s.showName} / ${s.label}: reassign failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`);
-            journal.push(`- talk-show slot \`${s.slotId}\` (${s.showName} / ${s.label}): reassign FAILED`, '');
+            journal.push(`- talk-show slot \`${s.slotId}\` (${s.showName} / ${s.label}): reassign FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`, '');
             return finish(1);
           }
           say(`  talk show ${s.showName} / ${s.label} -> ${rep.slug}\n`);
@@ -1177,7 +1182,7 @@ const server = http.createServer(async (req, res) => {
 
         if (a.status !== 'archived') {
           const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${a.id}`);
-          if (!r.ok) { say(`  archive failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push('- archive FAILED', ''); return finish(1); }
+          if (!r.ok) { say(`  archive failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push(`- archive FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`, ''); return finish(1); }
           say('  archived\n');
           journal.push(`- archived. Undo: PUT /api/admin/avatars/${a.id} {"status":"${a.status ?? 'active'}","isActive":${a.isActive}}`);
         } else {
@@ -1186,7 +1191,7 @@ const server = http.createServer(async (req, res) => {
 
         if (item.hard) {
           const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${a.id}?hard=true`);
-          if (!r.ok) { say(`  permanent delete failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push('- permanent delete FAILED', ''); return finish(1); }
+          if (!r.ok) { say(`  permanent delete failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push(`- permanent delete FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`, ''); return finish(1); }
           say(`  deleted permanently (row and avatars/${a.id}/)\n`);
           journal.push(`- DELETED PERMANENTLY: the row and avatars/${a.id}/ in S3. No undo.`);
         }

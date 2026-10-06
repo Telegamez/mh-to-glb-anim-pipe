@@ -272,8 +272,17 @@ function envChanged() {
   $('prodWarn').innerHTML = e && e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
     : '';
+  // telegamez#3662: reset to meshopt on every switch so a choice made for panda never carries into
+  // an upload to beta.
+  $('build').value = 'meshopt';
+  buildChanged();
   renderGrid();
 }
+function buildChanged() {
+  $('buildNote').textContent = $('build').value === 'ktx2'
+    ? "ktx2: this environment's web app must include telegamez#4551" : '';
+}
+$('build').onchange = buildChanged;
 $('env').onchange = envChanged;
 
 async function scan() {
@@ -425,7 +434,7 @@ $('compress').onclick = async () => {
   for (const c of picked()) {
     log('\n' + c.id + '\n');
     const out = await streamTo('/api/compress?root=' + encodeURIComponent(ROOT),
-      { characters: [c.id], mode: 'meshopt' });
+      { characters: [c.id], mode: $('build').value });   // meshopt or ktx2, each in its own folder
     if (!out || !/\[console\] exit 0\b/.test(out)) { log('\nStopped.\n'); break; }
   }
   await scan();
@@ -528,15 +537,17 @@ $('mkRecord').onclick = async () => {
 $('pubModel').onclick = async () => {
   const list = picked();
   const e = target();
-  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?\n\nUploading the meshopt build.')) return;
+  const build = $('build').value;
+  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?\n\nUploading the ' + build + ' build.')) return;
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Date.now()).slice(-4);
   setLog('');
-  log('uploading the meshopt build — made or refreshed first when needed\n');
+  log('uploading the ' + build + ' build — made or refreshed first when needed\n');
   for (const c of list) {
     log('\n' + c.id + '\n');
     if (!ROWS[c.id] || !ROWS[c.id].avatarId) { log('  no avatar record here yet\n'); break; }
     const out = await streamTo('/api/publish?root=' + encodeURIComponent(ROOT), {
       env: env(), characters: [c.id], bakeHashSuffix: stamp, avatarIds: { [c.id]: ROWS[c.id].avatarId },
+      build,
     });
     const m = out && out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+\.glb/);
     if (!m) { log('\nNo published path came back. Stopped.\n'); break; }

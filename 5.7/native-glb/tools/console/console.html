@@ -158,8 +158,16 @@
       <!-- Before Upload, because Upload cannot run without the row this makes. -->
       <button id="mkRecord" disabled>Create record</button>
       <button id="pubModel" disabled>Upload model</button>
-      <!-- No source to choose (telegamez#3728): Upload sends the meshopt build, making or
-           refreshing it first when it has to. -->
+      <!-- telegamez#3728: Upload sends the meshopt build, making or refreshing it first when it has
+           to. telegamez#3662: or the ktx2 build (KTX2 browser model + PNG compositor model). Compress
+           makes the chosen build. -->
+      <label class="hint" style="display:inline">build
+        <select id="build" style="width:auto">
+          <option value="meshopt">meshopt</option>
+          <option value="ktx2">ktx2</option>
+        </select>
+      </label>
+      <span class="hint" id="buildNote" style="display:inline"></span>
       <button id="pubPreviews" disabled>Upload previews</button>
       <button id="goLive" class="go" disabled>Go live</button>
       <button id="verify" class="small" disabled>Check</button>

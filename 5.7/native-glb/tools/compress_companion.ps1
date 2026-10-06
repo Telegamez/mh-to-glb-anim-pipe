@@ -7,9 +7,13 @@
   publish_to_cdn.ps1 — one script that does the job, callable from the GUI, from CI, or by
   hand, with no second copy of the logic in the console.
 
-  Writes to <root>/_compressed/<char>/, NEVER inside the character directory. publish_to_cdn.ps1
+  Writes to <root>/_compressed/<char>/ (none, meshopt), <root>/_compressed_ktx2/<char>/ (ktx2) or
+  <root>/_compressed_full/<char>/ (full), NEVER inside the character directory. publish_to_cdn.ps1
   uploads its -Source recursively, so a compressed copy nested inside the character folder
   would be published alongside the original and double the payload.
+
+  ktx2 has its own folder (telegamez#3662) so building it never replaces the meshopt build that
+  every bake ends with and that publishes to environments without the KTX2 runtime.
 
 .PARAMETER Char
   Character id, matching the folder name and <char>.glb inside it.
@@ -78,7 +82,8 @@ if (-not (Test-Path $core)) { throw "compress_companion.mjs not found beside $he
 $src = Join-Path $Root $Char
 if (-not (Test-Path $src)) { throw "character folder not found: $src" }
 
-$out = Join-Path (Join-Path $Root '_compressed') $Char
+$outDir = if ($Mode -eq 'none' -or $Mode -eq 'meshopt') { '_compressed' } else { "_compressed_$Mode" }
+$out = Join-Path (Join-Path $Root $outDir) $Char
 
 $toolArgs = @($core, '--src', $src, '--out', $out, '--mode', $Mode)
 if ($TexturePx -gt 0) { $toolArgs += @('--texture-px', $TexturePx) }

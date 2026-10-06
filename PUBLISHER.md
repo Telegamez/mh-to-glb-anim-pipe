@@ -22,8 +22,8 @@ page is for the things it can't show you.
 no repo, no install, nothing to build. They need Node.js and PowerShell 7 and nothing else.
 
 One exception, and only if they use **Compress**: the first run fetches `gltf-transform`
-through `npx`, so that machine needs to be online once. `full` mode additionally needs the
-`ktx` CLI installed; `meshopt` mode — the publishable one — does not.
+through `npx`, so that machine needs to be online once. `ktx2` and `full` additionally need the
+`ktx` CLI (KTX-Software 4.4+) installed; `meshopt` does not.
 
 The first time, press **Browse** and point it at wherever the character folders are. It marks
 which folders hold characters as you go, so you are looking for the one that says *6 characters*
@@ -145,10 +145,33 @@ expression targets, compared against the original through the real runtime with 
 profile, hair calibration and clothing textures live, and indistinguishable. Textures are not
 touched; stage 03 already caps and de-alphas them, which is where most of the weight was.
 
-`full` (meshopt plus KTX2 textures) still exists in the compressor for measurement and still
-cannot be published: nothing in the web app loads KTX2, so it would upload cleanly, report
-success everywhere, and render nothing. Upload remakes such a build as meshopt rather than
-sending it. WebP sidecar textures are held the same way until one is confirmed in a room.
+`full` (KTX2 textures only) exists in the compressor for measurement and cannot be published:
+the native compositor reads the same files and cannot decode KTX2. WebP sidecar textures are
+held until one is confirmed in a room.
+
+## The ktx2 build (telegamez#3662)
+
+A lighter build for phones: KTX2 textures stay compressed on the GPU, and unused blendshapes are
+dropped. On tg-drake it takes a companion's GPU memory from ~314 MB (meshopt, PNG) to ~108 MB and
+one visit's download from 41.6 MB to 24.5 MB. It carries **two models**:
+
+- `<character>.glb` for the browser, with KTX2 textures;
+- `<character>.compositor.glb` for the TV and program output, with PNG textures, because the
+  native compositor cannot decode KTX2.
+
+It lives in its own folder, `_compressed_ktx2/<character>/`, so making it never replaces the
+meshopt build. Upload sends both models, the PNGs with a `.ktx2` beside each, and the
+`variants` that route the compositor to its own model (the platform writes them into the
+avatar's `manifest.json`).
+
+**Choose it with the `build` selector** next to Publish / Upload model. Only pick it for an
+environment whose web app includes telegamez#4551 (panda once `dev` is deployed there); on an
+older web app the browser cannot load it. The selector resets to meshopt whenever you switch
+environment, and a production publish asks for confirmation naming the build.
+
+The size column shows the ktx2 build on its own line when there is one. The journal records
+`COMPRESSED ktx2 build (_compressed_ktx2/)` and the manifest that went up. Go live and roll back
+work exactly as for meshopt: the row points at `<character>.glb` either way.
 
 ## Publishing doesn't go live
 

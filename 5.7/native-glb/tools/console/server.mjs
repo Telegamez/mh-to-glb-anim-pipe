@@ -128,7 +128,10 @@ const COMPRESSED_DIR = '_compressed';
 // the sidecar's `texture_format`, so a WebP build uploads cleanly and renders hair untextured.
 // Same shape as the meshopt flag: the record of what has been confirmed in a room, not a bypass.
 const WEBP_RUNTIME_READY = process.env.TG_WEBP_RUNTIME_READY === '1';
-const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);
+
+/** Where each build kind lives. ktx2 has its own folder so it never replaces the meshopt build. */
+const BUILD_DIRS = { meshopt: COMPRESSED_DIR, ktx2: `${COMPRESSED_DIR}_ktx2` };
+const compressedPath = (root, char, build = 'meshopt') => path.join(root, BUILD_DIRS[build] ?? COMPRESSED_DIR, char);
 
 /**
  * The package's newest content time: the model, the sidecar and the clothing textures. The
@@ -154,24 +157,28 @@ function contentTimeOf(dir, name) {
  * what publish wants - a meshopt build no older than the package, with textures the runtime
  * loads - and anything else is compressed again before upload.
  */
-function compressedInfo(root, name, contentTime) {
-  const dir = compressedPath(root, name);
+function compressedInfo(root, name, contentTime, build = 'meshopt') {
+  const dir = compressedPath(root, name, build);
   const glb = path.join(dir, `${name}.glb`);
   if (!fs.existsSync(glb)) return null;
   let mode = 'unknown';
   let textureFormat = 'png';
+  let variants = null;
   try {
     const cm = JSON.parse(fs.readFileSync(path.join(dir, 'compression_manifest.json'), 'utf8'));
     mode = cm.mode || 'unknown';
     textureFormat = cm.texture_format || 'png';
+    variants = cm.variants || null;
   } catch { /* a build without a readable manifest still has a size worth showing */ }
   const stale = fs.statSync(glb).mtimeMs < contentTime;
-  const publishable = (mode === 'none' || mode === 'meshopt')
-    && (textureFormat !== 'webp' || WEBP_RUNTIME_READY);
+  const publishable = build === 'ktx2'
+    ? mode === 'ktx2' && Boolean(variants?.room && variants?.compositor)
+      && fs.existsSync(path.join(dir, variants.compositor))
+    : (mode === 'none' || mode === 'meshopt') && (textureFormat !== 'webp' || WEBP_RUNTIME_READY);
   return {
-    dir, mode, textureFormat, stale, publishable,
+    dir, build, mode, textureFormat, variants, stale, publishable,
     mb: Math.round(payloadBytes(dir, name) / 1048576),
-    current: mode === 'meshopt' && !stale && publishable,
+    current: mode === build && !stale && publishable,
   };
 }
 
@@ -356,6 +363,8 @@ function scanRoot(root) {
     // publish remakes a missing or stale one before uploading, so the page reports it rather
     // than gating on it.
     const compressed = compressedInfo(root, name, contentTimeOf(dir, name));
+    // telegamez#3662: the ktx2 build, in its own folder; reported, never required.
+    const compressedKtx2 = compressedInfo(root, name, contentTimeOf(dir, name), 'ktx2');
 
     const problems = [];
     if (!sidecar) problems.push('no mh_materials.json — would render untextured');
@@ -370,7 +379,7 @@ function scanRoot(root) {
     } catch { /* never bootstrapped here, or an older manifest */ }
 
     characters.push({
-      id: name, dir, mb, payloadMb, sidecar, textures, strayManifest, previews, body, compressed,
+      id: name, dir, mb, payloadMb, sidecar, textures, strayManifest, previews, body, compressed, compressedKtx2,
       ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
     });
   }
@@ -447,7 +456,7 @@ function readBody(req) {
 
 const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
 
-function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, compressed }) {
+function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, compressed, build = 'meshopt' }) {
   const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
   const modelKey = grab(/modelKey:\s*(\S+)/);
   const files = grab(/OK - (\d+ files published)/);
@@ -461,7 +470,13 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
   // Which bytes went up. A compressed publish and an uncompressed one produce the same
   // model key and the same SQL, so nothing else in this record distinguishes them — and
   // "why is this companion 87 MB again" is answered here or not at all.
-  out.push(`- source  ${compressed ? 'COMPRESSED build (_compressed/)' : 'uncompressed bake'}`);
+  out.push(`- source  ${compressed ? `COMPRESSED ${build} build (${BUILD_DIRS[build] ?? COMPRESSED_DIR}/)` : 'uncompressed bake'}`);
+  // telegamez#3662: a ktx2 publish also writes manifest.json routing the compositor to its own
+  // PNG model. Recorded because rolling back the row does not remove it from the old prefix.
+  if (build === 'ktx2') {
+    const manifest = grab(/avatar manifest:\s*(\{.*\})/);
+    if (manifest) out.push(`- manifest \`${manifest}\``);
+  }
   const wasPath = previous?.modelPath ?? null;
   const wasStatus = previous?.status ?? null;
   out.push(`- was     ${wasPath ? `\`${wasPath}\`` : '(no model on the row)'}${wasStatus ? `, status \`${wasStatus}\`` : ''}`);
@@ -994,11 +1009,13 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      // meshopt only (telegamez#3728). `none` saves nothing now that stage 03 caps the sidecar
-      // textures, and `full` cannot be published; offering either is a button that does nothing
-      // and a button that makes something unusable.
-      if (mode && mode !== 'meshopt') {
-        return send(res, 400, { error: `only meshopt builds are made here (asked for ${mode})` });
+      // meshopt (telegamez#3728) or ktx2 (telegamez#3662). `none` saves nothing now that stage 03
+      // caps the sidecar textures, and `full` cannot be published; offering either is a button
+      // that does nothing and a button that makes something unusable. Building ktx2 is not gated:
+      // it writes its own folder and replaces nothing.
+      const build = mode || 'meshopt';
+      if (build !== 'meshopt' && build !== 'ktx2') {
+        return send(res, 400, { error: `only meshopt and ktx2 builds are made here (asked for ${mode})` });
       }
       // This reads the character directory a bake is writing. Compressing mid-bake would
       // produce a build of a half-written character and report success, so it waits like a
@@ -1008,18 +1025,25 @@ const server = http.createServer(async (req, res) => {
       // at a character anyone can name.
       const char = characters[0];
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      const args = ['-Char', char, '-Root', root, '-Mode', 'meshopt'];
+      const args = ['-Char', char, '-Root', root, '-Mode', build];
       if (Number(texturePx) > 0) args.push('-TexturePx', String(Number(texturePx)));
       return stream(res, COMPRESSOR, args);
     }
 
     if (url.pathname === '/api/publish' && req.method === 'POST') {
-      const { env, characters, bakeHashSuffix, avatarIds } = await readBody(req);
+      const { env, characters, bakeHashSuffix, avatarIds, build: requested } = await readBody(req);
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
+      }
+      // telegamez#3662: which build goes up. meshopt unless the page asks for ktx2. A ktx2 build
+      // needs the environment's web app to include telegamez#4551; the page says so beside the
+      // selector, and production asks for confirmation naming the build.
+      const build = requested || 'meshopt';
+      if (build !== 'meshopt' && build !== 'ktx2') {
+        return send(res, 400, { error: `unknown build: ${requested}` });
       }
       if (!/^[A-Za-z0-9._-]+$/.test(bakeHashSuffix || '')) {
         return send(res, 400, { error: 'bake hash suffix must be [A-Za-z0-9._-]' });
@@ -1040,8 +1064,8 @@ const server = http.createServer(async (req, res) => {
       // (older than the model, the sidecar or a texture) or one made in another mode is remade
       // here first, so a publish is one action and the journal can only ever say "compressed".
       // A page that still sends `useCompressed` is ignored: there is no other source.
-      let build = compressedInfo(root, char, contentTimeOf(pkgDir, char));
-      if (!build || !build.current) {
+      let made = compressedInfo(root, char, contentTimeOf(pkgDir, char), build);
+      if (!made || !made.current) {
         if (!fs.existsSync(COMPRESSOR)) {
           return send(res, 400, {
             error: `compress_companion.ps1 is not beside this console and ${char} has no current meshopt build`,
@@ -1050,16 +1074,17 @@ const server = http.createServer(async (req, res) => {
         // Compressing reads the package a bake may be writing, so it waits like a second bake.
         if (busy) return send(res, 409, { error: `${busy} is baking — one at a time` });
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-        const why = !build ? 'no compressed build yet'
-          : build.stale ? 'compressed build is older than the package'
-            : `compressed build is mode="${build.mode}" textures="${build.textureFormat}"`;
+        const why = !made ? `no ${build} build yet`
+          : made.stale ? `${build} build is older than the package`
+            : `${build} build is mode="${made.mode}" textures="${made.textureFormat}"`
+              + (build === 'ktx2' && !made.publishable ? ' without its compositor variant' : '');
         const { code } = await runStep(res, {
           label: `Compress — ${char} (${why})`,
           cmd: 'pwsh',
-          args: ['-NoProfile', '-File', COMPRESSOR, '-Char', char, '-Root', root, '-Mode', 'meshopt'],
+          args: ['-NoProfile', '-File', COMPRESSOR, '-Char', char, '-Root', root, '-Mode', build],
         });
-        build = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char)) : null;
-        if (!build || !build.current) {
+        made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char), build) : null;
+        if (!made || !made.current) {
           res.write(`\n[console] compress failed (exit ${code}) — nothing was uploaded\n[console] exit 1\n`);
           res.end();
           return undefined;
@@ -1068,13 +1093,13 @@ const server = http.createServer(async (req, res) => {
 
       return stream(res, PUBLISHER, [
         '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
-        '-Source', build.dir,
+        '-Source', made.dir,
         '-BakeHash', `${char}-${bakeHashSuffix}`,
       ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
         env, apiBase: target.apiBase, char, avatarId,
         bakeSuffix: bakeHashSuffix, bakeHash: `${char}-${bakeHashSuffix}`,
         previous: session.prior[`${env}/${char}`] ?? null,
-        output, code, compressed: true,
+        output, code, compressed: true, build,
       }));
     }
 

@@ -325,6 +325,81 @@ loader work, and is the bulk of the win), verify on panda, then do KTX2 with the
 
 change. Panda is where new work is proven; beta is production.
 
+## KTX2: `--mode ktx2` (telegamez#3662)
+
+The two blockers above are lifted in telegamez branch `3662-ktx2-browser-loader`: one shared
+`KTX2Loader` on every companion load path, and `browser_texture_format: "ktx2"` in the sidecar
+telling the browser to fetch each texture's `.ktx2` sibling.
+
+**Why a second mode rather than fixing `full`.** The native compositor reads the same published
+files and decodes textures with the `image` crate (PNG/WebP only). A KTX2-only build renders in
+a room and fails on the TV and program output. `ktx2` therefore carries both:
+
+| Output | For |
+|---|---|
+| `<id>.glb` — KTX2 textures inside, meshopt | the browser (`variants.room`) |
+| `<id>.compositor.glb` — PNG textures inside, meshopt, same as the `meshopt` build | the compositor (`variants.compositor`) |
+| `textures/*.png` + a `.ktx2` sibling for each | PNG for the compositor, KTX2 for the browser |
+| `mh_materials.json` — paths unchanged, plus `browser_texture_format: "ktx2"` | both |
+| `compression_manifest.json` — records `variants: { room, compositor }` | the publisher |
+
+**Publishing it needs the avatar manifest.** The publisher must send `variants` as the upload
+route's `manifest` field (it refuses a `manifest.json` sent as a file). Without
+`variants.compositor` the compositor falls back to the room model and cannot decode it. That
+publish step does not exist yet.
+
+**Colour or data.** UASTC with a linear transfer for every data map, ETC1S sRGB for colour.
+Model: `normalTexture`, `occlusionTexture`, `metallicRoughnessTexture`, `specularTexture`
+(`KHR_materials_specular` intensity, on skin, body and teeth). Sidecar, by stem: `_N`, `_ORM`,
+`_Tangent`, `_Attribute` (hair/brow card coverage and depth) and `_Coverage` (eyelashes). The
+earlier `full` mode sent `_Attribute`, `_Coverage` and `specularTexture` to ETC1S as sRGB.
+
+Measured on `tg-drake` (2026-10-05 rebake): per browser visit 72.27 MB → 27.33 MB (room model
+48.39 → 12.51 MB, sidecar 23.89 MB PNG → 14.82 MB KTX2). The compositor model is 17.67 MB.
+
+**Visual check: `/dev/model-ab`, A = meshopt+PNG, B = this build.** No PNG requested from
+the KTX2 directory, every `.ktx2` and the transcoder 200, no console errors. Face crops matched
+frame for frame: mean difference 1.8–4.4/255. Desktop GPU (S3TC only), so the transcode target
+was BC, not the ASTC/ETC2 a phone gets. A phone check is still required.
+
+**Morph pruning (room model, on by default; `--prune-morphs off` to disable).** MetaHuman gives
+every face mesh all 72 channels and three.js uploads every target as float32 RGBA texels whether it
+moves anything or not. `prune-morphs` (in `tools/gltf-transform.config.mjs`) drops, per mesh, the
+targets whose deltas are under half a meshopt quantization step, i.e. stored as zeros in the
+published build anyway. A name that would vanish from every mesh (`viseme_sil`) is kept on the
+smallest mesh that had it, so name lookups still find it. tg-drake: 571 -> 300 targets (teeth 18/72,
+eyes 13/72, lashes 19/72, Lacrimal 20/72, EyeAO 32/72, brows 62/67, Hide 65/72, head 71/72),
+three.js morph texture 83.9 -> 67.3 MB. Safe because `writeFaceMorph` looks targets up by name per
+mesh. Checked on `/dev/model-ab`: no missing-morph warnings, and pruned vs unpruned differs by
+1.2-1.9/255, inside the 1.1-4.8/255 the same build differs from itself between runs.
+
+**Step 2: morph normals and lean textures (room model; defaults on in `ktx2`).** Judged with a
+fixed expression (`/dev/model-ab?pose=...`, telegamez), because an idle face never exercises crease
+shading. Three poses on tg-drake: smile with cheek squint, frown with sneer, open mouth.
+
+| Build | Morph tex | Model tex | Sidecar tex | GPU total | Verdict |
+|---|---|---|---|---|---|
+| KTX2 only | 83.9 | 24.0 | 33.4 | 141.3 MB | baseline |
+| + prune (step 1) | 67.3 | 24.0 | 33.4 | 124.7 MB | identical |
+| + `--morph-normals small` + lean textures (**default**) | 60.0 | 14.4 | 33.4 | **107.8 MB** | no visible change |
+| + `--morph-normals drop` | 33.6 | 14.4 | 33.4 | 81.4 MB | smile cheeks and frown creases shade shallower up close |
+
+- `small`: diff shows only head-motion outlines on the face; the open mouth's teeth/tongue shade
+  marginally differently (rigid jaw motion with rest normals). Accepted.
+- Lean textures: teeth 512, eyes 512, body specular/roughness 128. Teeth were tried at 256 and
+  rejected: the tongue shares the teeth material and lost its surface detail with the mouth open.
+- `drop`: real, visible up close. Kept opt-in for companions drawn small (a crowd, the back row).
+- Numbers are three.js GPU estimates (float32 RGBA morph texels; 1 byte/px + mips for
+  ASTC/BC). The pose comparison froze morphs but not bones, so pixel diffs between runs carried
+  head-motion noise (up to 24.8/255 same-build); the verdicts are by eye on the diff images.
+- Next largest item: the sidecar hair/brow/lash atlases (four at 2048 px, 33 MB).
+
+**Harness trap found doing this.** Load two DIFFERENT builds into `/dev/model-ab` and only the
+one that attaches first casts face and hair shadows: `attachShadowKey` returns early once the
+scene has a key, so the second model's head and hair never get `castShadow`. KTX2 transcoding
+makes the KTX2 build attach second every time, which looked exactly like "KTX2 loses the braid
+shadows". Compare each build loaded into BOTH slots, one run per build.
+
 ## WebP sidecar textures (telegamez#3701)
 
 `compress_companion.mjs --texture-format webp` (modes `none` and `meshopt`) converts the sidecar

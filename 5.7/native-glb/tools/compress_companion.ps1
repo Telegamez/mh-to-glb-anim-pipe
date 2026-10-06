@@ -28,11 +28,29 @@
             original through the real runtime -- material profile, hair calibration and
             clothing textures live -- and indistinguishable. This is the build that ships
             (telegamez#3728): the bake makes it and Upload remakes a stale one. No flag.
-  full    - meshopt plus KTX2 textures. NOT loadable by the runtime: nothing registers a
-            KTX2Loader, so it uploads cleanly and renders nothing. Measurement only.
+  ktx2    - the publishable KTX2 build (telegamez#3662): a KTX2 room model, a PNG
+            <char>.compositor.glb for the native compositor, and every sidecar PNG kept beside
+            a .ktx2 sibling. Publish it with the avatar manifest variants recorded in
+            compression_manifest.json, or the compositor falls back to the KTX2 room model.
+  full    - meshopt plus KTX2 textures only. Browser-only: the native compositor reads the
+            same files and cannot decode KTX2. Measurement only.
+
+.PARAMETER NoPruneMorphs
+  `ktx2` only. Keep every morph target on the room model. By default the room model drops,
+  per mesh, the targets the published build stores as zeros (teeth keep 18 of 72, eyes 13):
+  lossless, ~84 -> ~67 MB of three.js morph texture on tg-drake. Use this for an A/B.
+
+.PARAMETER MorphNormals
+  `ktx2` only. small (default): drop morph-target normals on every mesh but the head, no
+  visible change. drop: the head too, ~26 MB less GPU memory but shallower expression creases
+  up close. keep: for an A/B.
+
+.PARAMETER NoLeanTextures
+  `ktx2` only. Keep teeth/eye maps at full size and the body's specular/roughness maps too.
+  By default they go to 512/512/128 px.
 
 .PARAMETER TexturePx
-  Resample textures to this square size in `full` mode. 0 leaves them alone.
+  Resample the KTX2 textures to this square size in `ktx2`/`full` mode. 0 leaves them alone.
 
 .EXAMPLE
   ./compress_companion.ps1 -Char telly -Root S:\bakes\ready
@@ -41,8 +59,11 @@
 param(
     [Parameter(Mandatory = $true)][string]$Char,
     [Parameter(Mandatory = $true)][string]$Root,
-    [ValidateSet('none', 'meshopt', 'full')][string]$Mode = 'meshopt',
+    [ValidateSet('none', 'meshopt', 'ktx2', 'full')][string]$Mode = 'meshopt',
     [int]$TexturePx = 0,
+    [switch]$NoPruneMorphs,
+    [ValidateSet('small', 'drop', 'keep')][string]$MorphNormals = 'small',
+    [switch]$NoLeanTextures,
     [string]$KtxBin = ''
 )
 
@@ -62,6 +83,11 @@ $out = Join-Path (Join-Path $Root '_compressed') $Char
 $toolArgs = @($core, '--src', $src, '--out', $out, '--mode', $Mode)
 if ($TexturePx -gt 0) { $toolArgs += @('--texture-px', $TexturePx) }
 if ($KtxBin) { $toolArgs += @('--ktx-bin', $KtxBin) }
+if ($NoPruneMorphs) { $toolArgs += @('--prune-morphs', 'off') }
+if ($Mode -eq 'ktx2') {
+    $toolArgs += @('--morph-normals', $MorphNormals)
+    if ($NoLeanTextures) { $toolArgs += @('--lean-textures', 'off') }
+}
 
 Write-Host "source : $src"
 Write-Host "output : $out"

@@ -90,6 +90,13 @@ const explicitName = flag('name', '');
 // it reads the sidecar's `texture_format`, a WebP build publishes cleanly and renders hair
 // untextured. The publisher refuses such a build for the same reason it refuses `full`.
 const textureFormat = flag('texture-format', 'png');
+// telegamez#3662: drop each mesh's morph targets that the published build stores as zeros (see
+// `prune-morphs` in gltf-transform.config.mjs). `ktx2` only, and only on the ROOM model: there
+// the browser has its own file, and its face writer skips names a mesh lacks. The compositor
+// model is left exactly as the `meshopt` build. On by default; `--prune-morphs off` for an A/B.
+const pruneMorphs = flag('prune-morphs', 'on') !== 'off';
+const CONFIG = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
+  'gltf-transform.config.mjs');
 
 if (!src || !out) { console.error('--src and --out are required'); process.exit(2); }
 if (!['none', 'meshopt', 'ktx2', 'full'].includes(mode)) { console.error(`unknown --mode ${mode}`); process.exit(2); }
@@ -128,14 +135,24 @@ function requireKtx() {
 function gt(args, label) {
   process.stdout.write(`  ${label} ... `);
   const t0 = Date.now();
+  let stdout = '';
   try {
-    execFileSync('npx', ['--yes', GLTF_TRANSFORM, ...args], { env, stdio: 'pipe', shell: true });
+    stdout = execFileSync('npx', ['--yes', GLTF_TRANSFORM, ...args],
+      { env, stdio: 'pipe', shell: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   } catch (e) {
     console.log('FAILED');
     console.error(String(e.stderr || e.stdout || e.message).slice(0, 2000));
     process.exit(1);
   }
   console.log(`${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  return stdout;
+}
+
+/** Morph target names per mesh, from `extras.targetNames`. */
+function targetNames(glbPath) {
+  const buf = fs.readFileSync(glbPath);
+  const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString());
+  return Object.fromEntries((json.meshes || []).map((m) => [m.name, m.extras?.targetNames || []]));
 }
 
 /** Counts that must survive compression. A change here is a rewrite, not a compression. */
@@ -214,6 +231,8 @@ const outGlb = path.join(out, `${name}.glb`);
 // `ktx2` only: the compositor's own model, routed to it through the avatar manifest's variants.
 const compositorGlb = mode === 'ktx2' ? path.join(out, `${name}.compositor.glb`) : null;
 const tmp = [];
+/** `[{ mesh, kept, total }]` when the room model's morph targets were pruned. */
+let pruned = null;
 
 if (mode === 'none') {
   // Nothing to do to the model. The bake is already the lean artifact: stage 03 caps and
@@ -222,10 +241,20 @@ if (mode === 'none') {
   fs.copyFileSync(srcGlb, outGlb);
   console.log('  model copied unchanged (no lossy step)');
 } else if (carriesKtx2) {
+  const p = path.join(out, '.tmp-p.glb');
   const a = path.join(out, '.tmp-a.glb');
   const b = path.join(out, '.tmp-b.glb');
-  tmp.push(a, b);
-  gt(['uastc', srcGlb, a, '--slots', MODEL_DATA_SLOTS], 'uastc   (normal/ORM/specular)');
+  tmp.push(p, a, b);
+  let roomSrc = srcGlb;
+  if (mode === 'ktx2' && pruneMorphs) {
+    const log = gt(['prune-morphs', srcGlb, p, '--config', `"${CONFIG}"`], 'prune   (morph targets stored as zeros)');
+    pruned = log.split(/\r?\n/).filter((l) => l.startsWith('PRUNE ')).map((l) => {
+      const [mesh, kept, total] = l.slice(6).split('\t');
+      return { mesh, kept: Number(kept), total: Number(total) };
+    });
+    roomSrc = p;
+  }
+  gt(['uastc', roomSrc, a, '--slots', MODEL_DATA_SLOTS], 'uastc   (normal/ORM/specular)');
   gt(['etc1s', a, b], 'etc1s   (colour)');
   gt(['meshopt', b, outGlb], 'meshopt (geometry + morphs)');
   if (compositorGlb) gt(['meshopt', srcGlb, compositorGlb], 'meshopt (compositor model, PNG)');
@@ -234,10 +263,31 @@ if (mode === 'none') {
 }
 for (const t of tmp) fs.rmSync(t, { force: true });
 
+if (pruned) {
+  // Pruning changes the room model's target counts on purpose, so check what it promised instead:
+  // per mesh, the kept count it reported, and only names the source had.
+  const srcNames = targetNames(srcGlb);
+  const outNames = targetNames(outGlb);
+  for (const r of pruned) {
+    const got = outNames[r.mesh] || [];
+    const foreign = got.filter((n) => !(srcNames[r.mesh] || []).includes(n));
+    if (got.length !== r.kept || foreign.length) {
+      console.error(`\nABORT: ${r.mesh} has ${got.length} targets after pruning, expected ${r.kept}`
+        + (foreign.length ? `; names not in the source: ${foreign.join(', ')}` : '') + '.');
+      process.exit(1);
+    }
+  }
+  const total = pruned.reduce((acc, r) => acc + r.total, 0);
+  const kept = pruned.reduce((acc, r) => acc + r.kept, 0);
+  console.log(`  morph targets ${total} -> ${kept} across ${pruned.length} meshes `
+    + `(${pruned.filter((r) => r.kept < r.total).map((r) => `${r.mesh} ${r.kept}/${r.total}`).join(', ')})`);
+}
+
 const after = structure(outGlb);
 for (const glb of [outGlb, compositorGlb].filter(Boolean)) {
   const got = glb === outGlb ? after : structure(glb);
   for (const k of ['meshes', 'primitives', 'morphTargets', 'materials']) {
+    if (k === 'morphTargets' && glb === outGlb && pruned) continue;
     if (before[k] !== got[k]) {
       console.error(`\nABORT: ${path.basename(glb)} ${k} changed ${before[k]} -> ${got[k]}. That `
         + 'is not a compression result — geometry or the material set was rewritten, and the '
@@ -353,6 +403,8 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
     // compositor falls back to `room` and cannot decode its KTX2 textures.
     variants: { room: path.basename(outGlb), compositor: path.basename(compositorGlb) },
     compositor_model: { after_bytes: sizeOf(compositorGlb) },
+    // Room model only. Null when --prune-morphs off.
+    pruned_morph_targets: pruned,
   } : {}),
   model: { before_bytes: sizeOf(srcGlb), after_bytes: sizeOf(outGlb), structure: after },
   textures: { before_bytes: texBefore, after_bytes: texAfter },

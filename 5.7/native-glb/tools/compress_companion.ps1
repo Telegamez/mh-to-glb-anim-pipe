@@ -35,6 +35,11 @@
   full    - meshopt plus KTX2 textures only. Browser-only: the native compositor reads the
             same files and cannot decode KTX2. Measurement only.
 
+.PARAMETER NoPruneMorphs
+  `ktx2` only. Keep every morph target on the room model. By default the room model drops,
+  per mesh, the targets the published build stores as zeros (teeth keep 18 of 72, eyes 13):
+  lossless, ~84 -> ~67 MB of three.js morph texture on tg-drake. Use this for an A/B.
+
 .PARAMETER TexturePx
   Resample the KTX2 textures to this square size in `ktx2`/`full` mode. 0 leaves them alone.
 
@@ -47,6 +52,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Root,
     [ValidateSet('none', 'meshopt', 'ktx2', 'full')][string]$Mode = 'meshopt',
     [int]$TexturePx = 0,
+    [switch]$NoPruneMorphs,
     [string]$KtxBin = ''
 )
 
@@ -66,6 +72,7 @@ $out = Join-Path (Join-Path $Root '_compressed') $Char
 $toolArgs = @($core, '--src', $src, '--out', $out, '--mode', $Mode)
 if ($TexturePx -gt 0) { $toolArgs += @('--texture-px', $TexturePx) }
 if ($KtxBin) { $toolArgs += @('--ktx-bin', $KtxBin) }
+if ($NoPruneMorphs) { $toolArgs += @('--prune-morphs', 'off') }
 
 Write-Host "source : $src"
 Write-Host "output : $out"

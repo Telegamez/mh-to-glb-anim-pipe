@@ -362,6 +362,17 @@ the KTX2 directory, every `.ktx2` and the transcoder 200, no console errors. Fac
 frame for frame: mean difference 1.8–4.4/255. Desktop GPU (S3TC only), so the transcode target
 was BC, not the ASTC/ETC2 a phone gets. A phone check is still required.
 
+**Morph pruning (room model, on by default; `--prune-morphs off` to disable).** MetaHuman gives
+every face mesh all 72 channels and three.js uploads every target as float32 RGBA texels whether it
+moves anything or not. `prune-morphs` (in `tools/gltf-transform.config.mjs`) drops, per mesh, the
+targets whose deltas are under half a meshopt quantization step, i.e. stored as zeros in the
+published build anyway. A name that would vanish from every mesh (`viseme_sil`) is kept on the
+smallest mesh that had it, so name lookups still find it. tg-drake: 571 -> 300 targets (teeth 18/72,
+eyes 13/72, lashes 19/72, Lacrimal 20/72, EyeAO 32/72, brows 62/67, Hide 65/72, head 71/72),
+three.js morph texture 83.9 -> 67.3 MB. Safe because `writeFaceMorph` looks targets up by name per
+mesh. Checked on `/dev/model-ab`: no missing-morph warnings, and pruned vs unpruned differs by
+1.2-1.9/255, inside the 1.1-4.8/255 the same build differs from itself between runs.
+
 **Harness trap found doing this.** Load two DIFFERENT builds into `/dev/model-ab` and only the
 one that attaches first casts face and hair shadows: `attachShadowKey` returns early once the
 scene has a key, so the second model's head and hair never get `castShadow`. KTX2 transcoding

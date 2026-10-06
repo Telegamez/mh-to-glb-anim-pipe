@@ -272,9 +272,9 @@ function envChanged() {
   $('prodWarn').innerHTML = e && e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
     : '';
-  // telegamez#3662: reset to meshopt on every switch so a choice made for panda never carries into
-  // an upload to beta.
-  $('build').value = 'meshopt';
+  // telegamez#3662: reset to the environment's default build on every switch (ktx2 on panda,
+  // meshopt elsewhere), so a choice made for panda never carries into an upload to beta.
+  $('build').value = (e && e.defaultBuild) || 'meshopt';
   buildChanged();
   renderGrid();
 }

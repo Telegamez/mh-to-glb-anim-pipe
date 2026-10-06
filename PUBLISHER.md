@@ -164,10 +164,11 @@ meshopt build. Upload sends both models, the PNGs with a `.ktx2` beside each, an
 `variants` that route the compositor to its own model (the platform writes them into the
 avatar's `manifest.json`).
 
-**Choose it with the `build` selector** next to Publish / Upload model. Only pick it for an
-environment whose web app includes telegamez#4551 (panda once `dev` is deployed there); on an
-older web app the browser cannot load it. The selector resets to meshopt whenever you switch
-environment, and a production publish asks for confirmation naming the build.
+**It is the default for panda.** The `build` selector next to Publish / Upload model switches to
+ktx2 when you pick panda and to meshopt for beta and local; you can change it either way. Only
+publish ktx2 to an environment whose web app includes telegamez#4551 (panda once `dev` is
+deployed there); on an older web app the browser cannot load it. A production publish asks for
+confirmation naming the build.
 
 The size column shows the ktx2 build on its own line when there is one. The journal records
 `COMPRESSED ktx2 build (_compressed_ktx2/)` and the manifest that went up. Go live and roll back

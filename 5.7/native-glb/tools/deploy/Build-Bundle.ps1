@@ -42,6 +42,9 @@ $files = @(
   # throws: the .ps1 is what the server streams, and it looks for the .mjs beside itself.
   @{ From = Join-Path $here '..\compress_companion.ps1';  As = 'compress_companion.ps1' }
   @{ From = Join-Path $here '..\compress_companion.mjs';  As = 'compress_companion.mjs' }
+  # The ktx2 mode's custom gltf-transform commands (prune-morphs, strip-morph-normals). The .mjs
+  # loads it from beside itself; without it a ktx2 compress fails at its first step.
+  @{ From = Join-Path $here '..\gltf-transform.config.mjs'; As = 'gltf-transform.config.mjs' }
 )
 
 foreach ($f in $files) {

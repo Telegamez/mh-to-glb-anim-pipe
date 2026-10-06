@@ -272,6 +272,13 @@ function envChanged() {
   $('prodWarn').innerHTML = e && e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
     : '';
+  // telegamez#3662: ktx2 only where the web runtime loads it. Reset to meshopt on every switch so
+  // a choice made for panda can never carry into an upload to beta.
+  const ktx2Ok = Boolean(e) && (CONFIG.ktx2Envs || []).includes(e.key);
+  $('build').value = 'meshopt';
+  $('build').querySelector('option[value="ktx2"]').disabled = !ktx2Ok;
+  $('buildNote').textContent = ktx2Ok || !e ? ''
+    : 'ktx2 is off for ' + e.key + ' (start the console with TG_KTX2_ENVS=' + e.key + ' once its runtime has telegamez#4551)';
   renderGrid();
 }
 $('env').onchange = envChanged;
@@ -425,7 +432,7 @@ $('compress').onclick = async () => {
   for (const c of picked()) {
     log('\n' + c.id + '\n');
     const out = await streamTo('/api/compress?root=' + encodeURIComponent(ROOT),
-      { characters: [c.id], mode: 'meshopt' });
+      { characters: [c.id], mode: $('build').value });   // meshopt or ktx2, each in its own folder
     if (!out || !/\[console\] exit 0\b/.test(out)) { log('\nStopped.\n'); break; }
   }
   await scan();
@@ -528,15 +535,17 @@ $('mkRecord').onclick = async () => {
 $('pubModel').onclick = async () => {
   const list = picked();
   const e = target();
-  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?\n\nUploading the meshopt build.')) return;
+  const build = $('build').value;
+  if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?\n\nUploading the ' + build + ' build.')) return;
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Date.now()).slice(-4);
   setLog('');
-  log('uploading the meshopt build — made or refreshed first when needed\n');
+  log('uploading the ' + build + ' build — made or refreshed first when needed\n');
   for (const c of list) {
     log('\n' + c.id + '\n');
     if (!ROWS[c.id] || !ROWS[c.id].avatarId) { log('  no avatar record here yet\n'); break; }
     const out = await streamTo('/api/publish?root=' + encodeURIComponent(ROOT), {
       env: env(), characters: [c.id], bakeHashSuffix: stamp, avatarIds: { [c.id]: ROWS[c.id].avatarId },
+      build,
     });
     const m = out && out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+\.glb/);
     if (!m) { log('\nNo published path came back. Stopped.\n'); break; }

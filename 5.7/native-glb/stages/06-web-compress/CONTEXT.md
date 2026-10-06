@@ -343,10 +343,16 @@ a room and fails on the TV and program output. `ktx2` therefore carries both:
 | `mh_materials.json` — paths unchanged, plus `browser_texture_format: "ktx2"` | both |
 | `compression_manifest.json` — records `variants: { room, compositor }` | the publisher |
 
-**Publishing it needs the avatar manifest.** The publisher must send `variants` as the upload
-route's `manifest` field (it refuses a `manifest.json` sent as a file). Without
-`variants.compositor` the compositor falls back to the room model and cannot decode it. That
-publish step does not exist yet.
+**Publishing it needs the avatar manifest.** `publish_to_cdn.ps1` reads `variants` from the
+build's `compression_manifest.json` and sends them as the upload route's `manifest` field (the
+route refuses a `manifest.json` sent as a file and writes it from that field). It refuses before
+uploading if `variants.room` is not the model or a variant file is missing. Without
+`variants.compositor` the compositor would fall back to the room model and could not decode it.
+
+Both consoles publish a ktx2 build from the `build` selector, only to environments listed in
+`TG_KTX2_ENVS` (those whose web app has telegamez#4551). The wrapper writes ktx2 builds to
+`<root>/_compressed_ktx2/<id>/`, so they never replace the meshopt build in `_compressed/<id>/`.
+See `PUBLISHER.md` § The ktx2 build.
 
 **Colour or data.** UASTC with a linear transfer for every data map, ETC1S sRGB for colour.
 Model: `normalTexture`, `occlusionTexture`, `metallicRoughnessTexture`, `specularTexture`

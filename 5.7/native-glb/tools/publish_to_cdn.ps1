@@ -21,6 +21,13 @@
     at publish instead of rendering wrong later
   * the model named as `modelPath` is really in the payload
 
+  A `ktx2` build (telegamez#3662) carries two models: `<char>.glb` for the browser, with KTX2
+  textures, and `<char>.compositor.glb` with PNG textures for the native compositor, which reads
+  the same published directory and cannot decode KTX2. The compositor finds its file through the
+  avatar manifest's `variants.compositor`, so when the build's `compression_manifest.json` records
+  `variants`, they are sent as the `manifest` form field and the route writes `manifest.json`
+  from them. Without it the compositor falls back to the KTX2 model and fails on the TV.
+
   The publish is content-addressed: files land under `avatars/<avatarId>/<bakeHash>/`, so a
   re-bake publishes ALONGSIDE the live one rather than over it. Nothing changes for users
   until the returned `modelKey` is written into the avatar row, and rolling back is putting
@@ -72,6 +79,34 @@ if (-not (Test-Path (Join-Path $Source 'mh_materials.json'))) {
   throw "mh_materials.json not found in $Source - the runtime finds it beside the model"
 }
 
+# telegamez#3662: a build that records `variants` (the ktx2 mode) publishes them as the avatar
+# manifest. Checked here rather than left to the route, so a half-copied ktx2 build fails before
+# any upload: the route would refuse a variant that is not in the payload, but only after the
+# operator watched ~60 MB go up.
+$avatarManifest = $null
+$compressionManifest = Join-Path $Source 'compression_manifest.json'
+if (Test-Path $compressionManifest) {
+  $cm = Get-Content $compressionManifest -Raw | ConvertFrom-Json
+  if ($cm.mode -eq 'ktx2' -and -not $cm.variants) {
+    throw "compression_manifest.json says mode=ktx2 but records no variants - the compositor would fall back to the KTX2 model. Recompress."
+  }
+  if ($cm.variants) {
+    if ($cm.variants.room -ne $model) {
+      throw "variants.room '$($cm.variants.room)' is not the model being published ('$model')"
+    }
+    foreach ($kind in 'room', 'compositor') {
+      $file = $cm.variants.$kind
+      if ($file -and -not (Test-Path (Join-Path $Source $file))) {
+        throw "variants.$kind names '$file', which is not in $Source"
+      }
+    }
+    # Only the variants. Everything else an avatar manifest can carry (faceProfile,
+    # compositorMorphDrops) is a per-rig decision that does not come from compression.
+    $avatarManifest = @{ variants = @{ room = $cm.variants.room; compositor = $cm.variants.compositor } } |
+      ConvertTo-Json -Compress -Depth 4
+  }
+}
+
 # Every file, with its path RELATIVE to the directory root. Those relative paths are the
 # contract: the sidecar names its textures this way and the runtime resolves them against the
 # model's directory, so they are preserved verbatim all the way into the S3 key.
@@ -114,6 +149,7 @@ if (-not $BakeHash) {
 $totalMb = [math]::Round(($files | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
 Write-Host "[publish_to_cdn] $Char -> avatars/$AvatarId/$BakeHash/"
 Write-Host "[publish_to_cdn] $($files.Count) files, $totalMb MB"
+if ($avatarManifest) { Write-Host "[publish_to_cdn] avatar manifest: $avatarManifest" }
 
 Add-Type -AssemblyName System.Net.Http
 $client = [System.Net.Http.HttpClient]::new()
@@ -152,6 +188,9 @@ function Add-QuotedPart {
 try {
   Add-QuotedPart $content ([System.Net.Http.StringContent]::new($BakeHash)) 'bakeHash'
   Add-QuotedPart $content ([System.Net.Http.StringContent]::new($model)) 'modelPath'
+  if ($avatarManifest) {
+    Add-QuotedPart $content ([System.Net.Http.StringContent]::new($avatarManifest)) 'manifest'
+  }
 
   foreach ($f in $files) {
     # Streamed, not read into memory: a single GLB is up to 70 MB and the roster is ~330 MB.

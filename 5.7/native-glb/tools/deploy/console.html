@@ -103,7 +103,15 @@
     <div class="row" style="margin-top:10px">
       <button id="publish" class="go">Publish</button>
       <button id="pubPreviews">Publish previews</button>
-      <!-- No source to choose (telegamez#3728): Publish sends the meshopt build, making it first if it has to. -->
+      <!-- telegamez#3662: meshopt is the standard; ktx2 (KTX2 browser model + PNG compositor model) only
+           for environments whose web runtime loads it (TG_KTX2_ENVS). Publish makes the build first if it has to. -->
+      <label class="dim" style="font-size:13px">build
+        <select id="build" style="width:auto;padding:4px 6px">
+          <option value="meshopt">meshopt</option>
+          <option value="ktx2">ktx2</option>
+        </select>
+      </label>
+      <span class="dim" id="buildNote" style="font-size:12px"></span>
       <span class="dim" id="pubCount" style="font-size:13px"></span>
     </div>
   </div>
@@ -171,6 +179,13 @@ function envChanged() {
   $('prodWarn').innerHTML = e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
     : '';
+  // telegamez#3662: ktx2 only where the web runtime loads it. Reset to meshopt on every switch so
+  // a choice made for panda can never carry into a publish to beta.
+  const ktx2Ok = (CONFIG.ktx2Envs || []).includes(e.key);
+  $('build').value = 'meshopt';
+  $('build').querySelector('option[value="ktx2"]').disabled = !ktx2Ok;
+  $('buildNote').textContent = ktx2Ok ? ''
+    : 'ktx2 is off for ' + e.key + ' (start the console with TG_KTX2_ENVS=' + e.key + ' once its runtime has telegamez#4551)';
 }
 $('env').onchange = envChanged;
 
@@ -244,6 +259,12 @@ function render() {
           ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressed.mb + ' MB meshopt</span>'
           : '<br><span class="warn" style="font-size:11px">&rarr; meshopt build made on publish'
             + (c.compressed ? (c.compressed.stale ? ' (stale)' : ' (' + c.compressed.mode + ')') : '') + '</span>')
+      + (c.compressedKtx2
+          ? (c.compressedKtx2.current
+              ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressedKtx2.mb + ' MB ktx2 (both models)</span>'
+              : '<br><span class="warn" style="font-size:11px">&rarr; ktx2 build '
+                + (c.compressedKtx2.stale ? 'stale' : 'unusable') + ', remade on a ktx2 publish</span>')
+          : '')
       + '</td>'
       + '<td>' + action
       + (needsName ? '<br><input class="nm" data-char="' + c.id + '" value="' + title(c.id)
@@ -270,7 +291,7 @@ function count() {
 $('publish').onclick = async () => {
   const list = picked();
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?')) return;
+  if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?\n\nBuild: ' + $('build').value)) return;
 
   // Never typed. A label only has to be new and readable; a timestamp is both, and inventing
   // one by hand is a step that can only go wrong.
@@ -306,7 +327,7 @@ $('publish').onclick = async () => {
     const res = await fetch('/api/publish?root=' + encodeURIComponent($('root').value), {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp,
-                             avatarIds: { [c]: RESOLVED[c].avatarId } }),
+                             avatarIds: { [c]: RESOLVED[c].avatarId }, build: $('build').value }),
     });
     if (!res.ok) { log((await res.json()).error + '\n'); break; }
 
@@ -337,7 +358,7 @@ $('publish').onclick = async () => {
 $('compress').onclick = async () => {
   const list = picked();
   if (!list.length) return;
-  const mode = 'meshopt';
+  const mode = $('build').value;   // meshopt or ktx2 (telegamez#3662); each has its own folder
 
 
   $('compress').disabled = true;

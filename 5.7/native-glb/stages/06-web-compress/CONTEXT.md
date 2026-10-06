@@ -349,8 +349,8 @@ route refuses a `manifest.json` sent as a file and writes it from that field). I
 uploading if `variants.room` is not the model or a variant file is missing. Without
 `variants.compositor` the compositor would fall back to the room model and could not decode it.
 
-Both consoles publish a ktx2 build from the `build` selector, only to environments listed in
-`TG_KTX2_ENVS` (those whose web app has telegamez#4551). The wrapper writes ktx2 builds to
+Both consoles publish a ktx2 build from the `build` selector (meshopt is the default); the
+target environment's web app must include telegamez#4551. The wrapper writes ktx2 builds to
 `<root>/_compressed_ktx2/<id>/`, so they never replace the meshopt build in `_compressed/<id>/`.
 See `PUBLISHER.md` § The ktx2 build.
 

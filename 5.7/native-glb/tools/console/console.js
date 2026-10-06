@@ -272,15 +272,17 @@ function envChanged() {
   $('prodWarn').innerHTML = e && e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
     : '';
-  // telegamez#3662: ktx2 only where the web runtime loads it. Reset to meshopt on every switch so
-  // a choice made for panda can never carry into an upload to beta.
-  const ktx2Ok = Boolean(e) && (CONFIG.ktx2Envs || []).includes(e.key);
+  // telegamez#3662: reset to meshopt on every switch so a choice made for panda never carries into
+  // an upload to beta.
   $('build').value = 'meshopt';
-  $('build').querySelector('option[value="ktx2"]').disabled = !ktx2Ok;
-  $('buildNote').textContent = ktx2Ok || !e ? ''
-    : 'ktx2 is off for ' + e.key + ' (start the console with TG_KTX2_ENVS=' + e.key + ' once its runtime has telegamez#4551)';
+  buildChanged();
   renderGrid();
 }
+function buildChanged() {
+  $('buildNote').textContent = $('build').value === 'ktx2'
+    ? "ktx2: this environment's web app must include telegamez#4551" : '';
+}
+$('build').onchange = buildChanged;
 $('env').onchange = envChanged;
 
 async function scan() {

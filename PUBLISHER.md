@@ -164,17 +164,10 @@ meshopt build. Upload sends both models, the PNGs with a `.ktx2` beside each, an
 `variants` that route the compositor to its own model (the platform writes them into the
 avatar's `manifest.json`).
 
-**Choose it with the `build` selector** next to Publish / Upload model. It is greyed out for
-an environment until the console is started with that environment listed:
-
-```powershell
-$env:TG_KTX2_ENVS = 'panda'      # comma-separated: environments whose web app has telegamez#4551
-./Start-Publisher.ps1
-```
-
-Listing an environment is the record that its web app was deployed with KTX2 support. Upload a
-ktx2 build anywhere else and the browser cannot load it, so the console refuses with a message
-saying exactly that. The selector resets to meshopt whenever you switch environment.
+**Choose it with the `build` selector** next to Publish / Upload model. Only pick it for an
+environment whose web app includes telegamez#4551 (panda once `dev` is deployed there); on an
+older web app the browser cannot load it. The selector resets to meshopt whenever you switch
+environment, and a production publish asks for confirmation naming the build.
 
 The size column shows the ktx2 build on its own line when there is one. The journal records
 `COMPRESSED ktx2 build (_compressed_ktx2/)` and the manifest that went up. Go live and roll back

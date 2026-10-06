@@ -121,17 +121,6 @@ const COMPRESSED_DIR = '_compressed';
 // the sidecar's `texture_format`, so a WebP build uploads cleanly and renders hair untextured.
 // Same shape as the meshopt flag: the record of what has been confirmed in a room, not a bypass.
 const WEBP_RUNTIME_READY = process.env.TG_WEBP_RUNTIME_READY === '1';
-/**
- * telegamez#3662: environments whose web runtime loads KTX2 companions (telegamez#4551 or later).
- *
- * A `ktx2` build publishes a KTX2 model for the browser beside a PNG model for the compositor.
- * Published to an environment still running an older web build, it uploads cleanly, reports
- * success and the browser cannot load it, so publishing one is refused unless the environment
- * is listed here: `TG_KTX2_ENVS=panda,local`. Listing an environment is the record that its
- * runtime was deployed with #4551, the same shape as the WebP flag. Building a ktx2 package is
- * never gated; only publishing it.
- */
-const KTX2_ENVS = new Set((process.env.TG_KTX2_ENVS || '').split(',').map((s) => s.trim()).filter(Boolean));
 
 /** Where each build kind lives. ktx2 has its own folder so it never replaces the meshopt build. */
 const BUILD_DIRS = { meshopt: COMPRESSED_DIR, ktx2: `${COMPRESSED_DIR}_ktx2` };
@@ -505,8 +494,6 @@ const server = http.createServer(async (req, res) => {
         publisherFound: fs.existsSync(PUBLISHER),
         verifierFound: fs.existsSync(VERIFIER),
         previewsFound: fs.existsSync(PREVIEWS),
-        // telegamez#3662: environments a ktx2 build may be published to (TG_KTX2_ENVS).
-        ktx2Envs: [...KTX2_ENVS],
       });
     }
 
@@ -735,17 +722,12 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      // telegamez#3662: which build goes up. meshopt unless the page asks for ktx2, and ktx2 only
-      // to an environment whose runtime is recorded as loading it (TG_KTX2_ENVS).
+      // telegamez#3662: which build goes up. meshopt unless the page asks for ktx2. A ktx2 build
+      // needs the environment's web app to include telegamez#4551; the page says so beside the
+      // selector, and production asks for confirmation naming the build.
       const build = requested || 'meshopt';
       if (build !== 'meshopt' && build !== 'ktx2') {
         return send(res, 400, { error: `unknown build: ${requested}` });
-      }
-      if (build === 'ktx2' && !KTX2_ENVS.has(env)) {
-        return send(res, 400, {
-          error: `ktx2 is not enabled for ${env}: its web runtime must include telegamez#4551. `
-            + `Deploy that, then start this console with TG_KTX2_ENVS=${env}.`,
-        });
       }
       if (!/^[A-Za-z0-9._-]+$/.test(bakeHashSuffix || '')) {
         return send(res, 400, { error: 'bake hash suffix must be [A-Za-z0-9._-]' });
@@ -882,7 +864,6 @@ const server = http.createServer(async (req, res) => {
 // 127.0.0.1 only. This holds a live admin session; it must not be reachable from the network.
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[deploy-console] http://127.0.0.1:${PORT}`);
-  console.log(`[deploy-console] ktx2 builds (telegamez#3662): ${KTX2_ENVS.size ? `publishable to ${[...KTX2_ENVS].join(', ')}` : 'off — set TG_KTX2_ENVS to the environments whose runtime has telegamez#4551'}`);
   console.log(`[deploy-console] models root: ${DEFAULT_ROOT}`);
   if (!fs.existsSync(PUBLISHER)) console.warn(`[deploy-console] WARNING publisher not found: ${PUBLISHER}`);
   if (!fs.existsSync(PREVIEWS)) console.warn(`[deploy-console] WARNING preview publisher not found: ${PREVIEWS}`);

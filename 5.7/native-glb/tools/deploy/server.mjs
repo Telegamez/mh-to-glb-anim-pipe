@@ -307,6 +307,9 @@ function scanRoot(root) {
 
     characters.push({
       id: name, dir, mb, sidecar, textures, strayManifest, previews, compressed, compressedKtx2,
+      // When the previews were captured, for the Previews panel (and to tell a recapture apart).
+      previewsAt: previews
+        ? Math.max(...PREVIEW_FILES.map((f) => fs.statSync(path.join(dir, f)).mtimeMs)) : null,
       ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
     });
   }
@@ -996,6 +999,54 @@ const server = http.createServer(async (req, res) => {
      * So this one needs no SQL afterwards — and, as a side effect, takes the row out of the
      * 'processing' state a newly created avatar starts in.
      */
+    /**
+     * Capture (or recapture) one character's previews into its folder, without uploading them.
+     * The page then shows them in the Previews panel; Publish previews sends them once they look
+     * right. Starts the local web app the capture drives if nothing answers at STACK.
+     */
+    if (url.pathname === '/api/capture-previews' && req.method === 'POST') {
+      const { characters } = await readBody(req);
+      if (!Array.isArray(characters) || characters.length === 0) return send(res, 400, { error: 'no characters selected' });
+      const char = characters[0];
+      const pkgDir = path.join(url.searchParams.get('root') || DEFAULT_ROOT, char);
+      if (!fs.existsSync(path.join(pkgDir, `${char}.glb`))) {
+        return send(res, 400, { error: `no package for ${char} in ${path.dirname(pkgDir)}` });
+      }
+      const monorepo = guessMonorepo();
+      if (!monorepo) {
+        return send(res, 400, {
+          error: 'the telegamez checkout needed to capture previews was not found beside this publisher. '
+            + 'Start it with --monorepo <path to telegamez>.',
+        });
+      }
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      if (!(await ensureStack(res, monorepo))) {
+        res.write('\n[console] previews not captured\n[console] exit 1\n');
+        res.end();
+        return undefined;
+      }
+      const code = await runCapture(res, monorepo, pkgDir);
+      const ok = code === 0 && hasPreviews(pkgDir);
+      res.write(ok ? '\n[console] captured - check them in the Previews panel before publishing\n[console] exit 0\n'
+        : `\n[console] capture failed (exit ${code})\n[console] exit 1\n`);
+      res.end();
+      return undefined;
+    }
+
+    /** One captured preview file, for the Previews panel. Read-only, confined to the package. */
+    if (url.pathname === '/api/preview-file' && req.method === 'GET') {
+      const char = url.searchParams.get('char') || '';
+      const file = url.searchParams.get('file') || '';
+      if (!/^[A-Za-z0-9._-]+$/.test(char) || !PREVIEW_FILES.includes(file)) return send(res, 400, { error: 'bad request' });
+      const full = path.join(url.searchParams.get('root') || DEFAULT_ROOT, char, file);
+      if (!fs.existsSync(full)) return send(res, 404, { error: 'not captured yet' });
+      const type = file.endsWith('.png') ? 'image/png' : file.endsWith('.jpg') ? 'image/jpeg' : 'video/mp4';
+      // Replaced in place by a recapture, so a cached copy would show the old one.
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', 'content-length': fs.statSync(full).size });
+      fs.createReadStream(full).pipe(res);
+      return undefined;
+    }
+
     if (url.pathname === '/api/publish-previews' && req.method === 'POST') {
       const { env, characters, avatarIds } = await readBody(req);
       const target = ENVIRONMENTS[env];
@@ -1018,26 +1069,11 @@ const server = http.createServer(async (req, res) => {
       // telegamez#3662: capture missing previews first, so publishing them is one press for
       // any character, a batch included. The files land beside the model, where they belong;
       // they are not part of the model publish, so this changes no bake hash.
+      // Previews are uploaded only once they exist and have been looked at in the Previews panel:
+      // Capture previews makes them, this sends them. Capturing and uploading in one press sent a
+      // badly framed set to panda before anyone saw it (2026-10-06).
       if (!hasPreviews(pkgDir)) {
-        const monorepo = guessMonorepo();
-        if (!monorepo) {
-          return send(res, 400, {
-            error: `${char} has no previews, and the telegamez checkout needed to capture them was `
-              + 'not found beside this publisher. Start it with --monorepo <path to telegamez>.',
-          });
-        }
-        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-        if (!(await ensureStack(res, monorepo))) {
-          res.write('\n[console] previews not captured — nothing was uploaded\n[console] exit 1\n');
-          res.end();
-          return undefined;
-        }
-        const code = await runCapture(res, monorepo, pkgDir);
-        if (code !== 0 || !hasPreviews(pkgDir)) {
-          res.write(`\n[console] capture failed (exit ${code}) — nothing was uploaded\n[console] exit 1\n`);
-          res.end();
-          return undefined;
-        }
+        return send(res, 400, { error: `${char} has no previews yet: press Capture previews, check them, then publish` });
       }
 
       return stream(res, PREVIEWS, [

@@ -102,6 +102,7 @@
     </div>
     <div class="row" style="margin-top:10px">
       <button id="publish" class="go">Publish</button>
+      <button id="capPreviews">Capture previews</button>
       <button id="pubPreviews">Publish previews</button>
       <!-- telegamez#3662: meshopt is the standard; ktx2 is the KTX2 browser model + PNG compositor model.
            Publish makes the chosen build first if it has to. -->
@@ -114,6 +115,13 @@
       <span class="dim" id="buildNote" style="font-size:12px"></span>
       <span class="dim" id="pubCount" style="font-size:13px"></span>
     </div>
+  </div>
+
+  <div class="step" id="sPrev" hidden>
+    <h2>Previews</h2>
+    <div class="msg dim" style="margin-bottom:10px">What <b>Publish previews</b> will upload, as captured on this
+      machine. Not right? Tick the character and press <b>Capture previews</b> again.</div>
+    <div id="prevList"></div>
   </div>
 
   <div class="step" id="s6" hidden>
@@ -298,7 +306,54 @@ function render() {
   }
   for (const cb of document.querySelectorAll('#chars input[type=checkbox]')) cb.onchange = count;
   count();
+  renderPreviews();
 }
+
+// telegamez#3662: the Previews panel. Every character with captured previews, as they will be
+// uploaded: thumbnail, image and the 8 s video. `v` busts the browser cache after a recapture.
+function renderPreviews() {
+  const withPrev = CHARS.filter((c) => c.previews);
+  show('sPrev', withPrev.length > 0);
+  const src = (c, f) => '/api/preview-file?root=' + encodeURIComponent($('root').value)
+    + '&char=' + encodeURIComponent(c.id) + '&file=' + f + '&v=' + Math.round(c.previewsAt || 0);
+  $('prevList').innerHTML = withPrev.map((c) => {
+    const r = RESOLVED[c.id] || {};
+    const when = c.previewsAt ? new Date(c.previewsAt).toLocaleString() : '';
+    return '<div style="margin-bottom:16px">'
+      + '<div style="margin-bottom:6px"><b>' + c.id + '</b> <span class="dim" style="font-size:12px">captured ' + when
+      + (r.previewsPublished ? ' &middot; previews already published here' : '') + '</span></div>'
+      + '<div class="row" style="gap:8px;align-items:flex-start;flex-wrap:wrap">'
+      + '<figure style="margin:0"><img src="' + src(c, 'thumbnail.png') + '" width="128" height="128" style="border-radius:4px;display:block"><figcaption class="dim" style="font-size:11px">thumbnail</figcaption></figure>'
+      + '<figure style="margin:0"><a href="' + src(c, 'imagePreview.jpg') + '" target="_blank"><img src="' + src(c, 'imagePreview.jpg') + '" width="200" height="200" style="border-radius:4px;display:block"></a><figcaption class="dim" style="font-size:11px">image (click for full size)</figcaption></figure>'
+      + '<figure style="margin:0"><video src="' + src(c, 'videoPreview.mp4') + '" width="200" height="200" controls muted loop preload="metadata" style="border-radius:4px;display:block;background:#000"></video><figcaption class="dim" style="font-size:11px">video</figcaption></figure>'
+      + '</div></div>';
+  }).join('');
+}
+
+// Capture (or recapture) previews for the ticked characters. Uploads nothing: the Previews panel
+// shows the result, and Publish previews sends it once it looks right.
+$('capPreviews').onclick = async () => {
+  const list = picked();
+  if (!list.length) return;
+  $('capPreviews').disabled = true;
+  setLog('Capturing previews for ' + list.length + ' (about a minute each; the first may start the local web app)\n');
+  for (const c of list) {
+    log('\n' + c + '\n');
+    const res = await fetch('/api/capture-previews?root=' + encodeURIComponent($('root').value), {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ characters:[c] }),
+    });
+    if (!res.ok) { log((await res.json()).error + '\n'); break; }
+    let out = '';
+    const rd = res.body.getReader(); const dec = new TextDecoder();
+    for (;;) { const t = await rd.read(); if (t.done) break; const x = dec.decode(t.value,{stream:true}); out += x; log(x); }
+    if (!/\[console\] exit 0/.test(out)) { log('\nStopped.\n'); break; }
+    if (/auto-framing failed/.test(out)) log('\n' + c + ': auto-framing failed and the default camera was used. Check the framing below; recapture if the feet or head are cut off.\n');
+  }
+  $('capPreviews').disabled = false;
+  await load();   // re-scan so the Previews panel shows what was just captured
+  log('\nCheck the Previews panel, then Publish previews.\n');
+};
 
 const title = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -412,13 +467,16 @@ $('pubPreviews').onclick = async () => {
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && !confirm('Publish previews for ' + list.length + ' to PRODUCTION?')) return;
 
-  // telegamez#3662: a character with no previews has them captured first, by the server,
-  // through the local web app (started for you if it is not running).
+  // telegamez#3662: publish only previews that exist and have been seen in the Previews panel.
   const missing = list.filter((c) => { const r = CHARS.find((x) => x.id === c); return r && !r.previews; });
+  if (missing.length) {
+    setLog('No previews yet for: ' + missing.join(', ')
+      + '\nPress Capture previews, check them in the Previews panel, then Publish previews.\n');
+    return;
+  }
 
   $('pubPreviews').disabled = true;
-  setLog('Publishing previews for ' + list.length + ' to ' + $('env').value + '\n'
-    + (missing.length ? 'Capturing first for: ' + missing.join(', ') + ' (about a minute each)\n' : ''));
+  setLog('Publishing previews for ' + list.length + ' to ' + $('env').value + '\n');
 
   for (const c of list) {
     log('\n' + c + '\n');

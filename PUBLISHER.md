@@ -176,20 +176,24 @@ work exactly as for meshopt: the row points at `<character>.glb` either way.
 
 ## Previews (telegamez#3662)
 
-**Publish previews** captures any that are missing, then uploads them: one press for one
-character or a batch. Capturing photographs each character through the real web app (8-second
-video, thumbnail, still), so if nothing answers at `http://localhost:3000` the publisher starts
-the telegamez web app itself (about a minute the first time) and stops it when the publisher
-closes. The files are written next to the model (`thumbnail.png`, `imagePreview.jpg`,
+Previews are captured, **checked**, then published:
+
+1. Tick the characters and press **Capture previews**. Each is photographed through the real web
+   app: an 8-second video (720x720 MP4), a thumbnail (512 PNG) and a still (1024 JPEG). If nothing
+   answers at `http://localhost:3000` the publisher starts the telegamez web app itself (about a
+   minute the first time) and stops it when the publisher closes. Nothing is uploaded.
+2. The **Previews** panel shows every character's thumbnail, image and playable video as they
+   will be uploaded. Framing wrong (feet or head cut off; the log says when auto-framing fell
+   back to the default camera)? Tick it and press **Capture previews** again.
+3. **Publish previews** uploads them. It refuses a character with no captured previews.
+
+The files are written next to the model (`thumbnail.png`, `imagePreview.jpg`,
 `videoPreview.mp4`); they are not part of the model publish, so they never change its bake hash.
+Capturing needs the telegamez checkout beside this repo (`S:\Avatars\metahuman	elegamez` on the
+bake box) or `--monorepo <path>`, plus `ffmpeg` on PATH.
 
-It needs the telegamez checkout beside this repo (`S:\Avatars\metahuman\telegamez` on the bake
-box) or `--monorepo <path>`, plus `ffmpeg` on PATH. A bundled publisher on a machine without
-them says so instead of uploading nothing.
-
-**Go live waits for previews.** It refuses a character whose previews are not published yet, so
-nothing reaches the avatar picker with a broken card. The order is: Publish, Publish previews,
-Go live.
+**Go live waits for previews.** It refuses a character whose previews are not published yet. The
+order is: Publish, Capture previews, check them, Publish previews, Go live.
 
 ## Cleaning up old avatars (telegamez#3662)
 

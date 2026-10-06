@@ -1156,7 +1156,13 @@ const server = http.createServer(async (req, res) => {
         }
 
         for (const c of a.companions) {
-          const r = await adminCall(target, 'PUT', `/api/admin/companions/${c.id}`, { companion: { avatarId: rep.id } });
+          // `admin.reason` is required: CompanionService.update reads `data.admin.reason` for its
+          // audit row inside the transaction, so a body without it rolls back as a bare 500
+          // UPDATE_ERROR (panda, 2026-10-06). The admin form always sends it.
+          const r = await adminCall(target, 'PUT', `/api/admin/companions/${c.id}`, {
+            companion: { avatarId: rep.id },
+            admin: { reason: `Publisher cleanup: ${a.slug} retired, companion moved to ${rep.slug}` },
+          });
           // The companion update has no declared avatarId field; it reaches the column through
           // the update's spread. Read it back so a future API change cannot make this a no-op.
           const back = r.ok ? await adminCall(target, 'GET', `/api/admin/companions/${c.id}`) : null;
@@ -1167,7 +1173,7 @@ const server = http.createServer(async (req, res) => {
             return finish(1);
           }
           say(`  companion ${c.name} -> ${rep.slug}\n`);
-          journal.push(`- companion \`${c.id}\` (${c.name}) -> ${rep.slug}. Undo: PUT /api/admin/companions/${c.id} {"companion":{"avatarId":"${a.id}"}}`);
+          journal.push(`- companion \`${c.id}\` (${c.name}) -> ${rep.slug}. Undo: PUT /api/admin/companions/${c.id} {"companion":{"avatarId":"${a.id}"},"admin":{"reason":"undo cleanup"}}`);
         }
         for (const s of a.talkShowSlots) {
           const r = await adminCall(target, 'PUT', `/api/admin/talk-shows/${s.showId}/companions/${s.slotId}`, { avatarId: rep.id });

@@ -183,7 +183,7 @@ the telegamez web app itself (about a minute the first time) and stops it when t
 closes. The files are written next to the model (`thumbnail.png`, `imagePreview.jpg`,
 `videoPreview.mp4`); they are not part of the model publish, so they never change its bake hash.
 
-It needs the telegamez checkout beside this repo (`S:\Avatars\metahuman	elegamez` on the bake
+It needs the telegamez checkout beside this repo (`S:\Avatars\metahuman\telegamez` on the bake
 box) or `--monorepo <path>`, plus `ffmpeg` on PATH. A bundled publisher on a machine without
 them says so instead of uploading nothing.
 

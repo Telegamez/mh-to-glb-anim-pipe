@@ -629,8 +629,21 @@ function cuRender() {
       ...a.companions.map((c) => 'companion ' + cuEsc(c.name)),
       ...a.talkShowSlots.map((s) => 'talk show ' + cuEsc(s.showName) + ' / ' + cuEsc(s.label)),
     ];
+    // Grouped and sorted so a replacement can be found: the tg-* roster first, then everything
+    // else, each labelled "Name (short id)" with the `mh-` prefix dropped. A flat list of 25 raw
+    // slugs in scan order hid `mh-tg-drake` in the middle (2026-10-06).
+    const shortId = (x) => String(x.slug || '').replace(/^mh-/, '');
+    const label = (x) => (!x.name || x.name.toLowerCase() === shortId(x).toLowerCase()
+      ? cuEsc(shortId(x)) : cuEsc(x.name) + ' (' + cuEsc(shortId(x)) + ')');
+    const byLabel = (p, q) => shortId(p).localeCompare(shortId(q));
+    const pool = active.filter((x) => x.id !== a.id);
+    const roster = pool.filter((x) => /^tg-/.test(shortId(x))).sort(byLabel);
+    const others = pool.filter((x) => !/^tg-/.test(shortId(x))).sort(byLabel);
+    const group = (title, list) => list.length
+      ? '<optgroup label="' + title + '">' + list.map((x) => '<option value="' + x.id + '">' + label(x) + '</option>').join('') + '</optgroup>'
+      : '';
     const opts = '<option value="">' + (cuUses(a) ? 'choose…' : '(not needed)') + '</option>'
-      + active.filter((x) => x.id !== a.id).map((x) => '<option value="' + x.id + '">' + cuEsc(x.slug) + '</option>').join('');
+      + group('Current roster (tg-*)', roster) + group('Other active avatars', others);
     return '<tr' + (a.status === 'archived' ? ' class="off"' : '') + '>'
       + '<td><input type="checkbox" class="cuTick" data-id="' + a.id + '"' + (a.oldId ? ' checked' : '') + '></td>'
       + '<td>' + cuEsc(a.slug) + '<br><span class="dim" style="font-size:11px">' + cuEsc(a.name) + ' · ' + cuEsc(a.status) + '</span></td>'

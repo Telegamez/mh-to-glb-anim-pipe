@@ -325,6 +325,49 @@ loader work, and is the bulk of the win), verify on panda, then do KTX2 with the
 
 change. Panda is where new work is proven; beta is production.
 
+## KTX2: `--mode ktx2` (telegamez#3662)
+
+The two blockers above are lifted in telegamez branch `3662-ktx2-browser-loader`: one shared
+`KTX2Loader` on every companion load path, and `browser_texture_format: "ktx2"` in the sidecar
+telling the browser to fetch each texture's `.ktx2` sibling.
+
+**Why a second mode rather than fixing `full`.** The native compositor reads the same published
+files and decodes textures with the `image` crate (PNG/WebP only). A KTX2-only build renders in
+a room and fails on the TV and program output. `ktx2` therefore carries both:
+
+| Output | For |
+|---|---|
+| `<id>.glb` — KTX2 textures inside, meshopt | the browser (`variants.room`) |
+| `<id>.compositor.glb` — PNG textures inside, meshopt, same as the `meshopt` build | the compositor (`variants.compositor`) |
+| `textures/*.png` + a `.ktx2` sibling for each | PNG for the compositor, KTX2 for the browser |
+| `mh_materials.json` — paths unchanged, plus `browser_texture_format: "ktx2"` | both |
+| `compression_manifest.json` — records `variants: { room, compositor }` | the publisher |
+
+**Publishing it needs the avatar manifest.** The publisher must send `variants` as the upload
+route's `manifest` field (it refuses a `manifest.json` sent as a file). Without
+`variants.compositor` the compositor falls back to the room model and cannot decode it. That
+publish step does not exist yet.
+
+**Colour or data.** UASTC with a linear transfer for every data map, ETC1S sRGB for colour.
+Model: `normalTexture`, `occlusionTexture`, `metallicRoughnessTexture`, `specularTexture`
+(`KHR_materials_specular` intensity, on skin, body and teeth). Sidecar, by stem: `_N`, `_ORM`,
+`_Tangent`, `_Attribute` (hair/brow card coverage and depth) and `_Coverage` (eyelashes). The
+earlier `full` mode sent `_Attribute`, `_Coverage` and `specularTexture` to ETC1S as sRGB.
+
+Measured on `tg-drake` (2026-10-05 rebake): per browser visit 72.27 MB → 27.33 MB (room model
+48.39 → 12.51 MB, sidecar 23.89 MB PNG → 14.82 MB KTX2). The compositor model is 17.67 MB.
+
+**Visual check: `/dev/model-ab`, A = meshopt+PNG, B = this build.** No PNG requested from
+the KTX2 directory, every `.ktx2` and the transcoder 200, no console errors. Face crops matched
+frame for frame: mean difference 1.8–4.4/255. Desktop GPU (S3TC only), so the transcode target
+was BC, not the ASTC/ETC2 a phone gets. A phone check is still required.
+
+**Harness trap found doing this.** Load two DIFFERENT builds into `/dev/model-ab` and only the
+one that attaches first casts face and hair shadows: `attachShadowKey` returns early once the
+scene has a key, so the second model's head and hair never get `castShadow`. KTX2 transcoding
+makes the KTX2 build attach second every time, which looked exactly like "KTX2 loses the braid
+shadows". Compare each build loaded into BOTH slots, one run per build.
+
 ## WebP sidecar textures (telegamez#3701)
 
 `compress_companion.mjs --texture-format webp` (modes `none` and `meshopt`) converts the sidecar

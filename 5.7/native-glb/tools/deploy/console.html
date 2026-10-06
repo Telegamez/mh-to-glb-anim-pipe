@@ -94,7 +94,7 @@
       <button id="browse">Browse</button>
     </div>
     <table><thead><tr>
-      <th style="width:26px"></th><th>Character</th><th>Size</th><th>What will happen</th>
+      <th style="width:26px"><input type="checkbox" id="charsAll" title="Select all / none"></th><th>Character</th><th>Size</th><th>What will happen</th>
     </tr></thead><tbody id="chars"></tbody></table>
     <div class="row" style="margin-top:16px">
       <button id="compress">Compress</button>
@@ -134,7 +134,7 @@
       <span class="dim" id="cuCount" style="font-size:13px"></span>
     </div>
     <table><thead><tr>
-      <th style="width:26px"></th><th>Avatar</th><th>Used by</th><th>Replace with</th><th>Delete files</th>
+      <th style="width:26px"><input type="checkbox" id="cuAll" title="Select all / none"></th><th>Avatar</th><th>Used by</th><th>Replace with</th><th>Delete files</th>
     </tr></thead><tbody id="cuRows"></tbody></table>
     <div class="row" style="margin-top:12px">
       <button id="cuDry">Dry run</button>
@@ -360,7 +360,25 @@ const title = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const picked = () =>
   [...document.querySelectorAll('#chars input[type=checkbox]:checked')].map((c) => c.dataset.char);
 
+/**
+ * A header checkbox that selects or clears every enabled row box, and shows the rows' state:
+ * ticked when all are, empty when none are, the dash (indeterminate) in between.
+ */
+function syncAll(allBox, rowBoxes) {
+  const live = rowBoxes.filter((b) => !b.disabled);
+  const on = live.filter((b) => b.checked).length;
+  allBox.checked = live.length > 0 && on === live.length;
+  allBox.indeterminate = on > 0 && on < live.length;
+  allBox.disabled = live.length === 0;
+}
+const charBoxes = () => [...document.querySelectorAll('#chars input[type=checkbox]')];
+$('charsAll').onchange = () => {
+  for (const b of charBoxes()) if (!b.disabled) b.checked = $('charsAll').checked;
+  count();
+};
+
 function count() {
+  syncAll($('charsAll'), charBoxes());
   const n = picked().length;
   $('pubCount').textContent = n ? n + ' selected' : '';
   $('publish').disabled = n === 0;
@@ -654,8 +672,18 @@ function cuRender() {
   }).join('');
   $('cuCount').textContent = CU.length + ' avatars, ' + CU.filter((a) => a.oldId).length + ' old ids pre-ticked';
   CU_PLAN = null; $('cuApply').disabled = true;
-  for (const el of document.querySelectorAll('.cuTick,.cuRep,.cuHard')) el.onchange = () => { CU_PLAN = null; $('cuApply').disabled = true; };
+  for (const el of document.querySelectorAll('.cuTick,.cuRep,.cuHard')) {
+    el.onchange = () => { CU_PLAN = null; $('cuApply').disabled = true; syncAll($('cuAll'), cuBoxes()); };
+  }
+  syncAll($('cuAll'), cuBoxes());
 }
+
+const cuBoxes = () => [...document.querySelectorAll('.cuTick')];
+$('cuAll').onchange = () => {
+  for (const b of cuBoxes()) b.checked = $('cuAll').checked;
+  CU_PLAN = null; $('cuApply').disabled = true;
+  syncAll($('cuAll'), cuBoxes());
+};
 
 $('cuScan').onclick = async () => {
   setLog('Scanning avatars on ' + $('env').value + '…\n');

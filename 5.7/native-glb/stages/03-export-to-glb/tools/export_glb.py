@@ -467,11 +467,46 @@ def _emit_sidecar_for_viewer(char_dir, out_dir, sidecar_cap=0, drop_alpha=True):
             elif isinstance(ref, str):
                 stem = os.path.splitext(ref)[0]
                 needed.add(stem)
+    # TELEGAMEZ (telegamez#3725): per-character texture overrides. The character manifest may
+    # carry `texture_overrides: {"<stem>": "<path to png>"}`; a listed stem ships that file
+    # instead of the one Unreal exported, through the same cap and de-alpha as any other
+    # sidecar texture. This is how one Unreal asset becomes two companions that differ only in
+    # their maps (Tommy's steel armour and Tommy-Gold's polished gold, both from /Game/tommy)
+    # without touching the Fab assets in the project. Relative paths resolve against the
+    # character directory, then the workspace. A listed file that is missing is an error, not
+    # a skip: the operator asked for it, and silently shipping the export instead would look
+    # exactly like the override never existed.
+    overrides = {}
+    try:
+        overrides = json.loads((char_dir / "manifest.json").read_text(encoding="utf-8")).get(
+            "texture_overrides") or {}
+    except Exception as e:
+        _log(f"  texture_overrides: could not read the character manifest: {e}")
+    workspace_dir = char_dir.parent.parent
+
+    def _override_path(stem):
+        raw = overrides.get(stem)
+        if not raw:
+            return None
+        cand = Path(str(raw))
+        if not cand.is_absolute():
+            for base in (char_dir, workspace_dir):
+                if (base / cand).exists():
+                    cand = base / cand
+                    break
+        if not cand.exists():
+            raise RuntimeError(f"texture_overrides: {stem} -> {raw} does not exist")
+        return cand
+
     copied = 0
     before_bytes = 0
     after_bytes = 0
     for stem in sorted(needed):
         src = src_tex_dir / f"{stem}.png"
+        override = _override_path(stem)
+        if override is not None:
+            _log(f"  sidecar {stem}: override {override}")
+            src = override
         if not src.exists():
             _log(f"  sidecar miss: {src}")
             continue
@@ -722,6 +757,17 @@ MAX_BODY_REMOVAL = 0.85
 # Without this veto the chin gets dragged back to the collar and the face deforms: Head_Mesh was
 # tucking 4545 verts at a median "poke" of 51.6mm, which is not poke-through, it is a face.
 OPENING_VETO = 0.02
+# TELEGAMEZ (telegamez#3725): the veto above was written for collars and cuffs, where the
+# nearest cloth to a chin or a forearm is the opening itself. It also swallows every small
+# rigid piece: a helmet cheek guard or a sandal strap is a few centimetres across, so ALL of
+# it is within 20mm of a rim and skin poking 2-3mm through the middle of the plate was never
+# tucked (Tommy's cheeks showed through the helmet). The tuck therefore uses a RELATIVE veto:
+# skin is "in front of an opening" only when the rim is closer than a few times its own poke.
+# A chin 50mm in front of a collar rim (rim distance ~0) stays vetoed; a cheek 3mm through a
+# plate whose rim is 15mm away is tucked. Deletion keeps the absolute veto unchanged - the
+# holes it guards against were opened by deleting, not by tucking.
+OPENING_VETO_FLOOR = 0.005
+OPENING_VETO_RATIO = 3.0
 # Skin that has pushed through the fabric is moved this far behind it rather than deleted, so
 # the surviving fringe of a partly-covered face is hidden instead of leaving a gap.
 TUCK_DEPTH = 0.004
@@ -830,11 +876,16 @@ def _hide_body_under_clothing():
                 nearest = bvh.find_nearest(co, POKE_REACH)
                 outside = False
                 near_opening = False
+                tuck_veto = False
                 if nearest is not None and nearest[3] is not None:
                     outside = (co - nearest[0]).dot(nearest[1]) > 0
                     if kd is not None:
                         _, _, bd = kd.find(nearest[0])
                         near_opening = bd is not None and bd < OPENING_VETO
+                        # TELEGAMEZ (telegamez#3725): relative veto for the tuck, see above.
+                        poke = (co - nearest[0]).length
+                        tuck_veto = near_opening and bd < max(OPENING_VETO_FLOOR,
+                                                              OPENING_VETO_RATIO * poke)
                 if not covered_here:
                     # Cloth behind the skin rather than in front: it has pushed through. Decided
                     # by the nearest surface rather than a backward ray, which at this reach
@@ -857,7 +908,16 @@ def _hide_body_under_clothing():
                 # chin's nearest cloth is the collar edge itself (distance ~0, vetoed), while a
                 # chest's is mid-panel (far from any edge, tucked). Without this the chin gets
                 # pulled back onto the collar and the face deforms.
-                if near_opening or not outside or nearest is None or nearest[3] is None:
+                if tuck_veto or not outside or nearest is None or nearest[3] is None:
+                    continue
+                # TELEGAMEZ (telegamez#3725): never tuck skin that is already covered. A
+                # vertex whose own outward ray hits cloth is hidden behind that cloth, whichever
+                # surface happens to be nearest. Fab armour is double-walled: for a cheek sitting
+                # properly inside the helmet the nearest surface is the INNER wall, whose normal
+                # faces the head, so "outside" was true and the tuck moved the cheek 4mm past
+                # that wall - straight out through the outer one. The poke-through Tommy showed
+                # on his cheek guards was manufactured here; his face is clean before this pass.
+                if hit is not None and hit[0] is not None:
                     continue
                 location, normal, _, _ = nearest
                 pokes.append((co - location).length)

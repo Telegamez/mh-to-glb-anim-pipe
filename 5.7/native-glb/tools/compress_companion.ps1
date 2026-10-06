@@ -26,8 +26,8 @@
             vertex positions are quantised too, which is about 87% of the visible
             difference and lands on hair and eyelash card edges. Compared against the
             original through the real runtime -- material profile, hair calibration and
-            clothing textures live -- and indistinguishable. The publisher still refuses to
-            upload one until a meshopt companion is confirmed rendering in a real room.
+            clothing textures live -- and indistinguishable. This is the build that ships
+            (telegamez#3728): the bake makes it and Upload remakes a stale one. No flag.
   full    - meshopt plus KTX2 textures. NOT loadable by the runtime: nothing registers a
             KTX2Loader, so it uploads cleanly and renders nothing. Measurement only.
 

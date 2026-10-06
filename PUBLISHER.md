@@ -116,42 +116,39 @@ Folder problems:
 
 ---
 
-## Compressing before you publish
+## Compression is the standard
 
-A MetaHuman bake costs about **87 MB** to download. Beta serves Avaturn avatars at ~11.5 MB
-each, so publishing these as they come out of the bake multiplies the mobile payload by
-roughly eight. Nearly three quarters of the model is uncompressed morph-target data — the
-geometry is already Draco'd and is not the problem.
+A MetaHuman bake costs about **87 MB** to download; the meshopt build of the same character is
+about **50 MB**, and nobody wants the other one. So there is nothing to choose (telegamez#3728):
 
-**Compress**, beside Publish. Tick the characters, press it, and it writes a compressed copy
-to `_compressed/<character>/` next to the bakes. The size column then shows both:
+- **Bake** ends by writing the meshopt build to `_compressed/<character>/` beside the bakes.
+- **Upload** sends that build. If it is missing, older than the package, or was made in
+  another mode, Upload makes it first and then uploads - one press, and the journal always
+  says `COMPRESSED build`.
+- **Compress** remains for an explicit re-compress; you will rarely need it.
+
+The size column reads:
 
 ```
-telly    49 MB
-         -> 16 MB meshopt
+telly    87 -> 50 MB · meshopt              ready as it stands
+tommy    87 MB · compresses on publish      no build yet; Upload makes one
+telly    87 MB · compressed build is STALE  the bake changed; Upload remakes it
 ```
 
-Then tick **publish the compressed build** and publish as usual. It is the ordinary publish
-pointed at the compressed folder — same upload, same SQL, same rollback.
+There is no `-MeshoptConfirmed` any more. The switch still starts the console, and does
+nothing.
 
-### The two modes, and why only one of them can be published
+### What meshopt does to the model
 
-| | |
-|---|---|
-| **meshopt** | geometry and morph targets. **Publishable today** — this is the big win. |
-| **full (+KTX2)** | also compresses the textures. **Cannot be published** — nothing in the web app can load KTX2 yet. |
+Geometry and morph targets are quantised: about 0.85 mm median drift on the largest
+expression targets, compared against the original through the real runtime with the material
+profile, hair calibration and clothing textures live, and indistinguishable. Textures are not
+touched; stage 03 already caps and de-alphas them, which is where most of the weight was.
 
-The console will refuse to publish a `full` build rather than warn about it. A companion
-published that way uploads fine, reports success everywhere, and then renders nothing —
-exactly the shape of the G13 failure above, and nothing downstream would catch it either.
-`full` exists so the texture saving can be measured while the loader work is outstanding.
-
-### A stale compressed build
-
-The compressed copy is made from the bake, so it can fall behind it — same as a thumbnail.
-If the bake changed after it was compressed, the size column marks it **stale** and
-publishing asks first. Re-compress rather than shipping it: a stale build publishes the
-previous companion while reporting success.
+`full` (meshopt plus KTX2 textures) still exists in the compressor for measurement and still
+cannot be published: nothing in the web app loads KTX2, so it would upload cleanly, report
+success everywhere, and render nothing. Upload remakes such a build as meshopt rather than
+sending it. WebP sidecar textures are held the same way until one is confirmed in a room.
 
 ## Publishing doesn't go live
 

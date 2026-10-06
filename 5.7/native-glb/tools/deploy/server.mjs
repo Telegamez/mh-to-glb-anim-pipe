@@ -586,6 +586,94 @@ function runCapture(res, monorepo, dir) {
 }
 
 // ---------------------------------------------------------------------------------------
+// Clean up old avatars (telegamez#3662).
+//
+// Retiring an avatar is three changes through the admin API, in this order:
+//   1. every companion and talk-show slot using it is pointed at a replacement avatar, so
+//      nothing a user sees loses its look (the companion keeps its name, voice and prompts);
+//   2. the avatar is archived (status 'archived', isActive false): hidden from pickers, files
+//      kept, reversible by putting the status back;
+//   3. only where asked, it is deleted for good (`?hard=true`: the row and avatars/<id>/ in S3),
+//      which the API refuses while anything still uses it.
+// The page shows the full plan as a dry run first; production needs its name typed. Every
+// change is written to the journal with how to undo it.
+
+/** The pre-tg MetaHuman ids, retired 2026-10-05 (metahuman-to-glb #27). Pre-ticked, nothing more. */
+const RETIRED_SLUGS = ['mh-tele', 'mh-telly', 'mh-telie', 'mh-telee', 'mh-tele1', 'mh-tele2'];
+
+/** The admin API wraps some responses as { success, data } and returns others bare. */
+const unwrapApi = (b) => (b && typeof b === 'object' && b.data && typeof b.data === 'object' ? b.data : b);
+
+async function adminCall(target, method, apiPath, json) {
+  const r = await fetch(`${target.apiBase}${apiPath}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${session.token}`,
+      ...(json === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    ...(json === undefined ? {} : { body: JSON.stringify(json) }),
+  });
+  const body = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, body: unwrapApi(body), error: body?.error ?? body?.message ?? null };
+}
+
+async function adminGet(target, apiPath) {
+  const r = await adminCall(target, 'GET', apiPath);
+  if (!r.ok) throw new Error(`GET ${apiPath}: ${r.status}${r.error ? ` ${r.error}` : ''}`);
+  return r.body;
+}
+
+async function adminGetAll(target, apiPath, key) {
+  const out = [];
+  for (let page = 1; page < 100; page++) {
+    const sep = apiPath.includes('?') ? '&' : '?';
+    const d = await adminGet(target, `${apiPath}${sep}limit=100&page=${page}`);
+    const items = Array.isArray(d?.[key]) ? d[key] : [];
+    out.push(...items);
+    const pages = Number(d?.pagination?.totalPages ?? 1);
+    if (items.length === 0 || page >= pages) break;
+  }
+  return out;
+}
+
+/** Every avatar with what uses it. Read fresh for the page and again before applying. */
+async function cleanupScan(target) {
+  const avatars = await adminGetAll(target, '/api/admin/avatars', 'avatars');
+  const companions = await adminGetAll(target, '/api/admin/companions?includeInactive=true', 'companions');
+  const shows = (await adminGet(target, '/api/admin/talk-shows'))?.talkShows ?? [];
+  const slots = [];
+  for (const show of shows) {
+    const d = await adminGet(target, `/api/admin/talk-shows/${show.id}/companions`);
+    for (const c of d?.companions ?? []) {
+      slots.push({
+        showId: show.id, showName: show.name || show.title || show.slug || show.id,
+        slotId: c.id, label: c.displayName || c.role || c.id, avatarId: c.avatarId ?? null,
+      });
+    }
+  }
+  return avatars.map((a) => ({
+    id: a.id, slug: a.slug, name: a.name, status: a.status ?? null, isActive: Boolean(a.isActive),
+    modelPath: a.modelPath ?? null,
+    oldId: RETIRED_SLUGS.includes(a.slug),
+    companions: companions.filter((c) => c.avatarId === a.id).map((c) => ({ id: c.id, name: c.name, slug: c.slug })),
+    talkShowSlots: slots.filter((s) => s.avatarId === a.id),
+  }));
+}
+
+function recordCleanup(env, apiBase, lines) {
+  try {
+    fs.mkdirSync(JOURNAL_DIR, { recursive: true });
+    // Milliseconds and a counter: two runs in one second (a refusal, then the real run) must
+    // not share a file, or the second record overwrites the first.
+    const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 18);
+    let file = path.join(JOURNAL_DIR, `${env}-cleanup-${stamp}.md`);
+    for (let n = 2; fs.existsSync(file); n++) file = path.join(JOURNAL_DIR, `${env}-cleanup-${stamp}-${n}.md`);
+    fs.writeFileSync(file, [`# Avatar cleanup on ${env}`, '', apiBase, '', ...lines, ''].join('\n'));
+    return file;
+  } catch { return null; }
+}
+
+// ---------------------------------------------------------------------------------------
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
@@ -966,6 +1054,111 @@ const server = http.createServer(async (req, res) => {
      * that it no longer needs database access, and the rollback value is written down by the
      * tool instead of depending on someone keeping a text file.
      */
+    /** Avatars with their companions and talk-show slots, for the Clean up step. */
+    if (url.pathname === '/api/cleanup/scan' && req.method === 'POST') {
+      const { env } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      try {
+        return send(res, 200, { avatars: await cleanupScan(target) });
+      } catch (e) {
+        return send(res, 502, { error: `${e.message} — is the cookie for ${env}?` });
+      }
+    }
+
+    /**
+     * Apply a cleanup plan: [{ avatarId, replacementId, hard }]. Streams progress, stops at the
+     * first failure, and journals every change with its undo. The plan is re-checked against a
+     * fresh scan, so a companion added since the dry run is reassigned too, or the run stops.
+     */
+    if (url.pathname === '/api/cleanup/apply' && req.method === 'POST') {
+      const { env, items, confirm } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      if (!Array.isArray(items) || items.length === 0) return send(res, 400, { error: 'nothing selected' });
+      if (target.danger && confirm !== env) {
+        return send(res, 400, { error: `${env} is production: type "${env}" to confirm` });
+      }
+
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      const journal = [];
+      const say = (s) => res.write(s);
+      const finish = (code) => {
+        const recorded = journal.length ? recordCleanup(env, target.apiBase, journal) : null;
+        if (recorded) say(`\n[console] recorded: ${recorded}\n`);
+        say(`\n[console] exit ${code}\n`);
+        res.end();
+      };
+
+      let fresh;
+      try { fresh = await cleanupScan(target); } catch (e) { say(`could not read ${env}: ${e.message}\n`); return finish(1); }
+      const byId = new Map(fresh.map((a) => [a.id, a]));
+      const retiring = new Set(items.map((i) => i.avatarId));
+
+      for (const item of items) {
+        const a = byId.get(item.avatarId);
+        if (!a) { say(`\n${item.avatarId}: not found on ${env} — skipped\n`); continue; }
+        say(`\n=== ${a.slug} (${a.name})\n`);
+        journal.push(`## ${a.slug}`, '', `- avatar \`${a.id}\` (${a.name}), was status \`${a.status}\`, isActive ${a.isActive}`);
+        const uses = a.companions.length + a.talkShowSlots.length;
+        const rep = item.replacementId ? byId.get(item.replacementId) : null;
+        if (uses > 0) {
+          if (!rep) { say(`  used by ${uses} companion(s)/slot(s) and no replacement chosen — stopped\n`); journal.push('- STOPPED: in use, no replacement', ''); return finish(1); }
+          if (rep.id === a.id || retiring.has(rep.id) || rep.status === 'archived' || !rep.isActive) {
+            say(`  replacement ${rep.slug} is not an active avatar outside this cleanup — stopped\n`);
+            journal.push(`- STOPPED: replacement ${rep.slug} unusable`, '');
+            return finish(1);
+          }
+          journal.push(`- replacement \`${rep.id}\` (${rep.slug})`);
+        }
+
+        for (const c of a.companions) {
+          const r = await adminCall(target, 'PUT', `/api/admin/companions/${c.id}`, { companion: { avatarId: rep.id } });
+          // The companion update has no declared avatarId field; it reaches the column through
+          // the update's spread. Read it back so a future API change cannot make this a no-op.
+          const back = r.ok ? await adminCall(target, 'GET', `/api/admin/companions/${c.id}`) : null;
+          const now = back?.body?.companion?.avatarId ?? back?.body?.avatarId ?? null;
+          if (!r.ok || now !== rep.id) {
+            say(`  companion ${c.name}: reassign failed (${r.status}${r.error ? ` ${r.error}` : ''}${r.ok ? `, now ${now}` : ''}) — stopped\n`);
+            journal.push(`- companion \`${c.id}\` (${c.name}): reassign FAILED`, '');
+            return finish(1);
+          }
+          say(`  companion ${c.name} -> ${rep.slug}\n`);
+          journal.push(`- companion \`${c.id}\` (${c.name}) -> ${rep.slug}. Undo: PUT /api/admin/companions/${c.id} {"companion":{"avatarId":"${a.id}"}}`);
+        }
+        for (const s of a.talkShowSlots) {
+          const r = await adminCall(target, 'PUT', `/api/admin/talk-shows/${s.showId}/companions/${s.slotId}`, { avatarId: rep.id });
+          if (!r.ok) {
+            say(`  talk show ${s.showName} / ${s.label}: reassign failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`);
+            journal.push(`- talk-show slot \`${s.slotId}\` (${s.showName} / ${s.label}): reassign FAILED`, '');
+            return finish(1);
+          }
+          say(`  talk show ${s.showName} / ${s.label} -> ${rep.slug}\n`);
+          journal.push(`- talk-show slot \`${s.slotId}\` (${s.showName} / ${s.label}) -> ${rep.slug}. Undo: PUT /api/admin/talk-shows/${s.showId}/companions/${s.slotId} {"avatarId":"${a.id}"}`);
+        }
+
+        if (a.status !== 'archived') {
+          const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${a.id}`);
+          if (!r.ok) { say(`  archive failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push('- archive FAILED', ''); return finish(1); }
+          say('  archived\n');
+          journal.push(`- archived. Undo: PUT /api/admin/avatars/${a.id} {"status":"${a.status ?? 'active'}","isActive":${a.isActive}}`);
+        } else {
+          say('  already archived\n');
+        }
+
+        if (item.hard) {
+          const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${a.id}?hard=true`);
+          if (!r.ok) { say(`  permanent delete failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push('- permanent delete FAILED', ''); return finish(1); }
+          say(`  deleted permanently (row and avatars/${a.id}/)\n`);
+          journal.push(`- DELETED PERMANENTLY: the row and avatars/${a.id}/ in S3. No undo.`);
+        }
+        journal.push('');
+      }
+      return finish(0);
+    }
+
     if (url.pathname === '/api/go-live' && req.method === 'POST') {
       const { env, char, avatarId, modelKey } = await readBody(req);
       const target = ENVIRONMENTS[env];

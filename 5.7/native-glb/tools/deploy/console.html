@@ -116,6 +116,25 @@
     </div>
   </div>
 
+  <div class="step" id="s6" hidden>
+    <h2>Clean up old avatars</h2>
+    <div class="msg dim" style="margin-bottom:10px">Retire avatars from this environment. Anything using one is
+      moved to the replacement you pick, then the avatar is archived (hidden, files kept, reversible).
+      Tick <b>delete files</b> only to remove it for good. Nothing changes until <b>Apply</b>.</div>
+    <div class="row" style="margin-bottom:12px">
+      <button id="cuScan">Scan</button>
+      <span class="dim" id="cuCount" style="font-size:13px"></span>
+    </div>
+    <table><thead><tr>
+      <th style="width:26px"></th><th>Avatar</th><th>Used by</th><th>Replace with</th><th>Delete files</th>
+    </tr></thead><tbody id="cuRows"></tbody></table>
+    <div class="row" style="margin-top:12px">
+      <button id="cuDry">Dry run</button>
+      <input id="cuConfirm" class="mono" placeholder="type the environment name" style="max-width:220px" hidden>
+      <button id="cuApply" class="go" disabled>Apply</button>
+    </div>
+  </div>
+
   <div class="step" id="s5" hidden>
     <h2>Go live</h2>
     <div class="row" style="margin-bottom:12px">
@@ -175,7 +194,8 @@ function envChanged() {
   // Ids, publishes and SQL are all per-environment. Carrying any of them across is the
   // mistake this resets to prevent, so the flow restarts rather than partially updating.
   RESOLVED = {}; PUBLISHED = {}; CHARS = [];
-  show('s3', false); show('s5', false);
+  show('s3', false); show('s5', false); show('s6', false);
+  CU = []; CU_PLAN = null; $('cuRows').innerHTML = ''; $('cuCount').textContent = '';
   $('token').value = ''; $('tokenState').innerHTML = ''; $('chars').innerHTML = '';
   $('signinHost').textContent = e.apiBase;
   $('prodWarn').innerHTML = e.danger
@@ -229,7 +249,7 @@ async function load() {
   RESOLVED = {};
   for (const r of body.resolved) RESOLVED[r.char] = r;
   $('tokenState').innerHTML = '<span class="ok">Connected</span>';
-  show('s3', true);
+  show('s3', true); show('s6', true);
   render();
 }
 
@@ -536,6 +556,96 @@ $('pUse').onclick = async () => {
 };
 
 boot();
+// ---------------------------------------------------------------------------------------
+// Clean up old avatars (telegamez#3662). Scan -> tick -> Dry run -> Apply.
+let CU = [];          // scan result
+let CU_PLAN = null;   // the plan the last dry run showed; Apply sends exactly this
+
+const cuEsc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const cuUses = (a) => a.companions.length + a.talkShowSlots.length;
+
+function cuRender() {
+  const active = CU.filter((a) => a.status !== 'archived' && a.isActive);
+  $('cuRows').innerHTML = CU.map((a) => {
+    const used = [
+      ...a.companions.map((c) => 'companion ' + cuEsc(c.name)),
+      ...a.talkShowSlots.map((s) => 'talk show ' + cuEsc(s.showName) + ' / ' + cuEsc(s.label)),
+    ];
+    const opts = '<option value="">' + (cuUses(a) ? 'choose…' : '(not needed)') + '</option>'
+      + active.filter((x) => x.id !== a.id).map((x) => '<option value="' + x.id + '">' + cuEsc(x.slug) + '</option>').join('');
+    return '<tr' + (a.status === 'archived' ? ' class="off"' : '') + '>'
+      + '<td><input type="checkbox" class="cuTick" data-id="' + a.id + '"' + (a.oldId ? ' checked' : '') + '></td>'
+      + '<td>' + cuEsc(a.slug) + '<br><span class="dim" style="font-size:11px">' + cuEsc(a.name) + ' · ' + cuEsc(a.status) + '</span></td>'
+      + '<td style="font-size:12px">' + (used.length ? used.join('<br>') : '<span class="dim">nothing</span>') + '</td>'
+      + '<td><select class="cuRep" data-id="' + a.id + '" style="width:auto">' + opts + '</select></td>'
+      + '<td><input type="checkbox" class="cuHard" data-id="' + a.id + '"></td>'
+      + '</tr>';
+  }).join('');
+  $('cuCount').textContent = CU.length + ' avatars, ' + CU.filter((a) => a.oldId).length + ' old ids pre-ticked';
+  CU_PLAN = null; $('cuApply').disabled = true;
+  for (const el of document.querySelectorAll('.cuTick,.cuRep,.cuHard')) el.onchange = () => { CU_PLAN = null; $('cuApply').disabled = true; };
+}
+
+$('cuScan').onclick = async () => {
+  setLog('Scanning avatars on ' + $('env').value + '…\n');
+  const r = await fetch('/api/cleanup/scan', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: $('env').value }) });
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) { log((b.error || 'scan failed') + '\n'); return; }
+  CU = b.avatars || [];
+  cuRender();
+  log(CU.length + ' avatars read.\n');
+};
+
+$('cuDry').onclick = () => {
+  const pick = (cls, id) => document.querySelector('.' + cls + '[data-id="' + id + '"]');
+  const ticked = CU.filter((a) => pick('cuTick', a.id).checked);
+  if (!ticked.length) { setLog('Nothing ticked.\n'); return; }
+  const retiring = new Set(ticked.map((a) => a.id));
+  const lines = ['DRY RUN on ' + $('env').value + ' — nothing has changed yet.', ''];
+  const problems = [];
+  const plan = [];
+  for (const a of ticked) {
+    const repId = pick('cuRep', a.id).value || null;
+    const rep = CU.find((x) => x.id === repId);
+    const hard = pick('cuHard', a.id).checked;
+    lines.push(a.slug + ' (' + a.name + ')');
+    if (cuUses(a)) {
+      if (!rep) problems.push(a.slug + ' is in use: choose a replacement');
+      else if (retiring.has(rep.id)) problems.push(a.slug + ': its replacement ' + rep.slug + ' is also being retired');
+      for (const c of a.companions) lines.push('  companion ' + c.name + ' -> ' + (rep ? rep.slug : '?'));
+      for (const s of a.talkShowSlots) lines.push('  talk show ' + s.showName + ' / ' + s.label + ' -> ' + (rep ? rep.slug : '?'));
+    } else {
+      lines.push('  used by nothing');
+    }
+    lines.push(a.status === 'archived' ? '  already archived' : '  archive (hidden from pickers, files kept, reversible)');
+    if (hard) lines.push('  DELETE PERMANENTLY: the row and avatars/' + a.id + '/ in S3 — no undo');
+    lines.push('');
+    plan.push({ avatarId: a.id, replacementId: rep ? rep.id : null, hard });
+  }
+  if (problems.length) { setLog(lines.join('\n') + '\nCannot apply:\n  ' + problems.join('\n  ') + '\n'); return; }
+  CU_PLAN = plan;
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  $('cuConfirm').hidden = !e.danger; $('cuConfirm').value = '';
+  $('cuApply').disabled = false;
+  setLog(lines.join('\n') + (e.danger ? '\nProduction: type "' + e.key + '" in the box, then Apply.\n' : '\nApply to make these changes.\n'));
+};
+
+$('cuApply').onclick = async () => {
+  if (!CU_PLAN) return;
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && $('cuConfirm').value.trim() !== e.key) { log('\nType "' + e.key + '" to confirm.\n'); return; }
+  $('cuApply').disabled = true;
+  setLog('Applying on ' + e.key + '\n');
+  const res = await fetch('/api/cleanup/apply', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: e.key, items: CU_PLAN, confirm: $('cuConfirm').value.trim() }) });
+  if (!res.ok) { log((await res.json()).error + '\n'); return; }
+  const rd = res.body.getReader(); const dec = new TextDecoder();
+  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
+  CU_PLAN = null;
+  $('cuScan').onclick();   // show the environment as it now stands
+};
+
 </script>
 </body>
 </html>

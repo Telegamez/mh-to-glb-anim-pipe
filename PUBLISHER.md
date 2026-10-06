@@ -191,6 +191,28 @@ them says so instead of uploading nothing.
 nothing reaches the avatar picker with a broken card. The order is: Publish, Publish previews,
 Go live.
 
+## Cleaning up old avatars (telegamez#3662)
+
+**Clean up old avatars** (below the Characters step once you are connected) retires avatars from
+the environment you are signed in to, panda or beta.
+
+1. **Scan** lists every avatar with the companions and talk-show slots that use it. The six
+   pre-tg ids (`mh-tele`, `mh-telly`, `mh-telie`, `mh-telee`, `mh-tele1`, `mh-tele2`) come
+   pre-ticked; tick or untick anything.
+2. For an avatar that is in use, pick **Replace with**: its companions and talk-show slots move
+   to that avatar and keep their names, voices and prompts. A replacement must be active and not
+   itself being retired.
+3. **Delete files** only if you want it gone for good (the row and `avatars/<id>/` in S3). Without
+   it the avatar is archived: hidden from pickers, files kept, reversible.
+4. **Dry run** lists every change. Nothing has happened yet. On beta (production) you must type
+   `beta` before **Apply** works.
+5. **Apply** makes the changes in that order and stops at the first failure. Every change is
+   written to `~/.telegames-publisher/publishes/<env>-cleanup-<time>.md` with the exact call that
+   undoes it (permanent deletes have none).
+
+Each companion is re-read after it is moved, so if the platform ever stops accepting the change
+the run stops before anything is archived.
+
 ## Publishing doesn't go live
 
 Publishing only uploads files. Nobody sees a change until the SQL runs.

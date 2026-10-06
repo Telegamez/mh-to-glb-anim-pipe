@@ -38,7 +38,7 @@ characters/*/source/*
 #                       the override every companion bakes in WHITE BOOTS, and
 #                       recolouring the MI in UE does not survive because stage
 #                       00 regenerates that folder on every re-bake.
-#   exclude_meshes      Drops the duplicate second outfit mesh on tele/tele1.
+#   exclude_meshes      Drops a duplicate outfit mesh (the retired tele1 used it).
 #
 # Losing the directory silently un-fixes both on the next bake, with nothing
 # reporting a problem — the same failure shape as everything in §6.1 of the
@@ -53,12 +53,6 @@ characters/*
 !characters/_template/
 !characters/ada/
 !characters/taro/
-!characters/telly/
-!characters/tele/
-!characters/telie/
-!characters/telee/
-!characters/tele1/
-!characters/tele2/
 
 # Same allowlist for versioned roots.
 */*/characters/*
@@ -66,12 +60,6 @@ characters/*
 !*/*/characters/_template/
 !*/*/characters/ada/
 !*/*/characters/taro/
-!*/*/characters/telly/
-!*/*/characters/tele/
-!*/*/characters/telie/
-!*/*/characters/telee/
-!*/*/characters/tele1/
-!*/*/characters/tele2/
 
 # Stage 04 gallery output — same allowlist. A contributor's local viewer
 # still builds and renders fine; it just stays out of git.

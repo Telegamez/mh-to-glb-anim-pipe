@@ -95,12 +95,37 @@ const textureFormat = flag('texture-format', 'png');
 // the browser has its own file, and its face writer skips names a mesh lacks. The compositor
 // model is left exactly as the `meshopt` build. On by default; `--prune-morphs off` for an A/B.
 const pruneMorphs = flag('prune-morphs', 'on') !== 'off';
+// telegamez#3662 step 2, room model only. Defaults in ktx2 mode are what the fixed-expression A/B
+// on /dev/model-ab signed off (smile, frown, open mouth on tg-drake, 2026-10-05):
+// `--morph-normals small` (default) drops morph NORMAL/TANGENT deltas on every mesh but the head
+// (teeth, eyes, lashes, brows): no visible change on the face, the open mouth's teeth shade
+// marginally differently. `drop` does the head too: 60 -> 34 MB of morph texture, but smile
+// cheeks and frown creases shade visibly shallower up close. Opt-in, for small on-screen sizes.
+// `keep` for an A/B. See strip-morph-normals in gltf-transform.config.mjs.
+const morphNormals = flag('morph-normals', mode === 'ktx2' ? 'small' : 'keep');
+// `--lean-textures` (default on in ktx2 mode, `off` for an A/B): teeth and eye maps to 512 px,
+// and the body's specular and metallic-roughness maps to 128 px (the outfit covers most of the
+// body; at 128 they are close to the constants they nearly are). Embedded textures only, before
+// KTX2 encoding. Teeth are 512 rather than 256 because the tongue shares their material and
+// loses its surface detail at 256 with the mouth open; 512 keeps it, for ~1 MB.
+const leanTextures = flag('lean-textures', mode === 'ktx2' ? 'on' : 'off') === 'on';
+const LEAN_TEXTURES = [
+  ['MI_Teeth_*', 512],
+  ['MI_Eye*', 512],
+  ['MI_Body_*_Specular', 128],
+  ['MI_Body_*_MetallicRoughness', 128],
+];
 const CONFIG = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
   'gltf-transform.config.mjs');
 
 if (!src || !out) { console.error('--src and --out are required'); process.exit(2); }
 if (!['none', 'meshopt', 'ktx2', 'full'].includes(mode)) { console.error(`unknown --mode ${mode}`); process.exit(2); }
 if (!['png', 'webp'].includes(textureFormat)) { console.error(`unknown --texture-format ${textureFormat}`); process.exit(2); }
+if (!['keep', 'small', 'drop'].includes(morphNormals)) { console.error(`unknown --morph-normals ${morphNormals}`); process.exit(2); }
+if ((morphNormals !== 'keep' || leanTextures) && mode !== 'ktx2') {
+  // Only ktx2 gives the browser a model of its own; elsewhere the compositor would get these too.
+  console.error('--morph-normals and --lean-textures apply to --mode ktx2 only'); process.exit(2);
+}
 const carriesKtx2 = mode === 'ktx2' || mode === 'full';
 if (carriesKtx2 && textureFormat !== 'png') { console.error(`--texture-format applies to none/meshopt; ${mode} carries KTX2`); process.exit(2); }
 if (!fs.existsSync(src)) { console.error(`source not found: ${src}`); process.exit(1); }
@@ -254,6 +279,23 @@ if (mode === 'none') {
     });
     roomSrc = p;
   }
+  if (morphNormals !== 'keep') {
+    const n = path.join(out, '.tmp-n.glb');
+    tmp.push(n);
+    const meshes = morphNormals === 'small' ? '"^(?!Head_Mesh$)"' : '".*"';
+    gt(['strip-morph-normals', roomSrc, n, '--meshes', meshes, '--config', `"${CONFIG}"`],
+       `strip   (morph normals: ${morphNormals === 'small' ? 'all but the head' : 'every mesh'})`);
+    roomSrc = n;
+  }
+  if (leanTextures) {
+    LEAN_TEXTURES.forEach(([pattern, px], i) => {
+      const r = path.join(out, `.tmp-r${i}.glb`);
+      tmp.push(r);
+      gt(['resize', roomSrc, r, '--pattern', `"${pattern}"`, '--width', px, '--height', px],
+         `resize  (${pattern} -> ${px} px)`);
+      roomSrc = r;
+    });
+  }
   gt(['uastc', roomSrc, a, '--slots', MODEL_DATA_SLOTS], 'uastc   (normal/ORM/specular)');
   gt(['etc1s', a, b], 'etc1s   (colour)');
   gt(['meshopt', b, outGlb], 'meshopt (geometry + morphs)');
@@ -405,6 +447,8 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
     compositor_model: { after_bytes: sizeOf(compositorGlb) },
     // Room model only. Null when --prune-morphs off.
     pruned_morph_targets: pruned,
+    morph_normals: morphNormals,
+    lean_textures: leanTextures ? Object.fromEntries(LEAN_TEXTURES) : null,
   } : {}),
   model: { before_bytes: sizeOf(srcGlb), after_bytes: sizeOf(outGlb), structure: after },
   textures: { before_bytes: texBefore, after_bytes: texAfter },

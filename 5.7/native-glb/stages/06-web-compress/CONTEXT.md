@@ -373,6 +373,27 @@ three.js morph texture 83.9 -> 67.3 MB. Safe because `writeFaceMorph` looks targ
 mesh. Checked on `/dev/model-ab`: no missing-morph warnings, and pruned vs unpruned differs by
 1.2-1.9/255, inside the 1.1-4.8/255 the same build differs from itself between runs.
 
+**Step 2: morph normals and lean textures (room model; defaults on in `ktx2`).** Judged with a
+fixed expression (`/dev/model-ab?pose=...`, telegamez), because an idle face never exercises crease
+shading. Three poses on tg-drake: smile with cheek squint, frown with sneer, open mouth.
+
+| Build | Morph tex | Model tex | Sidecar tex | GPU total | Verdict |
+|---|---|---|---|---|---|
+| KTX2 only | 83.9 | 24.0 | 33.4 | 141.3 MB | baseline |
+| + prune (step 1) | 67.3 | 24.0 | 33.4 | 124.7 MB | identical |
+| + `--morph-normals small` + lean textures (**default**) | 60.0 | 14.4 | 33.4 | **107.8 MB** | no visible change |
+| + `--morph-normals drop` | 33.6 | 14.4 | 33.4 | 81.4 MB | smile cheeks and frown creases shade shallower up close |
+
+- `small`: diff shows only head-motion outlines on the face; the open mouth's teeth/tongue shade
+  marginally differently (rigid jaw motion with rest normals). Accepted.
+- Lean textures: teeth 512, eyes 512, body specular/roughness 128. Teeth were tried at 256 and
+  rejected: the tongue shares the teeth material and lost its surface detail with the mouth open.
+- `drop`: real, visible up close. Kept opt-in for companions drawn small (a crowd, the back row).
+- Numbers are three.js GPU estimates (float32 RGBA morph texels; 1 byte/px + mips for
+  ASTC/BC). The pose comparison froze morphs but not bones, so pixel diffs between runs carried
+  head-motion noise (up to 24.8/255 same-build); the verdicts are by eye on the diff images.
+- Next largest item: the sidecar hair/brow/lash atlases (four at 2048 px, 33 MB).
+
 **Harness trap found doing this.** Load two DIFFERENT builds into `/dev/model-ab` and only the
 one that attaches first casts face and hair shadows: `attachShadowKey` returns early once the
 scene has a key, so the second model's head and hair never get `castShadow`. KTX2 transcoding

@@ -141,8 +141,50 @@ function pruneMorphs() {
   };
 }
 
+/**
+ * ## strip-morph-normals
+ *
+ * Removes NORMAL and TANGENT deltas from the morph targets of every mesh whose name matches
+ * `pattern`, keeping POSITION. three.js stores one RGBA float32 texel per vertex per morphed
+ * attribute, so this halves a mesh's morph texture. NOT lossless: with no normal deltas the
+ * shading normal stays at its rest value while the surface moves, so expression creases (lip
+ * corners, nasolabial fold, brow furrows) shade flatter. On small meshes (teeth, eyes, lashes)
+ * the difference is not expected to be visible; on the head it has to be judged on a real face.
+ *
+ * Prints one `STRIP <mesh>\t<targets>` line per mesh changed.
+ */
+function stripMorphNormals(pattern) {
+  return (document) => {
+    for (const mesh of document.getRoot().listMeshes()) {
+      if (!pattern.test(mesh.getName())) continue;
+      let changed = 0;
+      for (const prim of mesh.listPrimitives()) {
+        for (const target of prim.listTargets()) {
+          for (const semantic of ['NORMAL', 'TANGENT']) {
+            const accessor = target.getAttribute(semantic);
+            if (!accessor) continue;
+            target.setAttribute(semantic, null);
+            if (accessor.listParents().every((parent) => parent === document.getRoot())) accessor.dispose();
+            changed++;
+          }
+        }
+      }
+      if (changed) console.log(`STRIP ${mesh.getName()}\t${mesh.listPrimitives()[0]?.listTargets().length ?? 0}`);
+    }
+  };
+}
+
 export default {
   onProgramReady: ({ program, io, Session }) => {
+    program
+      .command('strip-morph-normals', 'Remove NORMAL/TANGENT deltas from morph targets')
+      .help('Keeps POSITION. Halves the three.js morph texture of each matched mesh. Lossy on shading.')
+      .argument('<input>', 'Path to read glTF 2.0 (.glb, .gltf) model')
+      .argument('<output>', 'Path to write output')
+      .option('--meshes <regex>', 'Mesh names to strip (regular expression)', { default: '.*' })
+      .action(({ args, options, logger }) =>
+        Session.create(io, logger, args.input, args.output)
+          .transform(stripMorphNormals(new RegExp(String(options.meshes)))));
     program
       .command('prune-morphs', 'Remove morph targets that move none of a mesh\'s vertices')
       .help('Lossless, per mesh. Rewrites extras.targetNames and weights to match.')

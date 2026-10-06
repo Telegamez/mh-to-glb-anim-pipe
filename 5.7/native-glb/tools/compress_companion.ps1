@@ -40,6 +40,15 @@
   per mesh, the targets the published build stores as zeros (teeth keep 18 of 72, eyes 13):
   lossless, ~84 -> ~67 MB of three.js morph texture on tg-drake. Use this for an A/B.
 
+.PARAMETER MorphNormals
+  `ktx2` only. small (default): drop morph-target normals on every mesh but the head, no
+  visible change. drop: the head too, ~26 MB less GPU memory but shallower expression creases
+  up close. keep: for an A/B.
+
+.PARAMETER NoLeanTextures
+  `ktx2` only. Keep teeth/eye maps at full size and the body's specular/roughness maps too.
+  By default they go to 512/512/128 px.
+
 .PARAMETER TexturePx
   Resample the KTX2 textures to this square size in `ktx2`/`full` mode. 0 leaves them alone.
 
@@ -53,6 +62,8 @@ param(
     [ValidateSet('none', 'meshopt', 'ktx2', 'full')][string]$Mode = 'meshopt',
     [int]$TexturePx = 0,
     [switch]$NoPruneMorphs,
+    [ValidateSet('small', 'drop', 'keep')][string]$MorphNormals = 'small',
+    [switch]$NoLeanTextures,
     [string]$KtxBin = ''
 )
 
@@ -73,6 +84,10 @@ $toolArgs = @($core, '--src', $src, '--out', $out, '--mode', $Mode)
 if ($TexturePx -gt 0) { $toolArgs += @('--texture-px', $TexturePx) }
 if ($KtxBin) { $toolArgs += @('--ktx-bin', $KtxBin) }
 if ($NoPruneMorphs) { $toolArgs += @('--prune-morphs', 'off') }
+if ($Mode -eq 'ktx2') {
+    $toolArgs += @('--morph-normals', $MorphNormals)
+    if ($NoLeanTextures) { $toolArgs += @('--lean-textures', 'off') }
+}
 
 Write-Host "source : $src"
 Write-Host "output : $out"

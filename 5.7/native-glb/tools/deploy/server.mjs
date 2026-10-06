@@ -31,7 +31,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -483,6 +483,109 @@ function stream(res, file, args, extraEnv = {}, onClose) {
 }
 
 // ---------------------------------------------------------------------------------------
+// Previews (telegamez#3662): Publish previews captures any that are missing first, the way
+// Publish makes a missing compressed build. A character folder is finished when its
+// thumbnail.png, imagePreview.jpg and videoPreview.mp4 sit beside its model; the capture is
+// the monorepo's own scripts/media/capture-companion-previews.mjs, which photographs the
+// character through the real web app's /dev/companion-capture page, so the frames come from
+// the renderer, material profile and animation the room uses.
+
+const PREVIEW_FILES = ['thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4'];
+/** The local web app the capture drives. Started by this console when nothing answers there. */
+const STACK = arg('stack', 'http://localhost:3000');
+/** The room-settings avatar picker's background; see the bake console for how it was chosen. */
+const PREVIEW_BG = arg('bg', '18385d');
+
+/**
+ * The telegamez checkout, for the capture script and the web app it drives. `--monorepo` wins;
+ * otherwise a remembered answer, then the sibling of this repo (S:\Avatars\metahuman\telegamez
+ * on the bake box). A bundled publisher on a machine without the monorepo cannot capture, and
+ * says so instead of publishing nothing.
+ */
+const guessMonorepo = () => [
+  arg('monorepo', null),
+  readSetting('monorepo'),
+  path.resolve(HERE, '..', '..', '..', '..', '..', 'telegamez'),
+].filter(Boolean).find((d) => fs.existsSync(path.join(d, 'scripts', 'media', 'capture-companion-previews.mjs')));
+
+const hasPreviews = (dir) => PREVIEW_FILES.every((f) => fs.existsSync(path.join(dir, f)));
+
+async function stackUp(timeoutMs = 2500) {
+  try {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), timeoutMs);
+    const r = await fetch(`${STACK}/dev/companion-capture`, { signal: c.signal });
+    clearTimeout(t);
+    return r.ok;
+  } catch { return false; }
+}
+
+/**
+ * The web app this console started, if any. Kept for the console's lifetime so a batch of
+ * characters pays the start-up once, and stopped when the console exits.
+ *
+ * `next dev` without `--turbopack`: Turbopack does not apply web-next's `.js` -> `.ts`
+ * extension alias and resolves workspace packages to their built `dist/`, and the dev pages
+ * 500 on it.
+ */
+let stackChild = null;
+let stackTail = '';
+
+function stopStack() {
+  if (!stackChild) return;
+  try {
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/pid', String(stackChild.pid), '/T', '/F'], { windowsHide: true });
+    } else {
+      stackChild.kill('SIGTERM');
+    }
+  } catch { /* already gone */ }
+  stackChild = null;
+}
+process.on('exit', stopStack);
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopStack(); process.exit(0); });
+
+async function ensureStack(res, monorepo) {
+  if (await stackUp()) return true;
+  if (!stackChild) {
+    const port = new URL(STACK).port || '3000';
+    res.write(`\n=== Starting the local web app at ${STACK} for preview capture (first start takes a minute or two)\n`);
+    stackTail = '';
+    stackChild = spawn('npx', ['next', 'dev', '-p', port], {
+      cwd: path.join(monorepo, 'packages', 'web-next'), shell: true, windowsHide: true,
+    });
+    const keep = (d) => { stackTail = (stackTail + d.toString()).slice(-4000); };
+    stackChild.stdout.on('data', keep);
+    stackChild.stderr.on('data', keep);
+    stackChild.on('exit', () => { stackChild = null; });
+  }
+  // The first request compiles the capture page, which takes longer than a probe's timeout.
+  const deadline = Date.now() + 6 * 60_000;
+  while (Date.now() < deadline) {
+    if (await stackUp(60_000)) { res.write('\n[console] local web app is up\n'); return true; }
+    if (!stackChild) break;
+    res.write('.');
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  res.write(`\n[console] the local web app did not come up at ${STACK}. Last output:\n${stackTail}\n`);
+  return false;
+}
+
+function runCapture(res, monorepo, dir) {
+  return new Promise((resolve) => {
+    res.write(`\n=== Capture previews — ${path.basename(dir)}\n`);
+    const child = spawn('node', [
+      path.join(monorepo, 'scripts', 'media', 'capture-companion-previews.mjs'),
+      '--dir', dir, '--base', STACK, '--bg', PREVIEW_BG,
+    ], { cwd: monorepo, windowsHide: true });
+    child.stdout.on('data', (d) => res.write(d));
+    child.stderr.on('data', (d) => res.write(d));
+    child.on('error', (e) => { res.write(`\n[console] could not start the capture: ${e.message}\n`); resolve(-1); });
+    child.on('close', (code) => resolve(code));
+  });
+}
+
+// ---------------------------------------------------------------------------------------
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
@@ -610,6 +713,14 @@ const server = http.createServer(async (req, res) => {
           // published character is simply absent from that dropdown with nothing to explain
           // why — so the status is carried here and the go-live SQL sets it.
           status: row ? (row.status ?? null) : null,
+          // Whether the three preview columns hold real uploaded assets (telegamez#3662: Go live
+          // waits for them). A row created through the admin API gets placeholder URLs pointing at
+          // objects that do not exist, so presence alone says nothing. Same rule as the bake
+          // console.
+          previewsPublished: Boolean(
+            row && ['thumbnailUrl', 'imagePreviewUrl', 'videoPreviewUrl']
+              .every((f) => typeof row[f] === 'string' && row[f].includes('/avatars/') && !/\/(thumbnail|preview)\.(png|mp4|jpg)$/i.test(row[f])),
+          ),
           // Not anchored, deliberately. The column stores the relative key that was written
           // to it, but the admin LIST endpoint formats it into a full CDN URL on the way out
           // — so a row that is genuinely live comes back as
@@ -811,10 +922,39 @@ const server = http.createServer(async (req, res) => {
       const char = characters[0];
       const avatarId = (avatarIds || {})[char];
       if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
+      const pkgDir = path.join(url.searchParams.get('root') || DEFAULT_ROOT, char);
+      if (!fs.existsSync(path.join(pkgDir, `${char}.glb`))) {
+        return send(res, 400, { error: `no package for ${char} in ${path.dirname(pkgDir)}` });
+      }
+
+      // telegamez#3662: capture missing previews first, so publishing them is one press for
+      // any character, a batch included. The files land beside the model, where they belong;
+      // they are not part of the model publish, so this changes no bake hash.
+      if (!hasPreviews(pkgDir)) {
+        const monorepo = guessMonorepo();
+        if (!monorepo) {
+          return send(res, 400, {
+            error: `${char} has no previews, and the telegamez checkout needed to capture them was `
+              + 'not found beside this publisher. Start it with --monorepo <path to telegamez>.',
+          });
+        }
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+        if (!(await ensureStack(res, monorepo))) {
+          res.write('\n[console] previews not captured — nothing was uploaded\n[console] exit 1\n');
+          res.end();
+          return undefined;
+        }
+        const code = await runCapture(res, monorepo, pkgDir);
+        if (code !== 0 || !hasPreviews(pkgDir)) {
+          res.write(`\n[console] capture failed (exit ${code}) — nothing was uploaded\n[console] exit 1\n`);
+          res.end();
+          return undefined;
+        }
+      }
 
       return stream(res, PREVIEWS, [
         '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
-        '-Source', path.join(url.searchParams.get('root') || DEFAULT_ROOT, char),
+        '-Source', pkgDir,
       ], { TG_ADMIN_TOKEN: session.token });
     }
 

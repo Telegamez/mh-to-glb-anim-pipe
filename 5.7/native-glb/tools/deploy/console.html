@@ -156,6 +156,8 @@ const setLog = (s) => { $('log').textContent = s; };
 const show = (id, yes) => { $(id).hidden = !yes; };
 
 let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [];
+// Characters whose previews were published in this session (telegamez#3662: Go live needs them).
+const PREVIEWED = new Set();
 
 async function boot() {
   CONFIG = await (await fetch('/api/config')).json();
@@ -390,16 +392,13 @@ $('pubPreviews').onclick = async () => {
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && !confirm('Publish previews for ' + list.length + ' to PRODUCTION?')) return;
 
-  // Refuse before uploading anything rather than part way through a batch. A character with no
-  // captured previews is a bake that has not finished, not an upload that can be retried.
+  // telegamez#3662: a character with no previews has them captured first, by the server,
+  // through the local web app (started for you if it is not running).
   const missing = list.filter((c) => { const r = CHARS.find((x) => x.id === c); return r && !r.previews; });
-  if (missing.length) {
-    setLog('No previews captured for: ' + missing.join(', ') + '\nBake them, or use Previews in the bake console.\n');
-    return;
-  }
 
   $('pubPreviews').disabled = true;
-  setLog('Publishing previews for ' + list.length + ' to ' + $('env').value + '\n');
+  setLog('Publishing previews for ' + list.length + ' to ' + $('env').value + '\n'
+    + (missing.length ? 'Capturing first for: ' + missing.join(', ') + ' (about a minute each)\n' : ''));
 
   for (const c of list) {
     log('\n' + c + '\n');
@@ -421,6 +420,7 @@ $('pubPreviews').onclick = async () => {
 
     // Stop the batch on the first failure, the way the model publish does.
     if (!/\[publish_previews\] OK/.test(out)) { log('\nStopped.\n'); break; }
+    PREVIEWED.add(c);
   }
 
   $('pubPreviews').disabled = false;
@@ -437,6 +437,15 @@ $('pubPreviews').onclick = async () => {
 $('goLive').onclick = async () => {
   const entries = Object.entries(PUBLISHED);
   if (!entries.length) return;
+  // telegamez#3662: previews before going live. A character goes live with real previews, or not
+  // at all: the avatar picker would otherwise show a broken card for it.
+  const noPreviews = entries.map(([c]) => c)
+    .filter((c) => !PREVIEWED.has(c) && !(RESOLVED[c] && RESOLVED[c].previewsPublished));
+  if (noPreviews.length) {
+    setLog('Publish previews first for: ' + noPreviews.join(', ')
+      + '\nPublish previews captures any that are missing, then uploads them. Nothing went live.\n');
+    return;
+  }
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && !confirm('Take ' + entries.length + ' live on PRODUCTION?')) return;
 

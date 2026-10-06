@@ -685,8 +685,10 @@ $('cuAll').onchange = () => {
   syncAll($('cuAll'), cuBoxes());
 };
 
-$('cuScan').onclick = async () => {
-  setLog('Scanning avatars on ' + $('env').value + '…\n');
+// keepLog: the re-scan after Apply appends below Apply's output instead of clearing it.
+$('cuScan').onclick = async (keepLog) => {
+  if (keepLog === true) log('\nScanning avatars on ' + $('env').value + '…\n');
+  else setLog('Scanning avatars on ' + $('env').value + '…\n');
   const r = await fetch('/api/cleanup/scan', { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ env: $('env').value }) });
   const b = await r.json().catch(() => ({}));
@@ -742,7 +744,7 @@ $('cuApply').onclick = async () => {
   const rd = res.body.getReader(); const dec = new TextDecoder();
   for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
   CU_PLAN = null;
-  $('cuScan').onclick();   // show the environment as it now stands
+  $('cuScan').onclick(true);   // show the environment as it now stands, below what Apply did
 };
 
 </script>

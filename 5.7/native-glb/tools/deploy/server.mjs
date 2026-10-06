@@ -186,7 +186,8 @@ function runInto(res, label, file, args) {
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
-  panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda' },
+  // telegamez#3662: panda runs the KTX2 web runtime (#4551), so its publishes default to ktx2.
+  panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda', defaultBuild: 'ktx2' },
   beta: { apiBase: 'https://api.beta.telegames.ai', label: 'beta — PRODUCTION', danger: true },
   local: { apiBase: 'http://localhost:3005', label: 'local' },
 };
@@ -200,7 +201,12 @@ const ENVIRONMENTS = {
  * behaviour; hiding it would make the directory's contents unanswerable from the console, and
  * pre-ticking it would publish it on the first careless run.
  */
-const ROSTER = ['telly', 'tele', 'telie', 'telee', 'tele1', 'tele2'];
+const ROSTER = [
+  // The tg-* roster (telegamez#3725 rebakes, the greenfield packages), the ids the avatar records use.
+  'tg-drake', 'tg-jan', 'tg-jen', 'tg-jules', 'tg-ken', 'tg-mae', 'tg-rick', 'tg-tom',
+  // The pre-tg ids, still pre-ticked when their folders are found.
+  'telly', 'tele', 'telie', 'telee', 'tele1', 'tele2',
+];
 
 /** Held for the process lifetime only. Never persisted. */
 const session = { token: null, prior: {} };
@@ -725,7 +731,7 @@ const server = http.createServer(async (req, res) => {
       // telegamez#3662: which build goes up. meshopt unless the page asks for ktx2. A ktx2 build
       // needs the environment's web app to include telegamez#4551; the page says so beside the
       // selector, and production asks for confirmation naming the build.
-      const build = requested || 'meshopt';
+      const build = requested || target.defaultBuild || 'meshopt';
       if (build !== 'meshopt' && build !== 'ktx2') {
         return send(res, 400, { error: `unknown build: ${requested}` });
       }

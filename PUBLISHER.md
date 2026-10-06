@@ -189,7 +189,7 @@ Previews are captured, **checked**, then published:
 
 The files are written next to the model (`thumbnail.png`, `imagePreview.jpg`,
 `videoPreview.mp4`); they are not part of the model publish, so they never change its bake hash.
-Capturing needs the telegamez checkout beside this repo (`S:\Avatars\metahuman	elegamez` on the
+Capturing needs the telegamez checkout beside this repo (`S:\Avatars\metahuman\telegamez` on the
 bake box) or `--monorepo <path>`, plus `ffmpeg` on PATH.
 
 **Go live waits for previews.** It refuses a character whose previews are not published yet. The

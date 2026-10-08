@@ -102,29 +102,37 @@ const PREVIEWS = findBeside('publish_previews.ps1');
 const COMPRESSOR = findBeside('compress_companion.ps1');
 
 /**
- * Where a compressed build of a character lives: `<root>/_compressed/<char>/`.
+ * The one build this publisher makes and uploads: ktx2 (telegamez#3662) - a KTX2 room model, a
+ * PNG `<char>.compositor.glb` for the native compositor, and the sidecar PNGs each with a
+ * `.ktx2` beside it. Its geometry is still meshopt-compressed inside the file; what is gone is
+ * the separate "meshopt" BUILD.
  *
- * Beside the character folders rather than inside one, because `publish_to_cdn.ps1` uploads
- * its `-Source` recursively — a compressed copy nested in the character directory would be
- * published alongside the original and double the payload instead of cutting it.
+ * Owner decision, 2026-10-08: ktx2 is the only build on panda and beta, and meshopt goes end to
+ * end. Two builds of one character under one name is how a meshopt tg-drake reached beta when
+ * ktx2 was meant (journal beta-20261008-6670), and nothing downstream could tell them apart.
+ *
+ * Lives beside the character folders rather than inside one, because `publish_to_cdn.ps1`
+ * uploads its `-Source` recursively - a build nested in the character directory would be
+ * published alongside the original.
  */
-const COMPRESSED_DIR = '_compressed';
+const BUILD = 'ktx2';
+const BUILD_DIR = '_compressed_ktx2';
+const compressedPath = (root, char) => path.join(root, BUILD_DIR, char);
 
 /**
- * meshopt is the standard (telegamez#3728). The per-run hold that used to live here did its
- * job - telegamez#3682 gave every surface the shared loader, and nine compressed roster
- * publishes are in the journals - so there is no flag: Publish uploads the meshopt build and
- * makes it first when it is missing or older than the package. `full` (KTX2) stays refused.
+ * Which avatar a package belongs to, per environment, stored IN the package folder.
+ *
+ * The folder name used to be the only link: `tg-drake` meant the avatar with slug
+ * `mh-tg-drake`, so renaming a folder silently became "Add as new" - a second avatar, with every
+ * companion still on the first. The binding is the avatar's id, learned the first time the
+ * package is matched or created in an environment and used from then on. The name is free to
+ * change; the slug is only the fallback for a package that has never been bound there.
+ *
+ * Kept in the package because that is the one thing a rename carries along. It is never
+ * uploaded: publish sends the ktx2 build folder, which the compressor fills with the model,
+ * sidecar and textures only.
  */
-// TELEGAMEZ (telegamez#3701): WebP sidecar textures. The compressor can write them
-// (`--texture-format webp`); the runtime resolves atlas stems to `.png` itself until it reads
-// the sidecar's `texture_format`, so a WebP build uploads cleanly and renders hair untextured.
-// Same shape as the meshopt flag: the record of what has been confirmed in a room, not a bypass.
-const WEBP_RUNTIME_READY = process.env.TG_WEBP_RUNTIME_READY === '1';
-
-/** Where each build kind lives. ktx2 has its own folder so it never replaces the meshopt build. */
-const BUILD_DIRS = { meshopt: COMPRESSED_DIR, ktx2: `${COMPRESSED_DIR}_ktx2` };
-const compressedPath = (root, char, build = 'meshopt') => path.join(root, BUILD_DIRS[build] ?? COMPRESSED_DIR, char);
+const BINDING_FILE = 'avatar-binding.json';
 
 /** Newest of the model, the sidecar and the textures - what a compressed build must postdate. */
 function contentTimeOf(dir, name) {
@@ -140,21 +148,20 @@ function contentTimeOf(dir, name) {
 }
 
 /**
- * The `build` (meshopt or ktx2) for `<name>`, or null; `current` is what Publish sends as it
- * stands. A ktx2 build is only current if it records the `variants` the publish sends as the
- * avatar manifest; without them the compositor would fall back to the KTX2 model.
+ * The ktx2 build for `<name>`, or null; `current` is what Publish sends as it stands. Only
+ * current if it records the `variants` the publish sends as the avatar manifest, naming this
+ * character's files - without them the compositor would fall back to the KTX2 model, and
+ * `publish_to_cdn.ps1` refuses a room variant that is not `<char>.glb`.
  */
-function compressedInfo(root, name, contentTime, build = 'meshopt') {
-  const dir = compressedPath(root, name, build);
+function compressedInfo(root, name, contentTime) {
+  const dir = compressedPath(root, name);
   const glb = path.join(dir, `${name}.glb`);
   if (!fs.existsSync(glb)) return null;
   let mode = 'unknown';
-  let textureFormat = 'png';
   let variants = null;
   try {
     const cm = JSON.parse(fs.readFileSync(path.join(dir, 'compression_manifest.json'), 'utf8'));
     mode = cm.mode || 'unknown';
-    textureFormat = cm.texture_format || 'png';
     variants = cm.variants || null;
   } catch { /* a build without a readable manifest still has a size worth showing */ }
   const tex = path.join(dir, 'textures');
@@ -162,14 +169,42 @@ function compressedInfo(root, name, contentTime, build = 'meshopt') {
     ? fs.readdirSync(tex).reduce((a, f) => a + fs.statSync(path.join(tex, f)).size, 0)
     : 0);
   const stale = fs.statSync(glb).mtimeMs < contentTime;
-  const publishable = build === 'ktx2'
-    ? mode === 'ktx2' && Boolean(variants?.room && variants?.compositor)
-      && fs.existsSync(path.join(dir, variants.compositor))
-    : (mode === 'none' || mode === 'meshopt') && (textureFormat !== 'webp' || WEBP_RUNTIME_READY);
+  const publishable = mode === BUILD && variants?.room === `${name}.glb` && Boolean(variants?.compositor)
+    && fs.existsSync(path.join(dir, variants.compositor));
   return {
-    dir, build, mode, textureFormat, variants, stale, publishable, mb: Math.round(bytes / 1048576),
-    current: mode === build && !stale && publishable,
+    dir, mode, variants, stale, publishable, mb: Math.round(bytes / 1048576),
+    current: !stale && publishable,
   };
+}
+
+/** `{ environments: { <env>: { avatarId, apiBase, boundAt, how } } }`, or an empty one. */
+function readBinding(dir) {
+  try {
+    const b = JSON.parse(fs.readFileSync(path.join(dir, BINDING_FILE), 'utf8'));
+    return b && typeof b.environments === 'object' && b.environments ? b : { environments: {} };
+  } catch { return { environments: {} }; }
+}
+
+function writeBinding(dir, env, apiBase, avatarId, how) {
+  const b = readBinding(dir);
+  b.note = 'Which avatar this package publishes to, per environment. Written by the publisher; '
+    + 'the folder and model can be renamed freely. Delete an entry only to re-bind it.';
+  b.environments[env] = { avatarId, apiBase, boundAt: new Date().toISOString(), how };
+  fs.writeFileSync(path.join(dir, BINDING_FILE), JSON.stringify(b, null, 2) + '\n');
+}
+
+/**
+ * The model in a package folder: `<folder>.glb`, or - when someone renamed the folder by hand -
+ * the folder's one other room model. Returns the file name, or null when there is none or the
+ * choice would be a guess.
+ */
+function modelFileOf(dir, name) {
+  if (fs.existsSync(path.join(dir, `${name}.glb`))) return `${name}.glb`;
+  let glbs = [];
+  try {
+    glbs = fs.readdirSync(dir).filter((f) => /\.glb$/i.test(f) && !/\.compositor\.glb$/i.test(f));
+  } catch { return null; }
+  return glbs.length === 1 ? glbs[0] : null;
 }
 
 /** One child, streamed into a response that stays open for the next step. */
@@ -186,12 +221,21 @@ function runInto(res, label, file, args) {
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
-  // telegamez#3662: every environment runs the KTX2 web runtime (#4551; beta since 2.0.0-rc52.3),
-  // so publishes default to ktx2 everywhere. meshopt stays selectable on the page.
-  panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda', defaultBuild: 'ktx2' },
-  beta: { apiBase: 'https://api.beta.telegames.ai', label: 'beta — PRODUCTION', danger: true, defaultBuild: 'ktx2' },
-  local: { apiBase: 'http://localhost:3005', label: 'local', defaultBuild: 'ktx2' },
+  // Every environment runs the KTX2 web runtime (telegamez#4551; beta since 2.0.0-rc52.3).
+  panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda' },
+  beta: { apiBase: 'https://api.beta.telegames.ai', label: 'beta — PRODUCTION', danger: true },
+  local: { apiBase: 'http://localhost:3005', label: 'local' },
 };
+
+/**
+ * Model file names the runtime treats as a calibrated character: telegamez web-next takes a
+ * companion's tuning id from its model FILE name (`metaHumanSurface.ts` characterIdOf) and looks
+ * it up in `HAIR_PROFILES` (`hairProfile.ts`). Any other name renders on the bake's own embedded
+ * values, so a rename is invisible - except to one of these, which would quietly pick up another
+ * character's hair, scalp and eye tuning. Refused as rename targets.
+ */
+const PROFILE_NAMES = ['telly', 'tele', 'telie', 'telee', 'tele1', 'tele2', 'tele4'];
+const NAME_OK = /^[a-z0-9][a-z0-9._-]{1,62}$/;
 
 /**
  * The shipping roster, from packages/shared/db/src/seed-metahuman-roster.ts.
@@ -228,12 +272,18 @@ function scanRoot(root) {
 
   const characters = [];
   for (const name of fs.readdirSync(root)) {
-    if (name === COMPRESSED_DIR) continue;   // holds character folders, is not one
+    // `_compressed_ktx2` holds builds, and `_compressed` / `_compressed_full` are what is left of
+    // the retired builds: none of them is a character folder.
+    if (name.startsWith('_compressed')) continue;
     const dir = path.join(root, name);
     if (!fs.statSync(dir).isDirectory()) continue;
 
-    const glb = path.join(dir, `${name}.glb`);
-    if (!fs.existsSync(glb)) continue; // not a character directory
+    const modelFile = modelFileOf(dir, name);
+    if (!modelFile) continue; // not a character directory
+    const glb = path.join(dir, modelFile);
+    // Folder renamed by hand, model not: listed, so the operator can see it, and held back until
+    // Rename brings the two in line - every script downstream addresses `<folder>/<folder>.glb`.
+    const modelMismatch = modelFile !== `${name}.glb` ? modelFile : null;
 
     const sidecar = fs.existsSync(path.join(dir, 'mh_materials.json'));
     const texDir = path.join(dir, 'textures');
@@ -263,55 +313,26 @@ function scanRoot(root) {
         : []),
     ].reduce((a, b) => Math.max(a, b), 0);
 
-    const compDir = compressedPath(root, name);
-    const compGlb = path.join(compDir, `${name}.glb`);
-    let compressed = null;
-    if (fs.existsSync(compGlb)) {
-      let compMode = 'unknown';
-      let compTexFmt = 'png';
-      try {
-        const cm = JSON.parse(
-          fs.readFileSync(path.join(compDir, 'compression_manifest.json'), 'utf8'),
-        );
-        compMode = cm.mode || 'unknown';
-        compTexFmt = cm.texture_format || 'png';
-      } catch { /* a build without a readable manifest still has a size worth showing */ }
-      const compTex = path.join(compDir, 'textures');
-      const bytes = fs.statSync(compGlb).size + (fs.existsSync(compTex)
-        ? fs.readdirSync(compTex).reduce((a, f) => a + fs.statSync(path.join(compTex, f)).size, 0)
-        : 0);
-      compressed = {
-        mode: compMode,
-        mb: Math.round(bytes / 1048576),
-        stale: fs.statSync(compGlb).mtimeMs < contentTime,
-        // `none` and `meshopt` are both publishable. meshopt is lossy on geometry but was
-        // compared against the original through the real runtime — material profile, hair
-        // calibration and clothing textures live — and is indistinguishable. `full` carries
-        // KTX2, which no surface can load: it would upload cleanly, report success and then
-        // fail to render.
-        textureFormat: compTexFmt,
-        // WebP sidecar textures are gated the same way (telegamez#3701).
-        publishable: (compMode === 'none' || compMode === 'meshopt')
-          && (compTexFmt !== 'webp' || WEBP_RUNTIME_READY),
-        current: compMode === 'meshopt' && fs.statSync(compGlb).mtimeMs >= contentTime
-          && (compTexFmt !== 'webp' || WEBP_RUNTIME_READY),
-      };
-    }
-
-    // telegamez#3662: the ktx2 build, in its own folder; reported, never required.
-    const compressedKtx2 = compressedInfo(root, name, contentTime, 'ktx2');
+    // The ktx2 build, made on Publish when it is missing or older than the package.
+    const compressed = modelMismatch ? null : compressedInfo(root, name, contentTime);
+    const bindings = readBinding(dir).environments;
 
     const problems = [];
+    if (modelMismatch) problems.push(`model is ${modelMismatch}, folder is ${name} — Rename to bring them in line`);
     if (!sidecar) problems.push('no mh_materials.json — would render untextured');
     if (textures === 0) problems.push('no textures/');
     if (strayManifest) problems.push('stray manifest.json — publish would be refused');
 
     characters.push({
-      id: name, dir, mb, sidecar, textures, strayManifest, previews, compressed, compressedKtx2,
+      id: name, dir, mb, sidecar, textures, strayManifest, previews, compressed, modelMismatch,
+      bindings,
       // When the previews were captured, for the Previews panel (and to tell a recapture apart).
       previewsAt: previews
         ? Math.max(...PREVIEW_FILES.map((f) => fs.statSync(path.join(dir, f)).mtimeMs)) : null,
-      ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
+      // Pre-ticked when it is a roster id or already bound to an avatar somewhere: a renamed
+      // package stays ticked because its binding came with it.
+      ready: problems.length === 0, problems,
+      inRoster: ROSTER.includes(name) || Object.keys(bindings).length > 0,
     });
   }
   return { root, characters };
@@ -354,7 +375,7 @@ function readBody(req) {
 
 const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
 
-function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, compressed, build = 'meshopt' }) {
+function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code }) {
   const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
   const modelKey = grab(/modelKey:\s*(\S+)/);
   const files = grab(/OK - (\d+ files published)/);
@@ -365,16 +386,13 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
   out.push(`- avatar  \`${avatarId}\``);
   out.push(`- bake    \`${bakeHash}\``);
   if (files || size) out.push(`- upload  ${[files, size].filter(Boolean).join(', ')}`);
-  // Which bytes went up. A compressed publish and an uncompressed one produce the same
-  // model key and the same SQL, so nothing else in this record distinguishes them — and
-  // "why is this companion 87 MB again" is answered here or not at all.
-  out.push(`- source  ${compressed ? `COMPRESSED ${build} build (${BUILD_DIRS[build] ?? COMPRESSED_DIR}/)` : 'uncompressed bake'}`);
+  // Which bytes went up. Always the ktx2 build now; still written, because older records in the
+  // same folder say meshopt or uncompressed, and Remove old versions reads this line back.
+  out.push(`- source  COMPRESSED ${BUILD} build (${BUILD_DIR}/)`);
   // telegamez#3662: a ktx2 publish also writes manifest.json routing the compositor to its own
   // PNG model. Recorded because rolling back the row does not remove it from the old prefix.
-  if (build === 'ktx2') {
-    const manifest = grab(/avatar manifest:\s*(\{.*\})/);
-    if (manifest) out.push(`- manifest \`${manifest}\``);
-  }
+  const manifest = grab(/avatar manifest:\s*(\{.*\})/);
+  if (manifest) out.push(`- manifest \`${manifest}\``);
   const wasPath = previous?.modelPath ?? null;
   const wasStatus = previous?.status ?? null;
   out.push(`- was     ${wasPath ? `\`${wasPath}\`` : '(no model on the row)'}${wasStatus ? `, status \`${wasStatus}\`` : ''}`);
@@ -463,6 +481,78 @@ function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, prev
   } catch {
     return null;
   }
+}
+
+/**
+ * Every published version the journals know of in one environment: bake hash -> { avatarId,
+ * build }. The CDN cannot be listed through the admin API, so this is how Remove old versions
+ * finds what to remove: the `bake` line of each publish, plus the `was` / `now` keys of
+ * publishes and go-lives, which is where versions published before these journals existed
+ * (the seeded `…-20260904-8044` bakes) turn up.
+ *
+ * Only files whose header names this environment's API are read; a journal is plain markdown
+ * and a hand-copied file must not leak another environment's versions in.
+ */
+function journalVersions(env, apiBase) {
+  const versions = new Map();
+  const deleted = new Set();
+  const note = (hash, avatarId, build) => {
+    const v = versions.get(hash) ?? { avatarId, build: null };
+    if (build && !v.build) v.build = build;
+    versions.set(hash, v);
+  };
+  let files = [];
+  try { files = fs.readdirSync(JOURNAL_DIR).filter((f) => f.startsWith(`${env}-`) && f.endsWith('.md')); } catch { return versions; }
+  for (const f of files) {
+    let text;
+    try { text = fs.readFileSync(path.join(JOURNAL_DIR, f), 'utf8'); } catch { continue; }
+    if (!text.split('\n', 4).some((l) => l.trim() === apiBase)) continue;
+    let avatarId = null;
+    let lastHash = null;
+    for (const line of text.split('\n')) {
+      if (line.startsWith('## ')) { avatarId = null; lastHash = null; }
+      const a = line.match(/^- avatar\s+`([0-9a-f-]{36})`/i);
+      if (a) avatarId = a[1];
+      const b = line.match(/^- bake\s+`([A-Za-z0-9._-]+)`/);
+      if (b && avatarId) { lastHash = b[1]; note(lastHash, avatarId, null); }
+      const s = line.match(/^- source\s+(?:COMPRESSED (\w+) build|(uncompressed) bake)/);
+      if (s && lastHash) note(lastHash, avatarId, s[1] || s[2]);
+      for (const k of line.matchAll(/avatars\/([0-9a-f-]{36})\/([A-Za-z0-9._-]+)\/[^\s`']+\.glb/gi)) note(k[2], k[1], null);
+      // What Remove old versions already took, so it is not offered again.
+      const d = line.match(/ deleted avatars\/[0-9a-f-]{36}\/([A-Za-z0-9._-]+)\/\. No undo\./i);
+      if (d) deleted.add(d[1]);
+    }
+  }
+  for (const h of deleted) versions.delete(h);
+  return versions;
+}
+
+/** What a version holds: from its name when it says (`-ktx2-` / `-meshopt-`), else the journal. */
+function buildOf(hash, versions) {
+  const m = hash.match(/-(ktx2|meshopt)-\d{8}-/);
+  if (m) return m[1];
+  return versions.get(hash)?.build ?? 'not recorded';
+}
+
+/** The bake hash a model path points into, whether stored relative or returned as a full URL. */
+const bakeOfPath = (p) => (String(p || '').match(/avatars\/[0-9a-f-]{36}\/([A-Za-z0-9._-]+)\/[^/]+\.glb/i) || [])[1] ?? null;
+
+/** Local renames, appended to one file - the history of what each folder used to be called. */
+function recordRename(lines) {
+  try {
+    fs.mkdirSync(path.dirname(JOURNAL_DIR), { recursive: true });
+    fs.appendFileSync(path.join(path.dirname(JOURNAL_DIR), 'renames.md'), lines.join('\n') + '\n\n');
+  } catch { /* the rename itself already happened */ }
+}
+
+/** Rewrite a JSON file in place without changing its timestamps - so a build stays current. */
+function rewriteJson(file, edit) {
+  if (!fs.existsSync(file)) return;
+  const st = fs.statSync(file);
+  const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+  edit(j);
+  fs.writeFileSync(file, JSON.stringify(j, null, 2) + '\n');
+  fs.utimesSync(file, st.atime, st.mtime);
 }
 
 function stream(res, file, args, extraEnv = {}, onClose) {
@@ -645,8 +735,24 @@ async function adminGetAll(target, apiPath, key) {
   return out;
 }
 
+/**
+ * avatarId -> package folder name, for every package under `root` bound in `env`. What the
+ * cleanup table calls "your packages": the avatars this folder publishes to, whatever their
+ * slugs or the folders' names happen to be.
+ */
+function boundAvatars(root, env) {
+  const out = new Map();
+  if (!root || !fs.existsSync(root)) return out;
+  for (const name of fs.readdirSync(root)) {
+    if (name.startsWith('_')) continue;
+    const id = readBinding(path.join(root, name)).environments[env]?.avatarId;
+    if (id) out.set(id, name);
+  }
+  return out;
+}
+
 /** Every avatar with what uses it. Read fresh for the page and again before applying. */
-async function cleanupScan(target) {
+async function cleanupScan(target, bound = new Map()) {
   const avatars = await adminGetAll(target, '/api/admin/avatars', 'avatars');
   const companions = await adminGetAll(target, '/api/admin/companions?includeInactive=true', 'companions');
   const shows = (await adminGet(target, '/api/admin/talk-shows'))?.talkShows ?? [];
@@ -663,7 +769,9 @@ async function cleanupScan(target) {
   return avatars.map((a) => ({
     id: a.id, slug: a.slug, name: a.name, status: a.status ?? null, isActive: Boolean(a.isActive),
     modelPath: a.modelPath ?? null,
-    oldId: RETIRED_SLUGS.includes(a.slug),
+    // Never pre-ticked, and the dry run says so if it is ticked: this is a current character.
+    package: bound.get(a.id) ?? null,
+    oldId: RETIRED_SLUGS.includes(a.slug) && !bound.has(a.id),
     companions: companions.filter((c) => c.avatarId === a.id).map((c) => ({ id: c.id, name: c.name, slug: c.slug })),
     talkShowSlots: slots.filter((s) => s.avatarId === a.id),
   }));
@@ -788,19 +896,45 @@ const server = http.createServer(async (req, res) => {
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
 
-      const r = await fetch(`${target.apiBase}/api/admin/avatars?limit=200`, {
-        headers: { Authorization: `Bearer ${session.token}` },
-      });
-      if (!r.ok) return send(res, 502, { error: `admin API ${r.status} — is the cookie for ${env}?` });
-      const body = await r.json();
-      const rows = body.avatars || body.data || [];
+      let rows;
+      try {
+        rows = await adminGetAll(target, '/api/admin/avatars', 'avatars');
+      } catch (e) {
+        return send(res, 502, { error: `${e.message} — is the cookie for ${env}?` });
+      }
+      const versions = journalVersions(env, target.apiBase);
 
       const resolved = (characters || []).map((char) => {
-        const slug = `mh-${char}`;
-        const row = rows.find((x) => x.slug === slug);
+        // The binding first: it is the avatar's id, and survives any rename. The slug only for a
+        // package never bound here - and a slug match is written down as the binding, so the
+        // NEXT rename is safe too. A binding to an avatar the environment no longer has is
+        // reported and stops there; falling back to the slug would publish over whatever
+        // happens to carry the name now.
+        const dir = path.join(root, char);
+        const bound = readBinding(dir).environments[env]?.avatarId ?? null;
+        let row = null;
+        let via = null;
+        let bindingProblem = null;
+        if (bound) {
+          row = rows.find((x) => x.id === bound) ?? null;
+          via = 'binding';
+          if (!row) bindingProblem = `bound to avatar ${bound}, which ${env} does not have`;
+        } else {
+          row = rows.find((x) => x.slug === `mh-${char}`) ?? null;
+          if (row && fs.existsSync(dir)) {
+            via = 'slug';
+            try { writeBinding(dir, env, target.apiBase, row.id, `matched slug ${row.slug}`); via = 'slug, now bound'; } catch { /* read-only folder: still resolved */ }
+          }
+        }
+        const liveBake = bakeOfPath(row?.modelPath);
         return {
-          char, slug,
+          char, slug: row ? row.slug : `mh-${char}`,
+          via, bindingProblem,
+          // What the row serves now, by name: the build is in every bake hash published since
+          // #39, and the journal's source line says it for the ones before.
+          liveBake, liveBuild: liveBake ? buildOf(liveBake, versions) : null,
           avatarId: row ? row.id : null,
           name: row ? row.name : null,
           active: row ? Boolean(row.isActive) : null,
@@ -836,7 +970,32 @@ const server = http.createServer(async (req, res) => {
         session.prior[`${env}/${row.char}`] = { modelPath: row.modelPath || null, status: row.status || null };
       }
 
-      return send(res, 200, { environment: env, resolved });
+      // For a package with neither a binding nor a matching slug: the page offers "update an
+      // existing avatar" from this list instead of creating a second one. Name-free by design.
+      const avatars = rows
+        .filter((x) => x.status !== 'archived')
+        .map((x) => ({ id: x.id, slug: x.slug, name: x.name }))
+        .sort((p, q) => String(p.name).localeCompare(String(q.name)));
+      return send(res, 200, { environment: env, resolved, avatars });
+    }
+
+    /**
+     * Bind a package to an avatar that already exists here - "update existing" on the page, for a
+     * package whose name matches nothing (a re-bake under a new id, a folder renamed elsewhere).
+     * Checked against the environment so a typo cannot bind to nothing.
+     */
+    if (url.pathname === '/api/bind' && req.method === 'POST') {
+      const { env, char, avatarId } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      const dir = path.join(url.searchParams.get('root') || DEFAULT_ROOT, String(char || ''));
+      if (!/^[A-Za-z0-9._-]+$/.test(String(char || '')) || !fs.existsSync(dir)) return send(res, 400, { error: `no package ${char}` });
+      const r = await adminCall(target, 'GET', `/api/admin/avatars/${encodeURIComponent(String(avatarId || ''))}`);
+      const a = r.body?.avatar ?? r.body;
+      if (!r.ok || a?.id !== avatarId) return send(res, 400, { error: `avatar ${avatarId} not found on ${env}` });
+      writeBinding(dir, env, target.apiBase, avatarId, `chosen on the page (${a.slug})`);
+      return send(res, 200, { char, avatarId, slug: a.slug });
     }
 
     /**
@@ -886,15 +1045,27 @@ const server = http.createServer(async (req, res) => {
         const said = out.error || out.message || raw.slice(0, 300) || '(empty body)';
         return send(res, 502, { error: `admin API ${r.status}: ${said}`, sent: payload });
       }
-      return send(res, 200, { avatarId: out.id || out.avatar?.id || null, raw: out });
+      const avatarId = out.id || out.avatar?.id || out.data?.id || null;
+      // Bound at birth, so this package keeps finding its avatar whatever it is renamed to.
+      const dir = path.join(url.searchParams.get('root') || DEFAULT_ROOT, char);
+      if (avatarId && fs.existsSync(dir)) {
+        try { writeBinding(dir, env, target.apiBase, avatarId, `created as ${payload.slug}`); } catch { /* resolve binds it by slug */ }
+      }
+      return send(res, 200, { avatarId, raw: out });
     }
 
     if (url.pathname === '/api/verify' && req.method === 'POST') {
-      const { env } = await readBody(req);
+      const { env, slugs } = await readBody(req);
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
-      return stream(res, VERIFIER, ['-ApiBase', target.apiBase], { TG_ADMIN_TOKEN: session.token });
+      // The avatars this page published, by the slugs they carry here. Without -Slugs the
+      // verifier checks its built-in list - the retired mh-tele* six - and passes on avatars
+      // nobody touched.
+      const list = (Array.isArray(slugs) ? slugs : []).filter((s) => /^[A-Za-z0-9._-]+$/.test(s));
+      const args = ['-ApiBase', target.apiBase];
+      if (list.length) args.push('-Slugs', list.join(','));
+      return stream(res, VERIFIER, args, { TG_ADMIN_TOKEN: session.token });
     }
 
     /**
@@ -913,17 +1084,16 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      // meshopt (telegamez#3728) or ktx2 (telegamez#3662). `none` saves nothing and `full` cannot
-      // be published. Building ktx2 is not gated: it writes its own folder and replaces nothing.
-      const build = mode || 'ktx2';
-      if (build !== 'meshopt' && build !== 'ktx2') {
-        return send(res, 400, { error: `only meshopt and ktx2 builds are made here (asked for ${mode})` });
+      // ktx2 is the only build (owner decision 2026-10-08). A page still asking for another is
+      // refused rather than quietly given ktx2, so the mismatch is seen.
+      if (mode && mode !== BUILD) {
+        return send(res, 400, { error: `only the ${BUILD} build is made here (asked for ${mode})` });
       }
       // One per request, like publish: the page drives the loop so a failure stops the batch
       // at a character anyone can name.
       const char = characters[0];
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      const args = ['-Char', char, '-Root', root, '-Mode', build];
+      const args = ['-Char', char, '-Root', root, '-Mode', BUILD];
       if (Number(texturePx) > 0) args.push('-TexturePx', String(Number(texturePx)));
       return stream(res, COMPRESSOR, args);
     }
@@ -936,12 +1106,9 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      // telegamez#3662: which build goes up. ktx2 unless the page asks for meshopt. A ktx2 build
-      // needs the environment's web app to include telegamez#4551; the page says so beside the
-      // selector, and production asks for confirmation naming the build.
-      const build = requested || target.defaultBuild || 'ktx2';
-      if (build !== 'meshopt' && build !== 'ktx2') {
-        return send(res, 400, { error: `unknown build: ${requested}` });
+      // ktx2 is the only build. A stale page that still sends `build: 'meshopt'` is refused.
+      if (requested && requested !== BUILD) {
+        return send(res, 400, { error: `only the ${BUILD} build is published (asked for ${requested})` });
       }
       if (!/^[A-Za-z0-9._-]+$/.test(bakeHashSuffix || '')) {
         return send(res, 400, { error: 'bake hash suffix must be [A-Za-z0-9._-]' });
@@ -958,25 +1125,22 @@ const server = http.createServer(async (req, res) => {
         return send(res, 400, { error: `no package for ${char} in ${root}` });
       }
 
-      // telegamez#3728: what goes up is the meshopt build, always. A missing build, a stale one
-      // or one made in another mode is remade here first, so a publish is one action and the
-      // journal can only ever say "compressed". A page that still sends `useCompressed` is
-      // ignored: there is no other source.
-      let made = compressedInfo(root, char, contentTimeOf(pkgDir, char), build);
+      // What goes up is the ktx2 build, always. A missing build, a stale one or one that does not
+      // name this character's files is remade here first, so a publish is one action.
+      let made = compressedInfo(root, char, contentTimeOf(pkgDir, char));
       if (!made || !made.current) {
         if (!fs.existsSync(COMPRESSOR)) {
           return send(res, 400, {
-            error: `compress_companion.ps1 is not beside this publisher and ${char} has no current meshopt build`,
+            error: `compress_companion.ps1 is not beside this publisher and ${char} has no current ${BUILD} build`,
           });
         }
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-        const why = !made ? `no ${build} build yet`
-          : made.stale ? `${build} build is older than the package`
-            : `${build} build is mode="${made.mode}" textures="${made.textureFormat}"`
-              + (build === 'ktx2' && !made.publishable ? ' without its compositor variant' : '');
+        const why = !made ? `no ${BUILD} build yet`
+          : made.stale ? `${BUILD} build is older than the package`
+            : `${BUILD} build is mode="${made.mode}" or does not name ${char}'s two models`;
         const code = await runInto(res, `Compress — ${char} (${why})`, COMPRESSOR,
-          ['-Char', char, '-Root', root, '-Mode', build]);
-        made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char), build) : null;
+          ['-Char', char, '-Root', root, '-Mode', BUILD]);
+        made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char)) : null;
         if (!made || !made.current) {
           res.write(`\n[console] compress failed (exit ${code}) — nothing was uploaded\n[console] exit 1\n`);
           res.end();
@@ -985,9 +1149,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       // The build is part of the bake hash, so the CDN path, the go-live SQL and the journal all
-      // name it: `avatars/<id>/tg-drake-ktx2-20261008-6670/tg-drake.glb`. The character id stays
-      // as it is - it is the avatar's slug (`mh-<char>`), and renaming it would orphan the record.
-      const bakeHash = `${char}-${build}-${bakeHashSuffix}`;
+      // name it: `avatars/<id>/ktx2-drake-ktx2-20261008-6670/ktx2-drake.glb`. Which avatar it
+      // lands on is the binding's business, not the name's.
+      const bakeHash = `${char}-${BUILD}-${bakeHashSuffix}`;
       return stream(res, PUBLISHER, [
         '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
         '-Source', made.dir,
@@ -996,8 +1160,197 @@ const server = http.createServer(async (req, res) => {
         env, apiBase: target.apiBase, char, avatarId,
         bakeSuffix: bakeHashSuffix, bakeHash,
         previous: session.prior[`${env}/${char}`] ?? null,
-        output, code, compressed: true, build,
+        output, code,
       }));
+    }
+
+    /**
+     * Rename a package: folder, model files, its ktx2 build, and the name the sidecar carries.
+     * Local only - no environment is touched, because the binding inside the folder is what ties
+     * it to its avatars, and it moves with the folder.
+     *
+     * `from` is the folder as it is now. It also repairs a folder renamed by hand (`to` = the
+     * folder, its model still under the old name). File times are kept, so a current ktx2 build
+     * stays current and Publish does not remake it.
+     */
+    if (url.pathname === '/api/rename' && req.method === 'POST') {
+      const { from, to } = await readBody(req);
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
+      if (!/^[A-Za-z0-9._-]+$/.test(String(from || '')) || from.startsWith('_')) return send(res, 400, { error: `bad package name ${from}` });
+      if (!NAME_OK.test(String(to || ''))) {
+        return send(res, 400, { error: `"${to}": use lowercase letters, digits, dot, dash or underscore, 2-63 long, starting with a letter or digit` });
+      }
+      if (PROFILE_NAMES.includes(to)) {
+        return send(res, 400, { error: `"${to}" is a calibrated character id in the runtime (HAIR_PROFILES): a model with this name would take that character's hair, scalp and eye tuning` });
+      }
+      const fromDir = path.join(root, from);
+      const toDir = path.join(root, to);
+      const model = modelFileOf(fromDir, from);
+      if (!model) return send(res, 400, { error: `no package ${from} in ${root}` });
+      const stem = model.replace(/\.glb$/i, '');
+      if (from === to && stem === to) return send(res, 400, { error: `${from} is already called that` });
+      if (from !== to && fs.existsSync(toDir)) return send(res, 400, { error: `${to} already exists in ${root}` });
+
+      // The build may sit under the old folder name or, after a hand rename, the model's.
+      const buildFrom = [compressedPath(root, from), compressedPath(root, stem)]
+        .find((d) => fs.existsSync(path.join(d, `${stem}.glb`))) ?? null;
+      const buildTo = compressedPath(root, to);
+      if (buildFrom && buildFrom !== buildTo && fs.existsSync(buildTo)) {
+        return send(res, 400, { error: `${path.relative(root, buildTo)} already exists` });
+      }
+
+      const done = [];
+      try {
+        if (from !== to) { fs.renameSync(fromDir, toDir); done.push(`folder ${from} -> ${to}`); }
+        if (stem !== to) { fs.renameSync(path.join(toDir, model), path.join(toDir, `${to}.glb`)); done.push(`model ${model} -> ${to}.glb`); }
+        // `character` must stay a string: web-next's visitor room lists a companion only when it
+        // is one. Its value drives nothing else, and neither does hair_tuning_source.character_id.
+        rewriteJson(path.join(toDir, 'mh_materials.json'), (j) => {
+          j.character = to;
+          if (j.hair_tuning_source && typeof j.hair_tuning_source === 'object') j.hair_tuning_source.character_id = to;
+        });
+        if (buildFrom) {
+          if (buildFrom !== buildTo) fs.renameSync(buildFrom, buildTo);
+          for (const [a, b] of [[`${stem}.glb`, `${to}.glb`], [`${stem}.compositor.glb`, `${to}.compositor.glb`]]) {
+            if (a !== b && fs.existsSync(path.join(buildTo, a))) fs.renameSync(path.join(buildTo, a), path.join(buildTo, b));
+          }
+          rewriteJson(path.join(buildTo, 'compression_manifest.json'), (j) => {
+            j.companion = to;
+            j.source = toDir;
+            if (j.variants) j.variants = { ...j.variants, room: `${to}.glb`, compositor: `${to}.compositor.glb` };
+          });
+          rewriteJson(path.join(buildTo, 'mh_materials.json'), (j) => {
+            j.character = to;
+            if (j.hair_tuning_source && typeof j.hair_tuning_source === 'object') j.hair_tuning_source.character_id = to;
+          });
+          done.push(`ktx2 build -> ${path.relative(root, buildTo)}`);
+        }
+      } catch (e) {
+        recordRename([`## ${from} -> ${to} — STOPPED`, '', `- when    ${new Date().toISOString()}`, `- root    ${root}`,
+          ...done.map((d) => `- done    ${d}`), `- failed  ${e.message}`]);
+        return send(res, 500, { error: `rename stopped after ${done.length} step(s): ${e.message}`, done });
+      }
+      const bindings = readBinding(toDir).environments;
+      recordRename([`## ${from} -> ${to}`, '', `- when    ${new Date().toISOString()}`, `- root    ${root}`,
+        ...done.map((d) => `- done    ${d}`),
+        `- bound   ${Object.entries(bindings).map(([e, b]) => `${e}=${b.avatarId}`).join(', ') || '(nowhere yet)'}`]);
+      return send(res, 200, { from, to, done, boundIn: Object.keys(bindings) });
+    }
+
+    /**
+     * Make each ticked package's avatar slug read `mh-<folder>` here - so a renamed package shows
+     * its new name in the admin pages too. Cosmetic: the binding, not the slug, is what the
+     * publisher follows, and the runtime reads neither. The avatar's id, display name, model and
+     * every companion on it are untouched. Journaled with the undo.
+     */
+    if (url.pathname === '/api/sync-slugs' && req.method === 'POST') {
+      const { env, characters, confirm } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      if (!Array.isArray(characters) || !characters.length) return send(res, 400, { error: 'no characters selected' });
+      if (target.danger && confirm !== env) return send(res, 400, { error: `${env} is production: type "${env}" to confirm` });
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
+
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      const journal = [];
+      let code = 0;
+      for (const char of characters) {
+        const avatarId = readBinding(path.join(root, String(char))).environments[env]?.avatarId;
+        if (!avatarId) { res.write(`${char}: not bound on ${env} — Connect once so it is matched, then retry\n`); code = 1; continue; }
+        const want = `mh-${char}`;
+        const cur = await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`);
+        const was = (cur.body?.avatar ?? cur.body)?.slug;
+        if (!cur.ok || !was) { res.write(`${char}: could not read avatar ${avatarId} (${cur.status}) — stopped\n`); code = 1; break; }
+        if (was === want) { res.write(`${char}: already ${want}\n`); continue; }
+        const r = await adminCall(target, 'PUT', `/api/admin/avatars/${avatarId}`, { slug: want });
+        const back = r.ok ? await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`) : null;
+        const now = (back?.body?.avatar ?? back?.body)?.slug;
+        if (!r.ok || now !== want) {
+          res.write(`${char}: slug change failed (${r.status}${r.error ? ` ${r.error}` : ''}${r.ok ? `, reads back ${now}` : ''}) — stopped\n`);
+          journal.push(`## ${char}`, '', `- avatar \`${avatarId}\`: slug ${was} -> ${want} FAILED (HTTP ${r.status}${r.error ? ` ${r.error}` : ''})`, '');
+          code = 1; break;
+        }
+        res.write(`${char}: ${was} -> ${want}\n`);
+        journal.push(`## ${char}`, '', `- avatar \`${avatarId}\`: slug ${was} -> ${want}. Undo: PUT /api/admin/avatars/${avatarId} {"slug":"${was}"}`, '');
+      }
+      const recorded = journal.length ? recordCleanup(env, target.apiBase, ['Slug sync', '', ...journal]) : null;
+      if (recorded) res.write(`\n[console] recorded: ${recorded}\n`);
+      res.write(`\n[console] exit ${code}\n`);
+      res.end();
+      return undefined;
+    }
+
+    /**
+     * Old versions of the ticked packages' avatars: every published bake the journals know of,
+     * except the one the avatar is live on. Read-only; the page shows it as a list to tick.
+     */
+    if (url.pathname === '/api/versions/scan' && req.method === 'POST') {
+      const { env, characters } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      const root = url.searchParams.get('root') || DEFAULT_ROOT;
+      const versions = journalVersions(env, target.apiBase);
+      const out = [];
+      for (const char of characters || []) {
+        const avatarId = readBinding(path.join(root, String(char))).environments[env]?.avatarId;
+        if (!avatarId) { out.push({ char, problem: `not bound on ${env} — Connect once first` }); continue; }
+        const r = await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`);
+        const a = r.body?.avatar ?? r.body;
+        if (!r.ok || !a?.id) { out.push({ char, avatarId, problem: `could not read the avatar (${r.status})` }); continue; }
+        const live = bakeOfPath(a.modelPath);
+        const old = [...versions.entries()]
+          .filter(([hash, v]) => v.avatarId === avatarId && hash !== live)
+          .map(([hash]) => ({ bakeHash: hash, build: buildOf(hash, versions) }))
+          .sort((p, q) => p.bakeHash.localeCompare(q.bakeHash));
+        out.push({ char, avatarId, slug: a.slug, live, liveBuild: live ? buildOf(live, versions) : null, old });
+      }
+      return send(res, 200, { environment: env, packages: out });
+    }
+
+    /**
+     * Delete old versions: [{ avatarId, bakeHash }]. One `DELETE companion-directory?bakeHash=`
+     * each - the route that removes exactly one bake and refuses the one a row points at
+     * (PREFIX_IS_LIVE), so the live version cannot go even if the page were wrong. Re-checked
+     * against the avatar first anyway. No undo: these are deleted from the bucket. Journaled.
+     */
+    if (url.pathname === '/api/versions/remove' && req.method === 'POST') {
+      const { env, items, confirm } = await readBody(req);
+      const target = ENVIRONMENTS[env];
+      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
+      if (!session.token) return send(res, 400, { error: 'no token set' });
+      if (!Array.isArray(items) || !items.length) return send(res, 400, { error: 'nothing selected' });
+      if (target.danger && confirm !== env) return send(res, 400, { error: `${env} is production: type "${env}" to confirm` });
+
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      const journal = ['Remove old versions', ''];
+      const liveOf = new Map();
+      let code = 0;
+      for (const { avatarId, bakeHash } of items) {
+        if (!/^[0-9a-f-]{36}$/i.test(String(avatarId)) || !/^[A-Za-z0-9._-]{6,64}$/.test(String(bakeHash))) {
+          res.write(`skipped a malformed item\n`); continue;
+        }
+        if (!liveOf.has(avatarId)) {
+          const r = await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`);
+          if (!r.ok) { res.write(`${avatarId}: could not read the avatar (${r.status}) — stopped\n`); code = 1; break; }
+          liveOf.set(avatarId, bakeOfPath((r.body?.avatar ?? r.body)?.modelPath));
+        }
+        if (liveOf.get(avatarId) === bakeHash) { res.write(`${bakeHash}: is live — kept\n`); continue; }
+        const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${avatarId}/companion-directory?bakeHash=${encodeURIComponent(bakeHash)}`);
+        if (!r.ok) {
+          res.write(`${bakeHash}: delete failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`);
+          journal.push(`- \`${avatarId}\` ${bakeHash}: FAILED HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`);
+          code = 1; break;
+        }
+        res.write(`${bakeHash}: deleted (avatars/${avatarId}/${bakeHash}/)\n`);
+        journal.push(`- \`${avatarId}\` deleted avatars/${avatarId}/${bakeHash}/. No undo.`);
+      }
+      const recorded = journal.length > 2 ? recordCleanup(env, target.apiBase, journal) : null;
+      if (recorded) res.write(`\n[console] recorded: ${recorded}\n`);
+      res.write(`\n[console] exit ${code}\n`);
+      res.end();
+      return undefined;
     }
 
     /**
@@ -1107,7 +1460,7 @@ const server = http.createServer(async (req, res) => {
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
       try {
-        return send(res, 200, { avatars: await cleanupScan(target) });
+        return send(res, 200, { avatars: await cleanupScan(target, boundAvatars(url.searchParams.get('root') || DEFAULT_ROOT, env)) });
       } catch (e) {
         return send(res, 502, { error: `${e.message} — is the cookie for ${env}?` });
       }

@@ -98,22 +98,37 @@
     </tr></thead><tbody id="chars"></tbody></table>
     <div class="row" style="margin-top:16px">
       <button id="compress">Compress</button>
-      <span class="dim" id="compressNote" style="font-size:12px">the weight is handled at bake time now &mdash; stage 03 caps and de-alphas the sidecar textures (168&nbsp;MB &rarr; 22&nbsp;MB). Compression here is paused.</span>
+      <button id="syncSlugs">Sync slugs</button>
+      <span class="dim" id="compressNote" style="font-size:12px">Publish makes or refreshes the ktx2 build itself; Compress only remakes it now.
+        Sync slugs renames each ticked avatar's slug here to <span class="mono">mh-&lt;folder&gt;</span>.</span>
     </div>
     <div class="row" style="margin-top:10px">
       <button id="publish" class="go">Publish</button>
       <button id="capPreviews">Capture previews</button>
       <button id="pubPreviews">Publish previews</button>
-      <!-- telegamez#3662: ktx2 is the standard (KTX2 browser model + PNG compositor model); meshopt
-           is the fallback. Publish makes the chosen build first if it has to. -->
-      <label class="dim" style="font-size:13px">build
-        <select id="build" style="width:auto;padding:4px 6px">
-          <option value="ktx2">ktx2</option>
-          <option value="meshopt">meshopt</option>
-        </select>
-      </label>
-      <span class="dim" id="buildNote" style="font-size:12px"></span>
+      <!-- ktx2 is the only build (owner decision 2026-10-08): KTX2 browser model + PNG compositor
+           model. There is nothing to choose, so nothing to get wrong. -->
+      <span class="dim" style="font-size:13px">build <b class="ok">ktx2</b></span>
       <span class="dim" id="pubCount" style="font-size:13px"></span>
+    </div>
+  </div>
+
+  <div class="step" id="s7" hidden>
+    <h2>Remove old versions</h2>
+    <div class="msg dim" style="margin-bottom:10px">Every published version of the <b>ticked</b> characters' avatars here,
+      except the one each is live on: meshopt builds, uncompressed bakes, older ktx2 publishes. Deleted from the bucket,
+      no undo. The live version cannot be removed &mdash; the API refuses it as well.</div>
+    <div class="row" style="margin-bottom:12px">
+      <button id="vScan">Scan</button>
+      <span class="dim" id="vCount" style="font-size:13px"></span>
+    </div>
+    <table><thead><tr>
+      <th style="width:26px"><input type="checkbox" id="vAll" title="Select all / none"></th><th>Character</th><th>Version</th><th>Build</th>
+    </tr></thead><tbody id="vRows"></tbody></table>
+    <div class="row" style="margin-top:12px">
+      <button id="vDry">Dry run</button>
+      <input id="vConfirm" class="mono" placeholder="type the environment name" style="max-width:220px" hidden>
+      <button id="vApply" class="go" disabled>Remove</button>
     </div>
   </div>
 
@@ -182,7 +197,7 @@ const log = (s) => { $('log').textContent += s; $('log').scrollTop = 1e9; };
 const setLog = (s) => { $('log').textContent = s; };
 const show = (id, yes) => { $(id).hidden = !yes; };
 
-let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [];
+let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [], AVATARS = [];
 // Characters whose previews were published in this session (telegamez#3662: Go live needs them).
 const PREVIEWED = new Set();
 
@@ -201,24 +216,16 @@ function envChanged() {
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   // Ids, publishes and SQL are all per-environment. Carrying any of them across is the
   // mistake this resets to prevent, so the flow restarts rather than partially updating.
-  RESOLVED = {}; PUBLISHED = {}; CHARS = [];
-  show('s3', false); show('s5', false); show('s6', false);
+  RESOLVED = {}; PUBLISHED = {}; CHARS = []; AVATARS = [];
+  show('s3', false); show('s5', false); show('s6', false); show('s7', false);
   CU = []; CU_PLAN = null; $('cuRows').innerHTML = ''; $('cuCount').textContent = '';
+  V = []; V_PLAN = null; $('vRows').innerHTML = ''; $('vCount').textContent = '';
   $('token').value = ''; $('tokenState').innerHTML = ''; $('chars').innerHTML = '';
   $('signinHost').textContent = e.apiBase;
   $('prodWarn').innerHTML = e.danger
-    ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
+    ? '<div class="alert"><b>Production.</b> Real customers.</div>'
     : '';
-  // telegamez#3662: reset to the environment's default build on every switch (ktx2 everywhere
-  // now), so a one-off meshopt choice never carries into a publish to another environment.
-  $('build').value = e.defaultBuild || 'ktx2';
-  buildChanged();
 }
-function buildChanged() {
-  $('buildNote').textContent = $('build').value === 'ktx2'
-    ? "ktx2: this environment's web app must include telegamez#4551" : '';
-}
-$('build').onchange = buildChanged;
 $('env').onchange = envChanged;
 
 $('openSignin').onclick = (ev) => {
@@ -242,7 +249,7 @@ async function load() {
   const scan = await (await fetch('/api/scan?root=' + encodeURIComponent($('root').value))).json();
   CHARS = scan.characters || [];
 
-  const res = await fetch('/api/resolve', {
+  const res = await fetch('/api/resolve?root=' + encodeURIComponent($('root').value), {
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ env: $('env').value, characters: CHARS.map((c) => c.id) }),
   });
@@ -256,10 +263,15 @@ async function load() {
 
   RESOLVED = {};
   for (const r of body.resolved) RESOLVED[r.char] = r;
+  AVATARS = body.avatars || [];
   $('tokenState').innerHTML = '<span class="ok">Connected</span>';
-  show('s3', true); show('s6', true);
+  show('s3', true); show('s6', true); show('s7', true);
   render();
 }
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+/** "ktx2" in green; anything else - meshopt, an uncompressed bake, unrecorded - stands out. */
+const buildTag = (b) => '<span class="' + (b === 'ktx2' ? 'ok' : 'warn') + '">' + esc(b) + '</span>';
 
 function render() {
   const tb = $('chars'); tb.innerHTML = '';
@@ -275,38 +287,81 @@ function render() {
      * from a person is a display name, so that is the only thing it asks for - inline, filled
      * in, editable. No separate step, no id, nothing to look up first. */
     let action, needsName = false;
-    if (!c.ready) action = '<span class="bad">' + c.problems[0] + '</span>';
+    if (!c.ready) action = '<span class="bad">' + esc(c.problems[0]) + '</span>';
+    else if (r.bindingProblem) action = '<span class="bad">' + esc(r.bindingProblem) + '</span>';
     else if (!r.avatarId) { action = '<span class="ok">Add as new</span>'; needsName = true; }
     else if (r.published) action = '<span class="dim">Update to a new version</span>';
     else action = '<span class="dim">Add its model</span>';
+    const usable = c.ready && !r.bindingProblem;
 
-    const tick = c.ready && c.inRoster;
+    // What this environment serves for the character now, by build, and which avatar it is. The
+    // slug is shown only when it differs from the folder: that is what Sync slugs would change.
+    const live = r.avatarId
+      ? '<br><span style="font-size:11px">live here: ' + (r.liveBuild ? buildTag(r.liveBuild) + ' <span class="dim mono">' + esc(r.liveBake) + '</span>' : '<span class="dim">no model yet</span>')
+        + (r.slug !== 'mh-' + c.id ? '<br><span class="dim">slug ' + esc(r.slug) + ' &middot; Sync slugs renames it</span>' : '')
+        + '</span>'
+      : '';
+    // A package that matches nothing here may still BE an existing avatar - a re-bake under a new
+    // id, a folder renamed somewhere else. Offer those before creating a second one.
+    const existing = needsName && AVATARS.length
+      ? '<br><select class="bindTo" data-char="' + esc(c.id) + '" style="margin-top:5px;padding:4px 6px;font-size:12px;max-width:260px">'
+        + '<option value="">or update an existing avatar…</option>'
+        + AVATARS.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.name) + ' (' + esc(a.slug) + ')</option>').join('')
+        + '</select>'
+      : '';
+    const bound = Object.keys(c.bindings || {});
+
+    const tick = usable && c.inRoster;
     const tr = document.createElement('tr');
-    if (!c.ready) tr.className = 'off';
-    tr.innerHTML = '<td><input type="checkbox" data-char="' + c.id + '"'
-      + (tick ? ' checked' : '') + (c.ready ? '' : ' disabled') + '></td>'
-      + '<td>' + c.id + (c.inRoster ? '' : ' <span class="dim">&middot; extra</span>') + '</td>'
+    if (!usable) tr.className = 'off';
+    tr.innerHTML = '<td><input type="checkbox" data-char="' + esc(c.id) + '"'
+      + (tick ? ' checked' : '') + (usable ? '' : ' disabled') + '></td>'
+      + '<td>' + esc(c.id) + (c.inRoster ? '' : ' <span class="dim">&middot; extra</span>')
+      + ' <button class="small rename" data-char="' + esc(c.id) + '" title="Rename the folder, model and ktx2 build">Rename</button>'
+      + '<br><span class="dim" style="font-size:11px">' + (bound.length ? 'bound: ' + esc(bound.join(', ')) : 'not bound yet') + '</span></td>'
       + '<td class="mono dim">' + c.mb + ' MB'
       + (c.compressed && c.compressed.current
-          ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressed.mb + ' MB meshopt</span>'
-          : '<br><span class="warn" style="font-size:11px">&rarr; meshopt build made on publish'
-            + (c.compressed ? (c.compressed.stale ? ' (stale)' : ' (' + c.compressed.mode + ')') : '') + '</span>')
-      + (c.compressedKtx2
-          ? (c.compressedKtx2.current
-              ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressedKtx2.mb + ' MB ktx2 (both models)</span>'
-              : '<br><span class="warn" style="font-size:11px">&rarr; ktx2 build '
-                + (c.compressedKtx2.stale ? 'stale' : 'unusable') + ', remade on a ktx2 publish</span>')
-          : '')
+          ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressed.mb + ' MB ktx2 (both models)</span>'
+          : '<br><span class="warn" style="font-size:11px">&rarr; ktx2 build '
+            + (c.compressed ? (c.compressed.stale ? 'stale' : 'unusable') + ', remade' : 'made') + ' on publish</span>')
       + '</td>'
-      + '<td>' + action
-      + (needsName ? '<br><input class="nm" data-char="' + c.id + '" value="' + title(c.id)
+      + '<td>' + action + live
+      + (needsName ? '<br><input class="nm" data-char="' + esc(c.id) + '" value="' + esc(title(c.id))
           + '" style="margin-top:5px;padding:5px 8px;font-size:13px;max-width:220px">' : '')
+      + existing
       + '</td>';
     tb.appendChild(tr);
   }
   for (const cb of document.querySelectorAll('#chars input[type=checkbox]')) cb.onchange = count;
+  for (const b of document.querySelectorAll('#chars button.rename')) b.onclick = () => renameChar(b.dataset.char);
   count();
   renderPreviews();
+}
+
+/**
+ * Rename a package locally: folder, model, ktx2 build. Its avatar binding moves with it, so it
+ * keeps publishing to the same avatars; nothing in any environment changes. Sync slugs, after,
+ * if the admin pages should show the new name too.
+ */
+async function renameChar(from) {
+  const c = CHARS.find((x) => x.id === from) || {};
+  // For a folder renamed by hand, the default is the folder's own name: that renames the model
+  // and build to match it.
+  const to = (prompt('Rename ' + from + ' to:', from) || '').trim();
+  if (!to || (to === from && !c.modelMismatch)) return;
+  const bound = Object.keys(c.bindings || {});
+  const missing = CONFIG.environments.map((e) => e.key).filter((k) => !bound.includes(k));
+  if (missing.length && !confirm(from + ' is not bound on: ' + missing.join(', ')
+      + '.\n\nWhere it is not bound, it is found by slug mh-' + from + ', and after the rename it would look for mh-' + to
+      + ' instead. Connect to each of those environments once first if this character exists there.\n\nRename anyway?')) return;
+  setLog('Renaming ' + from + ' -> ' + to + '\n');
+  const r = await fetch('/api/rename?root=' + encodeURIComponent($('root').value), {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from, to }),
+  });
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) { log((b.error || 'rename failed') + '\n' + ((b.done || []).map((d) => '  done: ' + d).join('\n')) + '\n'); return; }
+  log(b.done.map((d) => '  ' + d).join('\n') + '\n  still bound on: ' + (b.boundIn.join(', ') || 'nothing') + '\n');
+  await load();
 }
 
 // telegamez#3662: the Previews panel. Every character with captured previews, as they will be
@@ -388,7 +443,7 @@ function count() {
 $('publish').onclick = async () => {
   const list = picked();
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?\n\nBuild: ' + $('build').value)) return;
+  if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?\n\nBuild: ktx2')) return;
 
   // Never typed. A label only has to be new and readable; a timestamp is both, and inventing
   // one by hand is a step that can only go wrong.
@@ -403,16 +458,28 @@ $('publish').onclick = async () => {
     // whether that means create-then-publish or just publish is not a distinction worth
     // making them hold.
     if (!RESOLVED[c] || !RESOLVED[c].avatarId) {
-      const el = document.querySelector('input.nm[data-char=\"' + c + '\"]');
-      const name = (el && el.value.trim()) || title(c);
-      log('  adding as ' + name + '\n');
-      const mk = await fetch('/api/create-avatar', {
-        method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ env: $('env').value, char: c, name, category:'metahuman' }),
-      });
-      if (!mk.ok) { log('  ' + (await mk.json()).error + '\n'); break; }
+      // "Update an existing avatar" wins over "Add as new": binding to the avatar that already
+      // exists is what keeps its companions on the new model.
+      const pick = document.querySelector('select.bindTo[data-char="' + c + '"]');
+      if (pick && pick.value) {
+        log('  binding to ' + pick.options[pick.selectedIndex].textContent + '\n');
+        const bd = await fetch('/api/bind?root=' + encodeURIComponent($('root').value), {
+          method:'POST', headers:{'content-type':'application/json'},
+          body: JSON.stringify({ env: $('env').value, char: c, avatarId: pick.value }),
+        });
+        if (!bd.ok) { log('  ' + (await bd.json()).error + '\n'); break; }
+      } else {
+        const el = document.querySelector('input.nm[data-char="' + c + '"]');
+        const name = (el && el.value.trim()) || title(c);
+        log('  adding as ' + name + '\n');
+        const mk = await fetch('/api/create-avatar?root=' + encodeURIComponent($('root').value), {
+          method:'POST', headers:{'content-type':'application/json'},
+          body: JSON.stringify({ env: $('env').value, char: c, name, category:'metahuman' }),
+        });
+        if (!mk.ok) { log('  ' + (await mk.json()).error + '\n'); break; }
+      }
       // Re-ask rather than trust the create response's shape for the id.
-      const rr = await fetch('/api/resolve', {
+      const rr = await fetch('/api/resolve?root=' + encodeURIComponent($('root').value), {
         method:'POST', headers:{'content-type':'application/json'},
         body: JSON.stringify({ env: $('env').value, characters:[c] }),
       });
@@ -424,7 +491,7 @@ $('publish').onclick = async () => {
     const res = await fetch('/api/publish?root=' + encodeURIComponent($('root').value), {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp,
-                             avatarIds: { [c]: RESOLVED[c].avatarId }, build: $('build').value }),
+                             avatarIds: { [c]: RESOLVED[c].avatarId }, build: 'ktx2' }),
     });
     if (!res.ok) { log((await res.json()).error + '\n'); break; }
 
@@ -444,19 +511,15 @@ $('publish').onclick = async () => {
 };
 
 /**
- * Compress the ticked characters before publishing them (#3662).
- *
- * A MetaHuman costs ~87 MB to download and beta serves Avaturn avatars at ~11.5 MB, so
- * publishing a raw bake multiplies the mobile payload roughly eightfold. `meshopt` is where
- * nearly all of that is: about 73% of the model is uncompressed morph-target data.
+ * Remake the ticked characters' ktx2 builds now (#3662). Publish does this itself when a build
+ * is missing or stale; this is for doing it ahead of time, or after changing a package.
  *
  * One character per request, like publish, so a failure stops at a character anyone can name.
  */
 $('compress').onclick = async () => {
   const list = picked();
   if (!list.length) return;
-  const mode = $('build').value;   // meshopt or ktx2 (telegamez#3662); each has its own folder
-
+  const mode = 'ktx2';
 
   $('compress').disabled = true;
   setLog('Compressing ' + list.length + ' (' + mode + ')\n');
@@ -591,8 +654,11 @@ $('copySql').onclick = () => {
 
 $('verify').onclick = async () => {
   setLog('Checking ' + $('env').value + '\n\n');
+  // The avatars published from this page, by the slugs they carry here; else the ticked ones.
+  const chars = Object.keys(PUBLISHED).length ? Object.keys(PUBLISHED) : picked();
+  const slugs = chars.map((c) => RESOLVED[c] && RESOLVED[c].avatarId ? RESOLVED[c].slug : null).filter(Boolean);
   const res = await fetch('/api/verify', { method:'POST', headers:{'content-type':'application/json'},
-                                           body: JSON.stringify({ env: $('env').value }) });
+                                           body: JSON.stringify({ env: $('env').value, slugs }) });
   if (!res.ok) { log((await res.json()).error + '\n'); return; }
   const rd = res.body.getReader(); const dec = new TextDecoder();
   for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value,{stream:true})); }
@@ -647,24 +713,26 @@ function cuRender() {
       ...a.companions.map((c) => 'companion ' + cuEsc(c.name)),
       ...a.talkShowSlots.map((s) => 'talk show ' + cuEsc(s.showName) + ' / ' + cuEsc(s.label)),
     ];
-    // Grouped and sorted so a replacement can be found: the tg-* roster first, then everything
-    // else, each labelled "Name (short id)" with the `mh-` prefix dropped. A flat list of 25 raw
-    // slugs in scan order hid `mh-tg-drake` in the middle (2026-10-06).
+    // Grouped and sorted so a replacement can be found: the avatars this folder's packages are
+    // bound to first, then everything else, each labelled "Name (short id)" with the `mh-` prefix
+    // dropped. A flat list of 25 raw slugs in scan order hid `mh-tg-drake` in the middle
+    // (2026-10-06). Grouped by binding, not by a slug prefix, so a rename changes nothing here.
     const shortId = (x) => String(x.slug || '').replace(/^mh-/, '');
     const label = (x) => (!x.name || x.name.toLowerCase() === shortId(x).toLowerCase()
       ? cuEsc(shortId(x)) : cuEsc(x.name) + ' (' + cuEsc(shortId(x)) + ')');
     const byLabel = (p, q) => shortId(p).localeCompare(shortId(q));
     const pool = active.filter((x) => x.id !== a.id);
-    const roster = pool.filter((x) => /^tg-/.test(shortId(x))).sort(byLabel);
-    const others = pool.filter((x) => !/^tg-/.test(shortId(x))).sort(byLabel);
+    const roster = pool.filter((x) => x.package).sort(byLabel);
+    const others = pool.filter((x) => !x.package).sort(byLabel);
     const group = (title, list) => list.length
       ? '<optgroup label="' + title + '">' + list.map((x) => '<option value="' + x.id + '">' + label(x) + '</option>').join('') + '</optgroup>'
       : '';
     const opts = '<option value="">' + (cuUses(a) ? 'choose…' : '(not needed)') + '</option>'
-      + group('Current roster (tg-*)', roster) + group('Other active avatars', others);
+      + group('Your packages', roster) + group('Other active avatars', others);
     return '<tr' + (a.status === 'archived' ? ' class="off"' : '') + '>'
       + '<td><input type="checkbox" class="cuTick" data-id="' + a.id + '"' + (a.oldId ? ' checked' : '') + '></td>'
-      + '<td>' + cuEsc(a.slug) + '<br><span class="dim" style="font-size:11px">' + cuEsc(a.name) + ' · ' + cuEsc(a.status) + '</span></td>'
+      + '<td>' + cuEsc(a.slug) + '<br><span class="dim" style="font-size:11px">' + cuEsc(a.name) + ' · ' + cuEsc(a.status) + '</span>'
+      + (a.package ? '<br><span class="ok" style="font-size:11px">current: package ' + cuEsc(a.package) + '</span>' : '') + '</td>'
       + '<td style="font-size:12px">' + (used.length ? used.join('<br>') : '<span class="dim">nothing</span>') + '</td>'
       + '<td><select class="cuRep" data-id="' + a.id + '" style="width:auto">' + opts + '</select></td>'
       + '<td><input type="checkbox" class="cuHard" data-id="' + a.id + '"></td>'
@@ -689,7 +757,7 @@ $('cuAll').onchange = () => {
 $('cuScan').onclick = async (keepLog) => {
   if (keepLog === true) log('\nScanning avatars on ' + $('env').value + '…\n');
   else setLog('Scanning avatars on ' + $('env').value + '…\n');
-  const r = await fetch('/api/cleanup/scan', { method: 'POST', headers: { 'content-type': 'application/json' },
+  const r = await fetch('/api/cleanup/scan?root=' + encodeURIComponent($('root').value), { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ env: $('env').value }) });
   const b = await r.json().catch(() => ({}));
   if (!r.ok) { log((b.error || 'scan failed') + '\n'); return; }
@@ -711,6 +779,7 @@ $('cuDry').onclick = () => {
     const rep = CU.find((x) => x.id === repId);
     const hard = pick('cuHard', a.id).checked;
     lines.push(a.slug + ' (' + a.name + ')');
+    if (a.package) problems.push(a.slug + ' is the avatar package ' + a.package + ' publishes to - a current character, not an old one. Untick it.');
     if (cuUses(a)) {
       if (!rep) problems.push(a.slug + ' is in use: choose a replacement');
       else if (retiring.has(rep.id)) problems.push(a.slug + ': its replacement ' + rep.slug + ' is also being retired');
@@ -745,6 +814,104 @@ $('cuApply').onclick = async () => {
   for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
   CU_PLAN = null;
   $('cuScan').onclick(true);   // show the environment as it now stands, below what Apply did
+};
+
+// ---------------------------------------------------------------------------------------
+// Sync slugs: each ticked package's avatar slug here becomes mh-<folder>. Cosmetic - the
+// binding is what the publisher follows - but it is where the admin pages show a rename.
+$('syncSlugs').onclick = async () => {
+  const list = picked();
+  if (!list.length) return;
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  const changes = list.filter((c) => RESOLVED[c] && RESOLVED[c].avatarId && RESOLVED[c].slug !== 'mh-' + c)
+    .map((c) => RESOLVED[c].slug + ' -> mh-' + c);
+  if (!changes.length) { setLog('Every ticked slug already matches its folder.\n'); return; }
+  let confirmText = '';
+  if (e.danger) {
+    confirmText = (prompt('PRODUCTION: rename ' + changes.length + ' slug(s) on ' + e.key + ':\n\n' + changes.join('\n')
+      + '\n\nIds, names, models and companions are untouched. Type "' + e.key + '" to confirm.') || '').trim();
+    if (confirmText !== e.key) { setLog('Not confirmed; nothing changed.\n'); return; }
+  } else if (!confirm('Rename ' + changes.length + ' slug(s) on ' + e.key + '?\n\n' + changes.join('\n'))) return;
+  setLog('Syncing slugs on ' + e.key + '\n');
+  const res = await fetch('/api/sync-slugs?root=' + encodeURIComponent($('root').value), {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: e.key, characters: list, confirm: confirmText }),
+  });
+  if (!res.ok) { log((await res.json()).error + '\n'); return; }
+  const rd = res.body.getReader(); const dec = new TextDecoder();
+  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
+  await load();
+};
+
+// ---------------------------------------------------------------------------------------
+// Remove old versions. Scan -> tick -> Dry run -> Remove. Old means "not what the avatar is live
+// on"; every one found is pre-ticked, because the decision on record is one build and no others.
+let V = [];
+let V_PLAN = null;
+const vBoxes = () => [...document.querySelectorAll('.vTick')];
+
+$('vScan').onclick = async (keepLog) => {
+  const list = picked();
+  if (!list.length) { setLog('Tick the characters whose old versions to look for.\n'); return; }
+  if (keepLog === true) log('\nScanning versions on ' + $('env').value + '…\n');
+  else setLog('Scanning versions of ' + list.length + ' on ' + $('env').value + '…\n');
+  const r = await fetch('/api/versions/scan?root=' + encodeURIComponent($('root').value), {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: $('env').value, characters: list }),
+  });
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) { log((b.error || 'scan failed') + '\n'); return; }
+  V = [];
+  const rows = [];
+  for (const p of b.packages || []) {
+    if (p.problem) { rows.push('<tr class="off"><td></td><td>' + esc(p.char) + '</td><td colspan="2" class="bad">' + esc(p.problem) + '</td></tr>'); continue; }
+    rows.push('<tr><td></td><td>' + esc(p.char) + '<br><span class="dim" style="font-size:11px">' + esc(p.slug) + '</span></td>'
+      + '<td class="mono">' + esc(p.live || '(no model)') + '</td><td>' + (p.liveBuild ? buildTag(p.liveBuild) : '') + ' <span class="dim">&middot; live, kept</span></td></tr>');
+    for (const o of p.old) {
+      const i = V.push({ char: p.char, avatarId: p.avatarId, bakeHash: o.bakeHash, build: o.build }) - 1;
+      rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '" checked></td><td class="dim">' + esc(p.char) + '</td>'
+        + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + '</td></tr>');
+    }
+  }
+  $('vRows').innerHTML = rows.join('') || '<tr><td colspan="4" class="dim">Nothing found.</td></tr>';
+  $('vCount').textContent = V.length + ' old version(s)';
+  V_PLAN = null; $('vApply').disabled = true;
+  for (const el of vBoxes()) el.onchange = () => { V_PLAN = null; $('vApply').disabled = true; syncAll($('vAll'), vBoxes()); };
+  syncAll($('vAll'), vBoxes());
+  log(V.length + ' old version(s) found. Versions published before these journals were kept, or by another tool, are not known here.\n');
+};
+$('vAll').onchange = () => {
+  for (const b of vBoxes()) b.checked = $('vAll').checked;
+  V_PLAN = null; $('vApply').disabled = true;
+  syncAll($('vAll'), vBoxes());
+};
+
+$('vDry').onclick = () => {
+  const ticked = vBoxes().filter((b) => b.checked).map((b) => V[Number(b.dataset.i)]);
+  if (!ticked.length) { setLog('Nothing ticked.\n'); return; }
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  const lines = ['DRY RUN on ' + e.key + ' — nothing has changed yet.', '', 'Delete from the bucket, no undo:'];
+  for (const v of ticked) lines.push('  ' + v.char + '  avatars/' + v.avatarId + '/' + v.bakeHash + '/  (' + v.build + ')');
+  V_PLAN = ticked.map((v) => ({ avatarId: v.avatarId, bakeHash: v.bakeHash }));
+  $('vConfirm').hidden = !e.danger; $('vConfirm').value = '';
+  $('vApply').disabled = false;
+  setLog(lines.join('\n') + '\n\nThese can no longer be rolled back to.'
+    + (e.danger ? '\nProduction: type "' + e.key + '" in the box, then Remove.\n' : '\nRemove to delete them.\n'));
+};
+
+$('vApply').onclick = async () => {
+  if (!V_PLAN) return;
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && $('vConfirm').value.trim() !== e.key) { log('\nType "' + e.key + '" to confirm.\n'); return; }
+  $('vApply').disabled = true;
+  setLog('Removing ' + V_PLAN.length + ' old version(s) on ' + e.key + '\n');
+  const res = await fetch('/api/versions/remove', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: e.key, items: V_PLAN, confirm: $('vConfirm').value.trim() }) });
+  if (!res.ok) { log((await res.json()).error + '\n'); return; }
+  const rd = res.body.getReader(); const dec = new TextDecoder();
+  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
+  V_PLAN = null;
+  $('vScan').onclick(true);
 };
 
 </script>

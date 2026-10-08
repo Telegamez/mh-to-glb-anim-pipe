@@ -67,8 +67,10 @@ if (-not (Test-Path $model)) {
 }
 
 # Photographs of the character, not part of the built model. Excluded from the copy and left
-# in place at the destination.
-$PreviewAssets = @('preview.png', 'index.html', 'thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4')
+# in place at the destination. So is avatar-binding.json, the publisher's record of which avatar
+# this package is in each environment: a re-bake that wiped it would send the package back to
+# being matched by its folder name.
+$PreviewAssets = @('preview.png', 'index.html', 'thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4', 'avatar-binding.json')
 
 $dest = Join-Path $Packages $Char
 New-Item -ItemType Directory -Force -Path $dest | Out-Null

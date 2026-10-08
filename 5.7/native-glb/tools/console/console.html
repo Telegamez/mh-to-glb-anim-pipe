@@ -135,10 +135,10 @@
       <button class="body" data-body="male">Male</button>
       <button id="bake" class="go" disabled>Bake</button>
       <button id="capture" class="small" disabled>Previews only</button>
-      <!-- Local like the two beside it: it reads the finished package and writes the meshopt
+      <!-- Local like the two beside it: it reads the finished package and writes the ktx2
            build next to it. The bake does this itself and Upload remakes a stale one, so this
            is the explicit re-compress. The original is untouched. -->
-      <button id="compress" class="small" disabled title="Remake the meshopt build now. Bake makes one; Upload remakes a stale one.">Compress</button>
+      <button id="compress" class="small" disabled title="Remake the ktx2 build now. Bake makes one; Upload remakes a stale one.">Compress</button>
     </div>
     <div class="note" id="compNote" hidden></div>
     <div class="note" id="stackNote" hidden></div>
@@ -158,16 +158,11 @@
       <!-- Before Upload, because Upload cannot run without the row this makes. -->
       <button id="mkRecord" disabled>Create record</button>
       <button id="pubModel" disabled>Upload model</button>
-      <!-- telegamez#3728: Upload sends the meshopt build, making or refreshing it first when it has
-           to. telegamez#3662: or the ktx2 build (KTX2 browser model + PNG compositor model). Compress
-           makes the chosen build. -->
-      <label class="hint" style="display:inline">build
-        <select id="build" style="width:auto">
-          <option value="meshopt">meshopt</option>
-          <option value="ktx2">ktx2</option>
-        </select>
-      </label>
-      <span class="hint" id="buildNote" style="display:inline"></span>
+      <!-- telegamez#3728/#3662: Upload sends the ktx2 build (KTX2 browser model + PNG compositor
+           model), making or refreshing it first when it has to. Owner decision 2026-10-08: it is
+           the only build, so this is a label, not a selector. -->
+      <span class="hint" id="build" style="display:inline">build <b>ktx2</b></span>
+      <span class="hint" id="buildNote" style="display:inline">the environment's web app must include telegamez#4551</span>
       <button id="pubPreviews" disabled>Upload previews</button>
       <button id="goLive" class="go" disabled>Go live</button>
       <button id="verify" class="small" disabled>Check</button>

@@ -16,6 +16,7 @@ characters/*/01-glb/
 characters/*/06-web/
 */*/characters/*/06-web/
 _compressed/
+_compressed_ktx2/
 
 # source/ holds the weight FBX files stage 01 exports for reweight_from_fbx.py and the npz
 # dumped from them. Same reasoning as the stage folders above: rebuildable by re-running the

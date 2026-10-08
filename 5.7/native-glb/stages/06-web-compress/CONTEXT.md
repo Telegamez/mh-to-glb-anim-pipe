@@ -60,6 +60,20 @@ wrapper that points it at the pipeline's folder layout. A stage with its own cop
 drift from the publisher's, and the drift would surface as "the bake compressed differently
 from the publish".
 
+## One build: ktx2 (owner decision, 2026-10-08)
+
+The ktx2 build (§ KTX2 below) is the default on panda and beta, and "to avoid confusion end to
+end" it is the **only** build. The separate `meshopt` build, and the `none` and `full` modes
+beside it, are removed: `compress_companion.mjs` refuses them by name, `compress_companion.ps1`
+and this stage's `run_compress.ps1` accept `-Mode ktx2` only (the default), and every bake ends
+with a ktx2 build in `<packages>/_compressed_ktx2/<id>/`. The old `<packages>/_compressed/`
+folder is no longer read or written by anything in this repo.
+
+`EXT_meshopt_compression` stays: it is the geometry codec inside the ktx2 build, on both its
+models. The sections below on meshopt's fidelity are about that codec and still hold; the
+sections that talk about a meshopt *build*, `none`, `full` or WebP are history, kept for the
+measurements.
+
 ## Scope (hard rule)
 
 
@@ -114,7 +128,7 @@ installer's `/S` silent mode does **not** add itself to PATH, so either add
 
 ```powershell
 
-./tools/run_compress.ps1 -Char tele            # keep sidecar resolution
+./tools/run_compress.ps1 -Char tele            # ktx2 (the only mode), keep sidecar resolution
 
 ./tools/run_compress.ps1 -Char tele -TexturePx 1024
 
@@ -179,16 +193,12 @@ and no clothing textures — which reads as a bad bake, not as a compression bug
 
 
 | Artifact | Location |
-
 |---|---|
-
-| Compressed GLB | `characters/<id>/06-web/<id>.glb` |
-
-| KTX2 textures | `characters/<id>/06-web/textures/*.ktx2` |
-
-| Rewritten sidecar | `characters/<id>/06-web/mh_materials.json` |
-
-| Manifest | `characters/<id>/06-web/web_compress_manifest.json` |
+| Room model (KTX2 textures, meshopt) | `characters/<id>/06-web/<id>.glb` |
+| Compositor model (PNG textures, meshopt) | `characters/<id>/06-web/<id>.compositor.glb` |
+| Sidecar textures, PNG + `.ktx2` sibling each | `characters/<id>/06-web/textures/` |
+| Sidecar (`browser_texture_format: "ktx2"`) | `characters/<id>/06-web/mh_materials.json` |
+| Manifest (records `variants`) | `characters/<id>/06-web/compression_manifest.json` |
 
 
 
@@ -325,7 +335,7 @@ loader work, and is the bulk of the win), verify on panda, then do KTX2 with the
 
 change. Panda is where new work is proven; beta is production.
 
-## KTX2: `--mode ktx2` (telegamez#3662)
+## KTX2: `--mode ktx2` (telegamez#3662) — the only build since 2026-10-08
 
 The two blockers above are lifted in telegamez branch `3662-ktx2-browser-loader`: one shared
 `KTX2Loader` on every companion load path, and `browser_texture_format: "ktx2"` in the sidecar
@@ -338,7 +348,7 @@ a room and fails on the TV and program output. `ktx2` therefore carries both:
 | Output | For |
 |---|---|
 | `<id>.glb` — KTX2 textures inside, meshopt | the browser (`variants.room`) |
-| `<id>.compositor.glb` — PNG textures inside, meshopt, same as the `meshopt` build | the compositor (`variants.compositor`) |
+| `<id>.compositor.glb` — PNG textures inside, meshopt (what the retired `meshopt` build was) | the compositor (`variants.compositor`) |
 | `textures/*.png` + a `.ktx2` sibling for each | PNG for the compositor, KTX2 for the browser |
 | `mh_materials.json` — paths unchanged, plus `browser_texture_format: "ktx2"` | both |
 | `compression_manifest.json` — records `variants: { room, compositor }` | the publisher |
@@ -349,10 +359,10 @@ route refuses a `manifest.json` sent as a file and writes it from that field). I
 uploading if `variants.room` is not the model or a variant file is missing. Without
 `variants.compositor` the compositor would fall back to the room model and could not decode it.
 
-Both consoles publish a ktx2 build from the `build` selector (meshopt is the default); the
-target environment's web app must include telegamez#4551. The wrapper writes ktx2 builds to
-`<root>/_compressed_ktx2/<id>/`, so they never replace the meshopt build in `_compressed/<id>/`.
-See `PUBLISHER.md` § The ktx2 build.
+The ktx2 build is the only one the consoles publish (2026-10-08; earlier it was a `build`
+selector with meshopt as the default); the target environment's web app must include
+telegamez#4551. The wrapper writes it to `<root>/_compressed_ktx2/<id>/`. See `PUBLISHER.md`
+§ The ktx2 build.
 
 **Colour or data.** UASTC with a linear transfer for every data map, ETC1S sRGB for colour.
 Model: `normalTexture`, `occlusionTexture`, `metallicRoughnessTexture`, `specularTexture`
@@ -406,9 +416,12 @@ scene has a key, so the second model's head and hair never get `castShadow`. KTX
 makes the KTX2 build attach second every time, which looked exactly like "KTX2 loses the braid
 shadows". Compare each build loaded into BOTH slots, one run per build.
 
-## WebP sidecar textures (telegamez#3701)
+## WebP sidecar textures (telegamez#3701) — removed 2026-10-08
 
-`compress_companion.mjs --texture-format webp` (modes `none` and `meshopt`) converts the sidecar
+History. `--texture-format webp` applied only to the `none` and `meshopt` modes and was removed
+with them; `compress_companion.mjs` now refuses the flag. What it did:
+
+`compress_companion.mjs --texture-format webp` (modes `none` and `meshopt`) converted the sidecar
 PNGs to WebP — lossless for `_N` and `_Tangent` maps, q95 for everything else — rewrites the
 explicit `textures.*` paths, and writes `texture_format: "webp"` into the sidecar and the
 compression manifest. Atlas stems are left alone; the runtime appends the extension itself.

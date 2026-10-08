@@ -42,6 +42,9 @@ const connected = () => Boolean(CONFIG && CONFIG.hasToken);
  * claiming otherwise would send an operator to re-upload work that is already there — or worse,
  * be believed when it says a step is missing that is not.
  */
+/** The one build (owner decision 2026-10-08); the server reports it and refuses any other. */
+const BUILD = 'ktx2';
+
 function steps(c) {
   const row = ROWS[c.id];
   const publishedKey = Boolean(row && row.published);
@@ -49,11 +52,11 @@ function steps(c) {
   return {
     bake: c.ready ? 'ok' : 'warn',
     previews: c.previews ? 'ok' : 'no',
-    // telegamez#3728: the bake makes the meshopt build and publish remakes a missing or stale
+    // telegamez#3728/#3662: the bake makes the ktx2 build and publish remakes a missing or stale
     // one, so neither blocks anything. 'warn' means "publish will compress first"; 'no' is a
     // package the compressor cannot help because it is not finished.
     size: !c.compressed ? (c.ready ? 'warn' : 'no')
-      : (c.compressed.stale || !c.compressed.publishable || c.compressed.mode !== 'meshopt') ? 'warn'
+      : (c.compressed.stale || !c.compressed.publishable || c.compressed.mode !== 'ktx2') ? 'warn'
         : 'ok',
     upload: !connected() ? 'unknown'
       : (UPLOADED[c.id] || publishedKey) ? 'ok'
@@ -76,13 +79,17 @@ const cell = (state) => state === 'unknown'
  *
  * A stale build says so instead of showing its size. The number would be true and the
  * conclusion false: it is the size of a build made from content that has since changed.
+ *
+ * Only the ktx2 build is shown: it is the only build (owner decision 2026-10-08). Its figure is
+ * per browser visit (room model, sidecar, .ktx2 textures); the compositor's PNG copy beside it
+ * is not something a browser downloads.
  */
 function sizeLine(c) {
   const k = c.compressed;
   if (!k) return `${c.payloadMb} MB · compresses on publish`;
-  if (k.stale) return `${c.payloadMb} MB · compressed build is STALE — remade on publish`;
-  if (k.mode !== 'meshopt') return `${c.payloadMb} MB · ${k.mode} build — remade as meshopt on publish`;
-  return `${c.payloadMb} → ${k.mb} MB · meshopt${k.publishable ? '' : ' (held — remade on publish)'}`;
+  if (k.stale) return `${c.payloadMb} MB · ktx2 build is STALE — remade on publish`;
+  if (k.mode !== 'ktx2') return `${c.payloadMb} MB · ${k.mode} build — remade as ktx2 on publish`;
+  return `${c.payloadMb} → ${k.mb} MB · ktx2${k.publishable ? '' : ' (no compositor variant — remade on publish)'}`;
 }
 
 function renderGrid() {
@@ -197,20 +204,17 @@ function refreshButtons() {
   $('compress').disabled = n === 0 || !sel.every((c) => c.ready) || !(CONFIG && CONFIG.compressorFound);
   $('compress').textContent = n > 1 ? `Compress ${n}` : 'Compress';
 
-  // telegamez#3728: there is no choice of source any more. Publish uploads the meshopt build
-  // and makes it first when it is missing, stale or in another mode. The one hold left is
-  // WebP sidecar textures (telegamez#3701), said out loud rather than left in a tooltip.
+  // telegamez#3728: there is no choice of source any more, and since 2026-10-08 no choice of
+  // build either. Publish uploads the ktx2 build and makes it first when it is missing, stale
+  // or without its compositor variant; said out loud rather than left in a tooltip.
   const held = sel.map((c) => c.compressed).filter((k) => k && !k.publishable);
   const note = $('compNote');
   if (!held.length) {
     note.hidden = true;
   } else {
     note.hidden = false;
-    note.textContent = held.some((k) => k.textureFormat === 'webp')
-      ? 'A build with WebP textures is held until one is confirmed rendering in a real room '
-        + '(telegamez#3701). Publish remakes it with PNG textures.'
-      : 'A "full" build carries KTX2 textures, which nothing in web-next can load. Publish '
-        + 'remakes it as meshopt.';
+    note.textContent = 'A ktx2 build without its compositor variant would leave the compositor '
+      + 'on the KTX2 room model, which it cannot decode. Publish remakes it.';
   }
 }
 
@@ -272,17 +276,8 @@ function envChanged() {
   $('prodWarn').innerHTML = e && e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
     : '';
-  // telegamez#3662: reset to the environment's default build on every switch (ktx2 on panda,
-  // meshopt elsewhere), so a choice made for panda never carries into an upload to beta.
-  $('build').value = (e && e.defaultBuild) || 'meshopt';
-  buildChanged();
   renderGrid();
 }
-function buildChanged() {
-  $('buildNote').textContent = $('build').value === 'ktx2'
-    ? "ktx2: this environment's web app must include telegamez#4551" : '';
-}
-$('build').onchange = buildChanged;
 $('env').onchange = envChanged;
 
 async function scan() {
@@ -420,13 +415,12 @@ $('capture').onclick = async () => {
 /**
  * Compress the ticked characters — #3662.
  *
- * Writes a second, smaller copy into `_compressed/` beside the packages and leaves the
- * original alone, so the bake stays the thing that can always be published and this is a
- * choice made at upload time rather than a change to the character.
+ * Writes the ktx2 build into `_compressed_ktx2/` beside the packages and leaves the original
+ * alone, so the bake stays the thing that can always be rebuilt from and this is never a
+ * change to the character.
  *
- * Always meshopt. `none` is a byte-for-byte copy now that stage 03 caps the sidecar textures,
- * and `full` cannot be published at all — offering either would be offering a button that
- * does nothing and a button that produces something unusable.
+ * Always ktx2: the only build since the owner decision of 2026-10-08. meshopt, `none` and
+ * `full` were removed so there is one build end to end.
  */
 $('compress').onclick = async () => {
   setLog('');
@@ -434,7 +428,7 @@ $('compress').onclick = async () => {
   for (const c of picked()) {
     log('\n' + c.id + '\n');
     const out = await streamTo('/api/compress?root=' + encodeURIComponent(ROOT),
-      { characters: [c.id], mode: $('build').value });   // meshopt or ktx2, each in its own folder
+      { characters: [c.id], mode: BUILD });
     if (!out || !/\[console\] exit 0\b/.test(out)) { log('\nStopped.\n'); break; }
   }
   await scan();
@@ -537,7 +531,7 @@ $('mkRecord').onclick = async () => {
 $('pubModel').onclick = async () => {
   const list = picked();
   const e = target();
-  const build = $('build').value;
+  const build = BUILD;
   if (e.danger && !confirm('Upload ' + list.length + ' to PRODUCTION?\n\nUploading the ' + build + ' build.')) return;
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Date.now()).slice(-4);
   setLog('');

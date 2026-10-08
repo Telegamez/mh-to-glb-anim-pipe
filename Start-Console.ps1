@@ -26,9 +26,9 @@
   Start the server but don't open a browser.
 
 .PARAMETER MeshoptConfirmed
-  Ignored. meshopt is the standard (telegamez#3728): every bake ends with a meshopt build and
-  Upload sends that build, making or refreshing it first when it has to. The switch stays so
-  an old shortcut still starts the console.
+  Ignored. ktx2 is the only build (owner decision 2026-10-08; meshopt was removed as a build):
+  every bake ends with a ktx2 build and Upload sends that build, making or refreshing it first
+  when it has to. The switch stays so an old shortcut still starts the console.
 
 .EXAMPLE
   ./Start-Console.ps1
@@ -87,7 +87,7 @@ if (-not $NoBrowser) {
   } -ArgumentList $Port | Out-Null
 }
 
-if ($MeshoptConfirmed) { Write-Host '  -MeshoptConfirmed is no longer needed: meshopt builds publish by default.' -ForegroundColor DarkGray }
+if ($MeshoptConfirmed) { Write-Host '  -MeshoptConfirmed is ignored: ktx2 is the only build now (meshopt was removed 2026-10-08).' -ForegroundColor DarkGray }
 
 # Foreground, so its output is right here and Ctrl+C stops it.
 $serverArgs = @($server, '--port', $Port)

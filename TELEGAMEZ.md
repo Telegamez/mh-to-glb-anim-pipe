@@ -88,6 +88,8 @@ Three things changed for every card groom, and one of them has an ordering const
   4096 WebP q95 4.7 MB, 2048 WebP q95 1.5 MB. The publisher refuses such a build until
   `TG_WEBP_RUNTIME_READY=1`, because the runtime appends `.png` to atlas stems itself until it
   reads `texture_format`. Same shape as the meshopt gate, for the same silent-failure reason.
+  **Removed 2026-10-08** with the meshopt build it applied to (see "ktx2 is the only build"
+  below); `compress_companion.mjs` now refuses `--texture-format`.
 
 ---
 
@@ -118,7 +120,24 @@ New character-manifest keys (all optional):
 
 Stage 03's `target_tri_budget` is still advisory and `max_texture_px` still global; a per-character override and an opt-in "delete body faces under rigid armour" pass are tracked on the same ticket and not in this change.
 
-## meshopt is the standard (telegamez#3728)
+## ktx2 is the only build (owner decision, 2026-10-08)
+
+"The ktx2 compressed versions of these characters is the default going forward on panda and beta
+environments - to avoid confusion end to end we should remove meshopt completely." So meshopt is
+no longer a build anyone can pick or produce. `EXT_meshopt_compression` stays as the geometry codec
+inside the ktx2 build (both its room and compositor models); what went is the separate build.
+
+| Change | Why |
+|---|---|
+| `compress_companion.mjs`: `--mode` defaults to `ktx2` and `meshopt`, `none`, `full` and `--texture-format` are refused with an error naming the decision. The ktx2 code path and its output bytes are unchanged; the meshopt geometry step it shares stays | One build end to end. Refusing by name tells an old script why instead of looking like a typo. |
+| `compress_companion.ps1` and stage 06's `run_compress.ps1`: `-Mode` is `ktx2` only (the default); output is always `<root>/_compressed_ktx2/<id>/` | Same. Nothing writes `_compressed/` any more. |
+| `bake_character.ps1` and the bake console's bake end with `-Mode ktx2` | Every bake ends with the build that ships. Now needs the `ktx` CLI; still non-fatal. |
+| Bake console (`tools/console/`): no build selector (a fixed "ktx2" label), no per-environment default, `/api/compress` and `/api/publish` refuse any other build, the size column shows the ktx2 build per browser visit, `_compressed/` is neither read nor written, Delete removes `_compressed_ktx2/<id>` | The UI states the policy instead of offering a choice that no longer exists. |
+| `Start-Console.ps1 -MeshoptConfirmed` is still an ignored no-op | Old shortcuts keep starting the console. |
+
+The publisher bundle (`tools/deploy/`, `PUBLISHER.md`) is changed separately.
+
+## meshopt is the standard (telegamez#3728) — superseded 2026-10-08 by "ktx2 is the only build"
 
 | Change | Why |
 |---|---|

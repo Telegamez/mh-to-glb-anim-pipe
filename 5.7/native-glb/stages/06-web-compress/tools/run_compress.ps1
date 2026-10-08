@@ -12,18 +12,19 @@
   Writes characters/<id>/06-web/
 
 .PARAMETER Mode
-  none (default) - no lossy step; stage 03 already handles the sidecar textures.
-  meshopt        - PAUSED, measurably lossy on morph targets.
-  full           - meshopt plus KTX2. Not loadable by the runtime yet.
+  ktx2 (the default, and the only value) - the build that ships: a KTX2 room model, a PNG
+       <id>.compositor.glb, and every sidecar PNG beside a .ktx2 sibling (see ../CONTEXT.md).
+       none, meshopt and full were removed on 2026-10-08 (owner decision: ktx2 is the default
+       on panda and beta, and the only build, to avoid confusion end to end).
 
 .EXAMPLE
   ./run_compress.ps1 -Char tele
-  ./run_compress.ps1 -Char tele -Mode full -TexturePx 1024
+  ./run_compress.ps1 -Char tele -TexturePx 1024
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Char,
-    [ValidateSet('none', 'meshopt', 'full')][string]$Mode = 'meshopt',
+    [ValidateSet('ktx2')][string]$Mode = 'ktx2',
     [int]$TexturePx = 0,
     [string]$KtxBin = ''
 )

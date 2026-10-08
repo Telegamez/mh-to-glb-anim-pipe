@@ -105,33 +105,29 @@ const PREVIEWS = findBeside('publish_previews.ps1');
 const COMPRESSOR = findBeside('compress_companion.ps1');
 
 /**
- * Where a compressed build of a character lives: `<root>/_compressed/<char>/`.
+ * The one build: ktx2 (telegamez#3662). Owner decision 2026-10-08: the ktx2 build is the default
+ * on panda and beta, and "to avoid confusion end to end" the meshopt build is removed. There is
+ * no build selector and nothing here reads or writes `<root>/_compressed/` any more; an old one
+ * on disk is inert. meshopt itself lives on as the geometry codec inside the ktx2 build.
+ *
+ * History, for the journals that still say otherwise: telegamez#3728 made meshopt the standard
+ * and retired the TG_MESHOPT_RUNTIME_READY hold; telegamez#3662 added ktx2 beside it in its own
+ * folder and made it panda's default; telegamez#3701's WebP textures (and their
+ * TG_WEBP_RUNTIME_READY hold) applied to the meshopt build only and went with it.
+ */
+const BUILD = 'ktx2';
+/** Refusal text for a page, script or habit that still asks for another build. */
+const ONE_BUILD = 'ktx2 is the only build (owner decision 2026-10-08: meshopt, none and full were removed)';
+
+/**
+ * Where the ktx2 build of a character lives: `<root>/_compressed_ktx2/<char>/`.
  *
  * Beside the character folders rather than inside one, because `publish_to_cdn.ps1` uploads
  * its `-Source` recursively — a compressed copy nested in the character directory would be
  * published alongside the original and double the payload instead of cutting it.
  */
-const COMPRESSED_DIR = '_compressed';
-
-/**
- * meshopt is the standard (telegamez#3728).
- *
- * The hold that used to live here - TG_MESHOPT_RUNTIME_READY, set per run once a meshopt
- * companion had been seen rendering in a room - did its job: telegamez#3682 gave every surface
- * the shared loader with the decoder registered, and the publish journals record nine
- * compressed roster publishes to panda. So there is no flag. Every bake ends with a meshopt
- * build, and publish uploads that build, making it first if it is missing or older than the
- * package. `full` (KTX2) is still refused: nothing in web-next loads it.
- */
-// TELEGAMEZ (telegamez#3701): WebP sidecar textures. The compressor can write them
-// (`--texture-format webp`); the runtime resolves atlas stems to `.png` itself until it reads
-// the sidecar's `texture_format`, so a WebP build uploads cleanly and renders hair untextured.
-// Same shape as the meshopt flag: the record of what has been confirmed in a room, not a bypass.
-const WEBP_RUNTIME_READY = process.env.TG_WEBP_RUNTIME_READY === '1';
-
-/** Where each build kind lives. ktx2 has its own folder so it never replaces the meshopt build. */
-const BUILD_DIRS = { meshopt: COMPRESSED_DIR, ktx2: `${COMPRESSED_DIR}_ktx2` };
-const compressedPath = (root, char, build = 'meshopt') => path.join(root, BUILD_DIRS[build] ?? COMPRESSED_DIR, char);
+const COMPRESSED_DIR = '_compressed_ktx2';
+const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);
 
 /**
  * The package's newest content time: the model, the sidecar and the clothing textures. The
@@ -152,13 +148,14 @@ function contentTimeOf(dir, name) {
 }
 
 /**
- * What is in `_compressed/<name>/`, or null. `publishable` refuses `full` (KTX2, nothing loads
- * it) and WebP textures until that runtime path is confirmed (telegamez#3701). `current` is
- * what publish wants - a meshopt build no older than the package, with textures the runtime
- * loads - and anything else is compressed again before upload.
+ * What is in `_compressed_ktx2/<name>/`, or null. `publishable` needs a ktx2 manifest whose
+ * compositor variant exists: without it the compositor falls back to the KTX2 room model and
+ * cannot decode it. `current` is what publish wants - that, no older than the package - and
+ * anything else is compressed again before upload.
  */
-function compressedInfo(root, name, contentTime, build = 'meshopt') {
-  const dir = compressedPath(root, name, build);
+function compressedInfo(root, name, contentTime) {
+  const build = BUILD;
+  const dir = compressedPath(root, name);
   const glb = path.join(dir, `${name}.glb`);
   if (!fs.existsSync(glb)) return null;
   let mode = 'unknown';
@@ -171,13 +168,15 @@ function compressedInfo(root, name, contentTime, build = 'meshopt') {
     variants = cm.variants || null;
   } catch { /* a build without a readable manifest still has a size worth showing */ }
   const stale = fs.statSync(glb).mtimeMs < contentTime;
-  const publishable = build === 'ktx2'
-    ? mode === 'ktx2' && Boolean(variants?.room && variants?.compositor)
-      && fs.existsSync(path.join(dir, variants.compositor))
-    : (mode === 'none' || mode === 'meshopt') && (textureFormat !== 'webp' || WEBP_RUNTIME_READY);
+  const publishable = mode === 'ktx2' && Boolean(variants?.room && variants?.compositor)
+    && fs.existsSync(path.join(dir, variants.compositor));
   return {
     dir, build, mode, textureFormat, variants, stale, publishable,
-    mb: Math.round(payloadBytes(dir, name) / 1048576),
+    // Per browser visit, the figure the size column compares against the bake: the room model,
+    // the sidecar and the .ktx2 textures. The compositor's model and PNGs sit beside them and
+    // are never fetched by a browser, so counting them would make the build look bigger than
+    // what a phone downloads.
+    mb: Math.round(payloadBytes(dir, name, { browserKtx2: true }) / 1048576),
     current: mode === build && !stale && publishable,
   };
 }
@@ -302,8 +301,9 @@ function uassetKind(file) {
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
-  // telegamez#3662: panda runs the KTX2 web runtime (#4551), so its publishes default to ktx2.
-  panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda', defaultBuild: 'ktx2' },
+  // Every environment publishes the ktx2 build (BUILD above); its web app must include
+  // telegamez#4551, the KTX2 runtime. Panda and beta do.
+  panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda' },
   beta: { apiBase: 'https://api.beta.telegames.ai', label: 'beta — PRODUCTION', danger: true },
   local: { apiBase: 'http://localhost:3005', label: 'local' },
 };
@@ -343,7 +343,9 @@ function scanRoot(root) {
 
   const characters = [];
   for (const name of fs.readdirSync(root)) {
-    if (name === COMPRESSED_DIR) continue;   // holds character folders, is not one
+    // `_compressed_ktx2` holds character folders and is not one; a legacy `_compressed` is
+    // skipped too rather than looked into (it would fail the .glb check below anyway).
+    if (name.startsWith('_compressed')) continue;
     const dir = path.join(root, name);
     if (!fs.statSync(dir).isDirectory()) continue;
 
@@ -365,12 +367,10 @@ function scanRoot(root) {
     const PREVIEW_FILES = ['thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4'];
     const previews = PREVIEW_FILES.every((f) => fs.existsSync(path.join(dir, f)));
 
-    // A compressed build, if one has been made. telegamez#3728: every bake makes one, and
+    // The ktx2 build, if one has been made. telegamez#3728/#3662: every bake makes one, and
     // publish remakes a missing or stale one before uploading, so the page reports it rather
     // than gating on it.
     const compressed = compressedInfo(root, name, contentTimeOf(dir, name));
-    // telegamez#3662: the ktx2 build, in its own folder; reported, never required.
-    const compressedKtx2 = compressedInfo(root, name, contentTimeOf(dir, name), 'ktx2');
 
     const problems = [];
     if (!sidecar) problems.push('no mh_materials.json — would render untextured');
@@ -385,7 +385,7 @@ function scanRoot(root) {
     } catch { /* never bootstrapped here, or an older manifest */ }
 
     characters.push({
-      id: name, dir, mb, payloadMb, sidecar, textures, strayManifest, previews, body, compressed, compressedKtx2,
+      id: name, dir, mb, payloadMb, sidecar, textures, strayManifest, previews, body, compressed,
       ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
     });
   }
@@ -401,14 +401,18 @@ function scanRoot(root) {
  * previous version of this compared a GLB-only "before" against a whole-package "after" and
  * quietly flattered the result.
  */
-function payloadBytes(dir, name) {
+function payloadBytes(dir, name, { browserKtx2 = false } = {}) {
   let total = 0;
   for (const f of [`${name}.glb`, 'mh_materials.json']) {
     try { total += fs.statSync(path.join(dir, f)).size; } catch { /* optional */ }
   }
   const tex = path.join(dir, 'textures');
   if (fs.existsSync(tex)) {
-    for (const f of fs.readdirSync(tex)) {
+    const files = fs.readdirSync(tex);
+    const have = new Set(files.map((f) => f.toLowerCase()));
+    for (const f of files) {
+      // A ktx2 build keeps every PNG for the compositor; the browser fetches the sibling instead.
+      if (browserKtx2 && /\.png$/i.test(f) && have.has(f.toLowerCase().replace(/\.png$/, '.ktx2'))) continue;
       try { total += fs.statSync(path.join(tex, f)).size; } catch { /* vanished mid-walk */ }
     }
   }
@@ -462,7 +466,7 @@ function readBody(req) {
 
 const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
 
-function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, compressed, build = 'meshopt' }) {
+function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, compressed, build = BUILD }) {
   const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
   const modelKey = grab(/modelKey:\s*(\S+)/);
   const files = grab(/OK - (\d+ files published)/);
@@ -476,13 +480,11 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
   // Which bytes went up. A compressed publish and an uncompressed one produce the same
   // model key and the same SQL, so nothing else in this record distinguishes them — and
   // "why is this companion 87 MB again" is answered here or not at all.
-  out.push(`- source  ${compressed ? `COMPRESSED ${build} build (${BUILD_DIRS[build] ?? COMPRESSED_DIR}/)` : 'uncompressed bake'}`);
+  out.push(`- source  ${compressed ? `COMPRESSED ${build} build (${COMPRESSED_DIR}/)` : 'uncompressed bake'}`);
   // telegamez#3662: a ktx2 publish also writes manifest.json routing the compositor to its own
   // PNG model. Recorded because rolling back the row does not remove it from the old prefix.
-  if (build === 'ktx2') {
-    const manifest = grab(/avatar manifest:\s*(\{.*\})/);
-    if (manifest) out.push(`- manifest \`${manifest}\``);
-  }
+  const manifest = grab(/avatar manifest:\s*(\{.*\})/);
+  if (manifest) out.push(`- manifest \`${manifest}\``);
   const wasPath = previous?.modelPath ?? null;
   const wasStatus = previous?.status ?? null;
   out.push(`- was     ${wasPath ? `\`${wasPath}\`` : '(no model on the row)'}${wasStatus ? `, status \`${wasStatus}\`` : ''}`);
@@ -713,16 +715,17 @@ async function bake(res, { asset, body, force, capture, charId }) {
   if (packaged.code !== 0) return stop(`Export failed (exit ${packaged.code}).`);
   res.write(`\n[bake] model ready: ${path.join(dir, `${id}.glb`)}\n`);
 
-  // telegamez#3728: every bake ends with a meshopt build. Publish uploads this, not the bake,
-  // and would make it then anyway; making it here means the size column is right the moment
-  // the character appears. Not fatal: the package is finished and correct without it.
+  // telegamez#3728, #3662: every bake ends with the ktx2 build (the only build since the owner
+  // decision of 2026-10-08). Publish uploads this, not the bake, and would make it then anyway;
+  // making it here means the size column is right the moment the character appears. Needs the
+  // `ktx` CLI. Not fatal: the package is finished and correct without it.
   if (!fs.existsSync(COMPRESSOR)) {
     res.write('\n[bake] Compress skipped: compress_companion.ps1 is not beside this console.\n');
   } else {
     const { code } = await runStep(res, {
-      label: `Compress — ${id} (meshopt)`,
+      label: `Compress — ${id} (${BUILD})`,
       cmd: 'pwsh',
-      args: ['-NoProfile', '-File', COMPRESSOR, '-Char', id, '-Root', PACKAGES, '-Mode', 'meshopt'],
+      args: ['-NoProfile', '-File', COMPRESSOR, '-Char', id, '-Root', PACKAGES, '-Mode', BUILD],
     });
     if (code !== 0) {
       res.write('\n[bake] Compress failed. The package is finished and correct; publish will compress it again.\n');
@@ -781,9 +784,9 @@ const server = http.createServer(async (req, res) => {
         verifierFound: fs.existsSync(VERIFIER),
         previewsFound: fs.existsSync(PREVIEWS),
         compressorFound: fs.existsSync(COMPRESSOR),
-        // Reported so the page can say WHY a build it can see is held (WebP textures,
-        // telegamez#3701). The refusal itself is the server's.
-        webpRuntimeReady: WEBP_RUNTIME_READY,
+        // The build every environment publishes. Fixed, reported so the page labels it rather
+        // than offering a choice (owner decision 2026-10-08).
+        build: BUILD,
         // The create half. Reported rather than enforced: a machine without Unreal can still
         // publish packages somebody else baked, and should be told which half it can do.
         ueContent: ueContentDir(),
@@ -1015,13 +1018,11 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      // meshopt (telegamez#3728) or ktx2 (telegamez#3662). `none` saves nothing now that stage 03
-      // caps the sidecar textures, and `full` cannot be published; offering either is a button
-      // that does nothing and a button that makes something unusable. Building ktx2 is not gated:
-      // it writes its own folder and replaces nothing.
-      const build = mode || 'meshopt';
-      if (build !== 'meshopt' && build !== 'ktx2') {
-        return send(res, 400, { error: `only meshopt and ktx2 builds are made here (asked for ${mode})` });
+      // ktx2, always (owner decision 2026-10-08). `mode` is accepted only as `ktx2` so an older
+      // page or script that still sends `meshopt` is told why, not silently given a ktx2 build.
+      const build = mode || BUILD;
+      if (build !== BUILD) {
+        return send(res, 400, { error: `${ONE_BUILD}; asked for ${mode}` });
       }
       // This reads the character directory a bake is writing. Compressing mid-bake would
       // produce a build of a half-written character and report success, so it waits like a
@@ -1044,12 +1045,13 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      // telegamez#3662: which build goes up. meshopt unless the page asks for ktx2. A ktx2 build
-      // needs the environment's web app to include telegamez#4551; the page says so beside the
-      // selector, and production asks for confirmation naming the build.
-      const build = requested || target.defaultBuild || 'meshopt';
-      if (build !== 'meshopt' && build !== 'ktx2') {
-        return send(res, 400, { error: `unknown build: ${requested}` });
+      // telegamez#3662: the ktx2 build goes up, to every environment (owner decision 2026-10-08).
+      // Its web app must include telegamez#4551; the page says so beside the fixed build label,
+      // and production asks for confirmation naming the build. A request naming another build
+      // is refused rather than quietly upgraded.
+      const build = requested || BUILD;
+      if (build !== BUILD) {
+        return send(res, 400, { error: `${ONE_BUILD}; asked for ${requested}` });
       }
       if (!/^[A-Za-z0-9._-]+$/.test(bakeHashSuffix || '')) {
         return send(res, 400, { error: 'bake hash suffix must be [A-Za-z0-9._-]' });
@@ -1066,15 +1068,15 @@ const server = http.createServer(async (req, res) => {
         return send(res, 400, { error: `no package for ${char} in ${root}` });
       }
 
-      // telegamez#3728: what goes up is the meshopt build, always. A missing build, a stale one
-      // (older than the model, the sidecar or a texture) or one made in another mode is remade
-      // here first, so a publish is one action and the journal can only ever say "compressed".
-      // A page that still sends `useCompressed` is ignored: there is no other source.
-      let made = compressedInfo(root, char, contentTimeOf(pkgDir, char), build);
+      // telegamez#3728: what goes up is the compressed build, always - now the ktx2 one. A missing
+      // build, a stale one (older than the model, the sidecar or a texture) or one without its
+      // compositor variant is remade here first, so a publish is one action and the journal can
+      // only ever say "compressed". A page that still sends `useCompressed` is ignored.
+      let made = compressedInfo(root, char, contentTimeOf(pkgDir, char));
       if (!made || !made.current) {
         if (!fs.existsSync(COMPRESSOR)) {
           return send(res, 400, {
-            error: `compress_companion.ps1 is not beside this console and ${char} has no current meshopt build`,
+            error: `compress_companion.ps1 is not beside this console and ${char} has no current ${build} build`,
           });
         }
         // Compressing reads the package a bake may be writing, so it waits like a second bake.
@@ -1082,14 +1084,14 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
         const why = !made ? `no ${build} build yet`
           : made.stale ? `${build} build is older than the package`
-            : `${build} build is mode="${made.mode}" textures="${made.textureFormat}"`
-              + (build === 'ktx2' && !made.publishable ? ' without its compositor variant' : '');
+            : `${build} build is mode="${made.mode}"`
+              + (!made.publishable ? ' without its compositor variant' : '');
         const { code } = await runStep(res, {
           label: `Compress — ${char} (${why})`,
           cmd: 'pwsh',
           args: ['-NoProfile', '-File', COMPRESSOR, '-Char', char, '-Root', root, '-Mode', build],
         });
-        made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char), build) : null;
+        made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char)) : null;
         if (!made || !made.current) {
           res.write(`\n[console] compress failed (exit ${code}) — nothing was uploaded\n[console] exit 1\n`);
           res.end();
@@ -1286,7 +1288,8 @@ const server = http.createServer(async (req, res) => {
           ['package', where],
           // Left behind, this outlives the character it was built from and stays publishable:
           // the next bake under the same name would find a compressed build of the OLD one
-          // sitting there, correctly named and reporting a size.
+          // sitting there, correctly named and reporting a size. The ktx2 folder only: a legacy
+          // `_compressed/<id>` is no longer read by anything, so it is left for the operator.
           ['compressed', path.join(where, COMPRESSED_DIR)],
           ['working copy', path.join(PIPELINE_ROOT, 'characters')],
           ['viewer copy', STAGE_OUT],
@@ -1367,5 +1370,5 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`[deploy-console] models root: ${DEFAULT_ROOT}`);
   if (!fs.existsSync(PUBLISHER)) console.warn(`[deploy-console] WARNING publisher not found: ${PUBLISHER}`);
   if (!fs.existsSync(PREVIEWS)) console.warn(`[deploy-console] WARNING preview publisher not found: ${PREVIEWS}`);
-  console.log('[deploy-console] publishes meshopt builds; a missing or stale one is made first (telegamez#3728)');
+  console.log('[deploy-console] publishes the ktx2 build (the only build); a missing or stale one is made first (telegamez#3662)');
 });

@@ -176,11 +176,17 @@ else { $pkgDir = Join-Path (Split-Path -Parent $RepoRoot) "characters/$Char" }
 
 # --- Compress ---------------------------------------------------------------------------------
 #
-# telegamez#3728: every bake ends with a meshopt build in <packages>/_compressed/<id>/. Upload
-# sends that build and would make it then anyway; making it here means the package is complete
-# as it stands. Not fatal: the package is finished and correct without it.
-Write-Step "Compress - $Char (meshopt)"
-& pwsh -NoProfile -File (Join-Path $here 'compress_companion.ps1') -Char $Char -Root (Split-Path -Parent $pkgDir) -Mode meshopt
+# telegamez#3728, #3662: every bake ends with the ktx2 build in <packages>/_compressed_ktx2/<id>/.
+# Upload sends that build and would make it then anyway; making it here means the package is
+# complete as it stands. Not fatal: the package is finished and correct without it.
+#
+# ktx2, not meshopt: owner decision 2026-10-08 -- the ktx2 build is the default on panda and beta,
+# and the separate meshopt build (<packages>/_compressed/) is removed so there is one build end to
+# end. meshopt survives only as the geometry codec inside the ktx2 build. This step now needs the
+# `ktx` CLI (KTX-Software 4.4+, on the bake box's PATH); without it Compress fails and says so,
+# and the bake still finishes.
+Write-Step "Compress - $Char (ktx2)"
+& pwsh -NoProfile -File (Join-Path $here 'compress_companion.ps1') -Char $Char -Root (Split-Path -Parent $pkgDir) -Mode ktx2
 if ($LASTEXITCODE -ne 0) {
     Write-Host ''
     Write-Host '[bake] Compress failed. The package is finished and correct; Upload will compress it again.' -ForegroundColor Yellow

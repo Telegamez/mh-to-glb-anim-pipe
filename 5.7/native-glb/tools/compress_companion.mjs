@@ -6,12 +6,23 @@
  * `characters/<id>/03-glb` layout, so the publisher, stage 06 and CI all drive one
  * implementation instead of three.
  *
- *   node compress_companion.mjs --src <charDir> --out <outDir> [--mode meshopt|ktx2|full]
+ *   node compress_companion.mjs --src <charDir> --out <outDir> [--mode ktx2]
  *                               [--texture-px N] [--ktx-bin <dir>]
  *
- * ## The modes
+ * ## One build: ktx2
  *
- * `meshopt` (default) is SAFE TO PUBLISH, and that is a measured claim rather than an
+ * Owner decision, 2026-10-08: the ktx2 build is the default on panda and beta, and "to avoid
+ * confusion end to end" meshopt is removed as a build. `ktx2` is the only mode. `meshopt`,
+ * `none` and `full` are refused with an error that says so, rather than quietly producing a
+ * build nothing publishes any more; WebP sidecar textures (`--texture-format webp`,
+ * telegamez#3701) went with them, because they only ever applied to those modes.
+ *
+ * `EXT_meshopt_compression` is NOT going anywhere. It is the geometry codec INSIDE the ktx2
+ * build, on both of its models, and what follows is why that is safe.
+ *
+ * ## The geometry codec: meshopt
+ *
+ * meshopt is SAFE TO PUBLISH, and that is a measured claim rather than an
  * assumption. It IS lossy on geometry — 0.85 mm median RMS on the largest morph targets, and
  * base vertex positions are quantised too, which turns out to be ~87% of the visible effect.
  * The differences land on hair- and eyelash-card edges, where a sub-pixel shift becomes a
@@ -27,14 +38,15 @@
  * where nearly all the win is: ~73% of a MetaHuman GLB is uncompressed FLOAT32 morph-target
  * data, and meshopt takes the model from 47.5 MB to 16.6 MB on its own.
  *
- * `full` adds KTX2 textures, and only the browser can read them (telegamez#3662 gave web-next a
- * `KTX2Loader`). The native compositor reads the SAME published files and decodes textures with
- * the `image` crate, PNG/WebP only, so a `full` build renders in a room and fails on the TV and
- * program output. Not publishable for that reason; it stays for measurement.
+ * ## What the ktx2 build carries
  *
- * `ktx2` is the publishable KTX2 build, and carries both formats:
+ * Only the browser can read KTX2 (telegamez#3662 gave web-next a `KTX2Loader`). The native
+ * compositor reads the SAME published files and decodes textures with the `image` crate,
+ * PNG/WebP only, which is why the old KTX2-only `full` mode was never publishable. So `ktx2`
+ * carries both formats:
  *   - `<name>.glb`: the room model, KTX2 embedded textures + meshopt.
- *   - `<name>.compositor.glb`: PNG embedded textures + meshopt, the same as the `meshopt` build.
+ *   - `<name>.compositor.glb`: PNG embedded textures + meshopt (model for model, what the
+ *     retired `meshopt` build was).
  *   - `textures/`: every PNG kept, plus a `.ktx2` sibling for each.
  *   - `mh_materials.json`: paths still name the PNGs (the compositor reads them), plus
  *     `browser_texture_format: "ktx2"`, which tells the browser to fetch the siblings.
@@ -70,30 +82,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const GLTF_TRANSFORM = '@gltf-transform/cli@4.5.0';
-const SHARP_CLI = 'sharp-cli@5.2.0';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
 
 const src = flag('src');
 const out = flag('out');
-const mode = flag('mode', 'meshopt');
+const mode = flag('mode', 'ktx2');
 const texturePx = Number(flag('texture-px', 0));
 const ktxBin = flag('ktx-bin', '');
 // The model is `<name>.glb`. In a publishable directory that is the folder name, but the
 // pipeline's stage 06 passes `characters/<id>/03-glb`, where it is not.
 const explicitName = flag('name', '');
-// TELEGAMEZ (telegamez#3701): sidecar texture format. `png` is what every runtime reads
-// today. `webp` is the measured lever on the hair atlases — 2048 PNG 5.9 MB vs 4096 WebP
-// q95 4.7 MB vs 2048 WebP q95 1.5 MB on Julius — and every browser decodes it natively,
-// unlike KTX2. It is opt-in because the runtime resolves atlas STEMS to `.png` itself; until
-// it reads the sidecar's `texture_format`, a WebP build publishes cleanly and renders hair
-// untextured. The publisher refuses such a build for the same reason it refuses `full`.
-const textureFormat = flag('texture-format', 'png');
+// telegamez#3701's `--texture-format webp` applied to the `none`/`meshopt` modes only, and left
+// with them (owner decision 2026-10-08). The manifest still records `texture_format: "png"`:
+// the PNGs are what the compositor reads.
+const textureFormat = 'png';
 // telegamez#3662: drop each mesh's morph targets that the published build stores as zeros (see
 // `prune-morphs` in gltf-transform.config.mjs). `ktx2` only, and only on the ROOM model: there
 // the browser has its own file, and its face writer skips names a mesh lacks. The compositor
-// model is left exactly as the `meshopt` build. On by default; `--prune-morphs off` for an A/B.
+// model is left untouched apart from meshopt. On by default; `--prune-morphs off` for an A/B.
 const pruneMorphs = flag('prune-morphs', 'on') !== 'off';
 // telegamez#3662 step 2, room model only. Defaults in ktx2 mode are what the fixed-expression A/B
 // on /dev/model-ab signed off (smile, frown, open mouth on tg-drake, 2026-10-05):
@@ -102,13 +110,13 @@ const pruneMorphs = flag('prune-morphs', 'on') !== 'off';
 // marginally differently. `drop` does the head too: 60 -> 34 MB of morph texture, but smile
 // cheeks and frown creases shade visibly shallower up close. Opt-in, for small on-screen sizes.
 // `keep` for an A/B. See strip-morph-normals in gltf-transform.config.mjs.
-const morphNormals = flag('morph-normals', mode === 'ktx2' ? 'small' : 'keep');
-// `--lean-textures` (default on in ktx2 mode, `off` for an A/B): teeth and eye maps to 512 px,
+const morphNormals = flag('morph-normals', 'small');
+// `--lean-textures` (default on, `off` for an A/B): teeth and eye maps to 512 px,
 // and the body's specular and metallic-roughness maps to 128 px (the outfit covers most of the
 // body; at 128 they are close to the constants they nearly are). Embedded textures only, before
 // KTX2 encoding. Teeth are 512 rather than 256 because the tongue shares their material and
 // loses its surface detail at 256 with the mouth open; 512 keeps it, for ~1 MB.
-const leanTextures = flag('lean-textures', mode === 'ktx2' ? 'on' : 'off') === 'on';
+const leanTextures = flag('lean-textures', 'on') === 'on';
 const LEAN_TEXTURES = [
   ['MI_Teeth_*', 512],
   ['MI_Eye*', 512],
@@ -119,15 +127,21 @@ const CONFIG = path.join(path.dirname(new URL(import.meta.url).pathname.replace(
   'gltf-transform.config.mjs');
 
 if (!src || !out) { console.error('--src and --out are required'); process.exit(2); }
-if (!['none', 'meshopt', 'ktx2', 'full'].includes(mode)) { console.error(`unknown --mode ${mode}`); process.exit(2); }
-if (!['png', 'webp'].includes(textureFormat)) { console.error(`unknown --texture-format ${textureFormat}`); process.exit(2); }
-if (!['keep', 'small', 'drop'].includes(morphNormals)) { console.error(`unknown --morph-normals ${morphNormals}`); process.exit(2); }
-if ((morphNormals !== 'keep' || leanTextures) && mode !== 'ktx2') {
-  // Only ktx2 gives the browser a model of its own; elsewhere the compositor would get these too.
-  console.error('--morph-normals and --lean-textures apply to --mode ktx2 only'); process.exit(2);
+if (['none', 'meshopt', 'full'].includes(mode)) {
+  // Refused by name, not as an unknown word: a script or a habit that still asks for these
+  // should learn why they went, not guess at a typo.
+  console.error(`--mode ${mode} was removed: ktx2 is the only build (owner decision 2026-10-08: `
+    + 'the ktx2 build is the default on panda and beta, and meshopt/none/full were removed to '
+    + 'avoid confusion end to end). Use --mode ktx2, or leave --mode off.');
+  process.exit(2);
 }
-const carriesKtx2 = mode === 'ktx2' || mode === 'full';
-if (carriesKtx2 && textureFormat !== 'png') { console.error(`--texture-format applies to none/meshopt; ${mode} carries KTX2`); process.exit(2); }
+if (mode !== 'ktx2') { console.error(`unknown --mode ${mode} (ktx2 is the only build)`); process.exit(2); }
+if (argv.includes('--texture-format')) {
+  console.error('--texture-format was removed with the meshopt/none builds (owner decision 2026-10-08); '
+    + 'the ktx2 build carries PNG for the compositor and KTX2 for the browser.');
+  process.exit(2);
+}
+if (!['keep', 'small', 'drop'].includes(morphNormals)) { console.error(`unknown --morph-normals ${morphNormals}`); process.exit(2); }
 if (!fs.existsSync(src)) { console.error(`source not found: ${src}`); process.exit(1); }
 
 const name = explicitName || path.basename(path.resolve(src));
@@ -229,49 +243,31 @@ function encodeKtx2(srcPng, dst) {
   return linear ? 'uastc' : 'etc1s';
 }
 
-if (carriesKtx2) requireKtx();
+requireKtx();
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
 console.log(`companion : ${name}`);
-const MODE_NOTE = {
-  none: '  (lossless — model copied unchanged)',
-  meshopt: '  (default — verified visually, see below)',
-  ktx2: '  (KTX2 room model + PNG compositor model, both texture sets)',
-  full: '  (browser only — the compositor cannot decode it)',
-};
-console.log(`mode      : ${mode}${MODE_NOTE[mode]}`);
-if (!carriesKtx2) {
-  console.log(`textures  : ${textureFormat}${textureFormat === 'webp'
-    ? '  (NOT publishable until the runtime reads texture_format — telegamez#3701)' : ''}`);
-}
-if (mode === 'full') {
-  console.log('WARNING: mode=full carries only KTX2, which the native compositor cannot decode.');
-  console.log('         The publisher will refuse it. Build it for measurement, or use --mode ktx2.');
-}
+console.log(`mode      : ${mode}  (KTX2 room model + PNG compositor model, both texture sets)`);
 
 // ------------------------------------------------------------------------------- model
 const before = structure(srcGlb);
 const outGlb = path.join(out, `${name}.glb`);
-// `ktx2` only: the compositor's own model, routed to it through the avatar manifest's variants.
-const compositorGlb = mode === 'ktx2' ? path.join(out, `${name}.compositor.glb`) : null;
+// The compositor's own model, routed to it through the avatar manifest's variants.
+const compositorGlb = path.join(out, `${name}.compositor.glb`);
 const tmp = [];
 /** `[{ mesh, kept, total }]` when the room model's morph targets were pruned. */
 let pruned = null;
 
-if (mode === 'none') {
-  // Nothing to do to the model. The bake is already the lean artifact: stage 03 caps and
-  // de-alphas the sidecar textures, which took one companion's set from 168 MB to 22 MB
-  // without a lossy step anywhere.
-  fs.copyFileSync(srcGlb, outGlb);
-  console.log('  model copied unchanged (no lossy step)');
-} else if (carriesKtx2) {
-  const p = path.join(out, '.tmp-p.glb');
+// A block only to keep the intermediate file names local. Texture codecs first, meshopt last
+// (see "Order matters" above); the compositor model is the source with meshopt alone.
+{
+  const p =path.join(out, '.tmp-p.glb');
   const a = path.join(out, '.tmp-a.glb');
   const b = path.join(out, '.tmp-b.glb');
   tmp.push(p, a, b);
   let roomSrc = srcGlb;
-  if (mode === 'ktx2' && pruneMorphs) {
+  if (pruneMorphs) {
     const log = gt(['prune-morphs', srcGlb, p, '--config', `"${CONFIG}"`], 'prune   (morph targets stored as zeros)');
     pruned = log.split(/\r?\n/).filter((l) => l.startsWith('PRUNE ')).map((l) => {
       const [mesh, kept, total] = l.slice(6).split('\t');
@@ -299,9 +295,7 @@ if (mode === 'none') {
   gt(['uastc', roomSrc, a, '--slots', MODEL_DATA_SLOTS], 'uastc   (normal/ORM/specular)');
   gt(['etc1s', a, b], 'etc1s   (colour)');
   gt(['meshopt', b, outGlb], 'meshopt (geometry + morphs)');
-  if (compositorGlb) gt(['meshopt', srcGlb, compositorGlb], 'meshopt (compositor model, PNG)');
-} else {
-  gt(['meshopt', srcGlb, outGlb], 'meshopt (geometry + morphs)');
+  gt(['meshopt', srcGlb, compositorGlb], 'meshopt (compositor model, PNG)');
 }
 for (const t of tmp) fs.rmSync(t, { force: true });
 
@@ -326,7 +320,7 @@ if (pruned) {
 }
 
 const after = structure(outGlb);
-for (const glb of [outGlb, compositorGlb].filter(Boolean)) {
+for (const glb of [outGlb, compositorGlb]) {
   const got = glb === outGlb ? after : structure(glb);
   for (const k of ['meshes', 'primitives', 'morphTargets', 'materials']) {
     if (k === 'morphTargets' && glb === outGlb && pruned) continue;
@@ -339,97 +333,47 @@ for (const glb of [outGlb, compositorGlb].filter(Boolean)) {
   }
 }
 console.log(`  model ${MB(sizeOf(srcGlb))} MB -> ${MB(sizeOf(outGlb))} MB`);
-if (compositorGlb) console.log(`  compositor model ${MB(sizeOf(compositorGlb))} MB`);
+console.log(`  compositor model ${MB(sizeOf(compositorGlb))} MB`);
 
 // ---------------------------------------------------------------------------- textures
 const srcTex = path.join(src, 'textures');
 const outTex = path.join(out, 'textures');
 let texBefore = dirBytes(srcTex);
 let texAfter = 0;
-let stemRefs = 0;
 
 if (fs.existsSync(srcTex)) {
   fs.mkdirSync(outTex, { recursive: true });
   const files = fs.readdirSync(srcTex);
 
-  if (!carriesKtx2 && textureFormat === 'webp') {
-    // WebP through sharp, fetched the same way gltf-transform is. Normal and tangent maps are
-    // encoded LOSSLESS: they are vector data, and a lossy codec's chroma handling bends them.
-    // Coverage atlases, base colour and ORM take q95, which on the hair atlas is invisible at
-    // the density gain the runtime applies and a quarter of the PNG bytes.
-    let converted = 0;
-    for (const f of files) {
-      if (!/\.png$/i.test(f)) { fs.copyFileSync(path.join(srcTex, f), path.join(outTex, f)); continue; }
-      const stem = f.replace(/\.png$/i, '');
-      const dst = path.join(outTex, `${stem}.webp`);
-      const lossless = /_N$|_Tangent$/i.test(stem);
-      const args = ['--yes', SHARP_CLI, '-i', path.join(srcTex, f), '-o', dst, '-f', 'webp',
-        ...(lossless ? ['--lossless'] : ['-q', '95'])];
-      try {
-        execFileSync('npx', args, { env, stdio: 'pipe', shell: true });
-      } catch (e) {
-        console.error(`  FAILED ${f}: ${String(e.stderr || e.message).slice(0, 300)}`);
-        process.exit(1);
-      }
-      if (!fs.existsSync(dst)) { console.error(`  FAILED ${f}: sharp wrote nothing at ${dst}`); process.exit(1); }
-      converted++;
-    }
-    texAfter = dirBytes(outTex);
-    console.log(`  textures ${converted} PNG -> WebP: ${MB(texBefore)} MB -> ${MB(texAfter)} MB`);
-  } else if (!carriesKtx2) {
-    // Copied verbatim. The runtime resolves these by name against the model's directory, and
-    // outside the KTX2 modes nothing about them changes here — stage 03 has already capped and
-    // de-alphaed them at bake time, which is where that work belongs.
-    for (const f of files) fs.copyFileSync(path.join(srcTex, f), path.join(outTex, f));
-    texAfter = texBefore;
-    console.log(`  textures ${files.length} files copied unchanged (${MB(texBefore)} MB)`);
-  } else {
-    const codecs = { uastc: 0, etc1s: 0 };
-    for (const f of files) {
-      const isPng = /\.png$/i.test(f);
-      // `ktx2` keeps every original beside its sibling: the compositor reads those.
-      if (mode === 'ktx2' || !isPng) fs.copyFileSync(path.join(srcTex, f), path.join(outTex, f));
-      if (!isPng) continue;
-      codecs[encodeKtx2(path.join(srcTex, f), path.join(outTex, f.replace(/\.png$/i, '.ktx2')))]++;
-    }
-    texAfter = dirBytes(outTex);
-    const ktx2Bytes = fs.readdirSync(outTex).filter((f) => /\.ktx2$/i.test(f))
-      .reduce((acc, f) => acc + sizeOf(path.join(outTex, f)), 0);
-    console.log(`  textures ${codecs.uastc} UASTC (data) + ${codecs.etc1s} ETC1S (colour): `
-      + `${MB(texBefore)} MB PNG -> ${MB(ktx2Bytes)} MB KTX2`
-      + (mode === 'ktx2' ? `, ${MB(texAfter)} MB with the PNGs kept` : ''));
+  const codecs = { uastc: 0, etc1s: 0 };
+  for (const f of files) {
+    const isPng = /\.png$/i.test(f);
+    // Every original stays beside its sibling: the compositor reads those.
+    fs.copyFileSync(path.join(srcTex, f), path.join(outTex, f));
+    if (!isPng) continue;
+    codecs[encodeKtx2(path.join(srcTex, f), path.join(outTex, f.replace(/\.png$/i, '.ktx2')))]++;
   }
+  texAfter = dirBytes(outTex);
+  const ktx2Bytes = fs.readdirSync(outTex).filter((f) => /\.ktx2$/i.test(f))
+    .reduce((acc, f) => acc + sizeOf(path.join(outTex, f)), 0);
+  console.log(`  textures ${codecs.uastc} UASTC (data) + ${codecs.etc1s} ETC1S (colour): `
+    + `${MB(texBefore)} MB PNG -> ${MB(ktx2Bytes)} MB KTX2, ${MB(texAfter)} MB with the PNGs kept`);
 }
 
 // ----------------------------------------------------------------------------- sidecar
 const sidecar = JSON.parse(fs.readFileSync(srcSidecar, 'utf8'));
-// Explicit texture paths are rewritten to the new extension; the atlas STEMS are not touched
-// — the runtime appends the extension to those itself, from `texture_format`.
-//
-// `ktx2` rewrites nothing: the paths keep naming the PNGs the compositor decodes, and
+// No paths are rewritten: they keep naming the PNGs the compositor decodes, and
 // `browser_texture_format` tells the browser to fetch each one's `.ktx2` sibling instead
 // (`browserTextureUrl` in telegamez's metaHumanMaterials.ts).
-const outExt = mode === 'full' ? 'ktx2' : (textureFormat === 'webp' ? 'webp' : null);
-for (const m of sidecar.materials || []) {
-  for (const key of ['alpha_stem', 'tangent_stem']) {
-    if (typeof m.params?.[key] === 'string') stemRefs++;
-  }
-  if (outExt) {
-    for (const [k, v] of Object.entries(m.textures || {})) {
-      if (typeof v === 'string') m.textures[k] = v.replace(/\.png$/i, `.${outExt}`);
-    }
-  }
-}
-if (outExt) sidecar.texture_format = outExt;
-if (mode === 'ktx2') sidecar.browser_texture_format = 'ktx2';
+sidecar.browser_texture_format = 'ktx2';
 fs.writeFileSync(path.join(out, 'mh_materials.json'), JSON.stringify(sidecar, null, 2));
 
-// What one browser visit downloads. In `ktx2` that is the room model and the KTX2 textures;
+// What one browser visit downloads: the room model and the KTX2 textures;
 // the compositor model and the PNGs sit beside them for the compositor.
 const ktx2Only = (d) => (fs.existsSync(d) ? fs.readdirSync(d) : [])
   .filter((f) => /\.ktx2$/i.test(f)).reduce((acc, f) => acc + sizeOf(path.join(d, f)), 0);
 const totalBefore = sizeOf(srcGlb) + texBefore;
-const totalAfter = sizeOf(outGlb) + (mode === 'ktx2' ? ktx2Only(outTex) : texAfter);
+const totalAfter = sizeOf(outGlb) + ktx2Only(outTex);
 
 fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
   companion: name,
@@ -438,54 +382,29 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
   generated_at: new Date().toISOString(),
   source: path.resolve(src),
   texture_px: texturePx || 'unchanged',
-  texture_format: mode === 'full' ? 'ktx2' : textureFormat,
-  ...(mode === 'ktx2' ? {
-    browser_texture_format: 'ktx2',
-    // For the publisher: send as the avatar manifest's `variants`. Without `compositor` the
-    // compositor falls back to `room` and cannot decode its KTX2 textures.
-    variants: { room: path.basename(outGlb), compositor: path.basename(compositorGlb) },
-    compositor_model: { after_bytes: sizeOf(compositorGlb) },
-    // Room model only. Null when --prune-morphs off.
-    pruned_morph_targets: pruned,
-    morph_normals: morphNormals,
-    lean_textures: leanTextures ? Object.fromEntries(LEAN_TEXTURES) : null,
-  } : {}),
+  texture_format: textureFormat,
+  browser_texture_format: 'ktx2',
+  // For the publisher: send as the avatar manifest's `variants`. Without `compositor` the
+  // compositor falls back to `room` and cannot decode its KTX2 textures.
+  variants: { room: path.basename(outGlb), compositor: path.basename(compositorGlb) },
+  compositor_model: { after_bytes: sizeOf(compositorGlb) },
+  // Room model only. Null when --prune-morphs off.
+  pruned_morph_targets: pruned,
+  morph_normals: morphNormals,
+  lean_textures: leanTextures ? Object.fromEntries(LEAN_TEXTURES) : null,
   model: { before_bytes: sizeOf(srcGlb), after_bytes: sizeOf(outGlb), structure: after },
   textures: { before_bytes: texBefore, after_bytes: texAfter },
   total: { before_bytes: totalBefore, after_bytes: totalAfter },
-  runtime: textureFormat === 'webp' && !carriesKtx2
-    ? [
-        'NOT loadable until the runtime resolves atlas stems by texture_format (telegamez#3701); '
-          + `${stemRefs} alpha_stem/tangent_stem refs currently resolve to .png in metaHumanMaterials.ts.`,
-      ]
-    : mode === 'meshopt'
-    ? ['Loadable: drei useGLTF registers a meshopt decoder; the other surfaces go through '
-        + 'the shared companionGltfLoader (telegamez#3682).']
-    : mode === 'ktx2'
-    ? [
-        'Browser: needs the KTX2Loader from telegamez#3662 (KHR_texture_basisu is required, and '
-          + 'browser_texture_format selects the .ktx2 sidecar siblings).',
-        'Compositor: only if the avatar manifest routes it to the compositor variant; otherwise '
-          + 'it falls back to the room model and cannot decode it.',
-      ]
-    : mode === 'full'
-    ? [
-        'Browser only (telegamez#3662). The native compositor decodes textures with the image '
-          + 'crate and cannot read KTX2; use --mode ktx2 for a publishable build.',
-      ]
-    : [],
+  runtime: [
+    'Browser: needs the KTX2Loader from telegamez#3662 (KHR_texture_basisu is required, and '
+      + 'browser_texture_format selects the .ktx2 sidecar siblings).',
+    'Compositor: only if the avatar manifest routes it to the compositor variant; otherwise '
+      + 'it falls back to the room model and cannot decode it.',
+  ],
 }, null, 2));
 
 console.log(`\nTOTAL ${MB(totalBefore)} MB -> ${MB(totalAfter)} MB  (${((1 - totalAfter / totalBefore) * 100).toFixed(0)}% off)`
-  + (mode === 'ktx2' ? '  per browser visit: room model + KTX2 textures' : ''));
+  + '  per browser visit: room model + KTX2 textures');
 console.log(`out   ${path.resolve(out)}`);
-if (mode === 'full') {
-  console.log('\nWARNING: mode=full is browser-only. The compositor reads the same files and cannot');
-  console.log('decode KTX2, so a published full build fails on the TV and program output.');
-} else if (mode === 'ktx2') {
-  console.log('\nNOTE: publish with the avatar manifest variants from compression_manifest.json,');
-  console.log('or the compositor falls back to the KTX2 room model.');
-} else if (textureFormat === 'webp') {
-  console.log('\nWARNING: WebP sidecar textures need a runtime that reads texture_format');
-  console.log('(telegamez#3701). The publisher refuses this build until TG_WEBP_RUNTIME_READY=1.');
-}
+console.log('\nNOTE: publish with the avatar manifest variants from compression_manifest.json,');
+console.log('or the compositor falls back to the KTX2 room model.');

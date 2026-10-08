@@ -984,13 +984,17 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      // The build is part of the bake hash, so the CDN path, the go-live SQL and the journal all
+      // name it: `avatars/<id>/tg-drake-ktx2-20261008-6670/tg-drake.glb`. The character id stays
+      // as it is - it is the avatar's slug (`mh-<char>`), and renaming it would orphan the record.
+      const bakeHash = `${char}-${build}-${bakeHashSuffix}`;
       return stream(res, PUBLISHER, [
         '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
         '-Source', made.dir,
-        '-BakeHash', `${char}-${bakeHashSuffix}`,
+        '-BakeHash', bakeHash,
       ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
         env, apiBase: target.apiBase, char, avatarId,
-        bakeSuffix: bakeHashSuffix, bakeHash: `${char}-${bakeHashSuffix}`,
+        bakeSuffix: bakeHashSuffix, bakeHash,
         previous: session.prior[`${env}/${char}`] ?? null,
         output, code, compressed: true, build,
       }));
@@ -1227,12 +1231,15 @@ const server = http.createServer(async (req, res) => {
       // The bake suffix is already in the key, so the record lands in the same file as the
       // publish it completes rather than needing the page to carry it back here.
       //
-      // The key's segment is `<char>-<suffix>`, because publish passes -BakeHash that way, but
-      // publish names its file from the bare suffix. Taking the segment whole put every go-live
-      // in a file of its own beside the publish it belonged to - which is how the original six
-      // ended up as panda-tele-*, panda-tele1-* and so on, apart from their publishes.
+      // The key's segment is `<char>-<build>-<suffix>` (older publishes: `<char>-<suffix>`),
+      // because publish passes -BakeHash that way, but publish names its file from the bare
+      // suffix. Taking the segment whole put every go-live in a file of its own beside the
+      // publish it belonged to - which is how the original six ended up as panda-tele-*,
+      // panda-tele1-* and so on, apart from their publishes.
       const segment = String(modelKey).split('/')[2] ?? 'unknown';
-      const suffix = segment.startsWith(`${char}-`) ? segment.slice(char.length + 1) : segment;
+      const suffix = segment.startsWith(`${char}-`)
+        ? segment.slice(char.length + 1).replace(/^(?:ktx2|meshopt)-/, '')
+        : segment;
       const previous = body?.data?.previousModelPath ?? null;
       const recorded = recordGoLive({
         env, apiBase: target.apiBase, char, avatarId,

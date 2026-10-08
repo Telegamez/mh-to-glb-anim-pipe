@@ -1477,8 +1477,18 @@ const server = http.createServer(async (req, res) => {
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
       if (!Array.isArray(items) || items.length === 0) return send(res, 400, { error: 'nothing selected' });
-      if (target.danger && confirm !== env) {
-        return send(res, 400, { error: `${env} is production: type "${env}" to confirm` });
+      // An avatar one of this folder's packages publishes to is a CURRENT character. Retiring one
+      // is allowed - a roster can shrink - but only on a longer typed phrase, in any environment,
+      // so it can never be a tick-box slip. Checked here as well as on the page.
+      const boundHere = boundAvatars(url.searchParams.get('root') || DEFAULT_ROOT, env);
+      const touchesCurrent = items.some((i) => boundHere.has(i.avatarId));
+      const needed = touchesCurrent ? `${env} retire current` : env;
+      if ((target.danger || touchesCurrent) && confirm !== needed) {
+        return send(res, 400, {
+          error: touchesCurrent
+            ? `this retires a current character (one a package publishes to): type "${needed}" to confirm`
+            : `${env} is production: type "${env}" to confirm`,
+        });
       }
 
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });

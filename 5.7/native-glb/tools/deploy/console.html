@@ -702,6 +702,7 @@ boot();
 // Clean up old avatars (telegamez#3662). Scan -> tick -> Dry run -> Apply.
 let CU = [];          // scan result
 let CU_PLAN = null;   // the plan the last dry run showed; Apply sends exactly this
+let CU_PHRASE = '';   // what must be typed to Apply it ('' = nothing)
 
 const cuEsc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const cuUses = (a) => a.companions.length + a.talkShowSlots.length;
@@ -774,12 +775,16 @@ $('cuDry').onclick = () => {
   const lines = ['DRY RUN on ' + $('env').value + ' — nothing has changed yet.', ''];
   const problems = [];
   const plan = [];
+  const current = [];
   for (const a of ticked) {
     const repId = pick('cuRep', a.id).value || null;
     const rep = CU.find((x) => x.id === repId);
     const hard = pick('cuHard', a.id).checked;
     lines.push(a.slug + ' (' + a.name + ')');
-    if (a.package) problems.push(a.slug + ' is the avatar package ' + a.package + ' publishes to - a current character, not an old one. Untick it.');
+    if (a.package) {
+      current.push(a.slug);
+      lines.push('  CURRENT CHARACTER: package ' + a.package + ' publishes to this avatar. Nothing will publish to it once it is retired.');
+    }
     if (cuUses(a)) {
       if (!rep) problems.push(a.slug + ' is in use: choose a replacement');
       else if (retiring.has(rep.id)) problems.push(a.slug + ': its replacement ' + rep.slug + ' is also being retired');
@@ -796,18 +801,24 @@ $('cuDry').onclick = () => {
   if (problems.length) { setLog(lines.join('\n') + '\nCannot apply:\n  ' + problems.join('\n  ') + '\n'); return; }
   CU_PLAN = plan;
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  $('cuConfirm').hidden = !e.danger; $('cuConfirm').value = '';
+  // A longer phrase whenever current characters are in the plan, in every environment: it is the
+  // one thing that cannot be a slip of the tick box.
+  CU_PHRASE = current.length ? e.key + ' retire current' : (e.danger ? e.key : '');
+  $('cuConfirm').hidden = !CU_PHRASE; $('cuConfirm').value = '';
+  $('cuConfirm').placeholder = CU_PHRASE ? 'type: ' + CU_PHRASE : 'type the environment name';
   $('cuApply').disabled = false;
-  setLog(lines.join('\n') + (e.danger ? '\nProduction: type "' + e.key + '" in the box, then Apply.\n' : '\nApply to make these changes.\n'));
+  setLog(lines.join('\n') + (current.length
+    ? '\nThis retires ' + current.length + ' CURRENT character(s): ' + current.join(', ') + '.\nType "' + CU_PHRASE + '" in the box, then Apply.\n'
+    : e.danger ? '\nProduction: type "' + e.key + '" in the box, then Apply.\n' : '\nApply to make these changes.\n'));
 };
 
 $('cuApply').onclick = async () => {
   if (!CU_PLAN) return;
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  if (e.danger && $('cuConfirm').value.trim() !== e.key) { log('\nType "' + e.key + '" to confirm.\n'); return; }
+  if (CU_PHRASE && $('cuConfirm').value.trim() !== CU_PHRASE) { log('\nType "' + CU_PHRASE + '" to confirm.\n'); return; }
   $('cuApply').disabled = true;
   setLog('Applying on ' + e.key + '\n');
-  const res = await fetch('/api/cleanup/apply', { method: 'POST', headers: { 'content-type': 'application/json' },
+  const res = await fetch('/api/cleanup/apply?root=' + encodeURIComponent($('root').value), { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ env: e.key, items: CU_PLAN, confirm: $('cuConfirm').value.trim() }) });
   if (!res.ok) { log((await res.json()).error + '\n'); return; }
   const rd = res.body.getReader(); const dec = new TextDecoder();

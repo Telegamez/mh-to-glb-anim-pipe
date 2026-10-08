@@ -22,8 +22,8 @@ page is for the things it can't show you.
 no repo, no install, nothing to build. They need Node.js and PowerShell 7 and nothing else.
 
 One exception, and only if they use **Compress**: the first run fetches `gltf-transform`
-through `npx`, so that machine needs to be online once. `ktx2` and `full` additionally need the
-`ktx` CLI (KTX-Software 4.4+) installed; `meshopt` does not.
+through `npx`, so that machine needs to be online once. It also needs the `ktx` CLI
+(KTX-Software 4.4+) installed.
 
 The first time, press **Browse** and point it at wherever the character folders are. It marks
 which folders hold characters as you go, so you are looking for the one that says *6 characters*
@@ -96,7 +96,7 @@ adds it or updates it. The **What will happen** column says which:
 | **Add as new** | never been here. Type a display name in the box; everything else is handled. |
 | **Update to a new version** | already published — this adds a new version alongside the old one |
 | **Add its model** | the record is here but has no files yet |
-| **extra** | not one of the standard six. Tick it only if you mean to. |
+| **extra** | neither a roster id nor bound anywhere. Tick it only if you mean to. |
 | red text | folder problem, fix before publishing |
 
 ### Changing one that already exists
@@ -116,71 +116,60 @@ Folder problems:
 
 ---
 
-## Compression is the standard
+## One build: ktx2
 
-A MetaHuman bake costs about **87 MB** to download; the meshopt build of the same character is
-about **50 MB**, and nobody wants the other one. So there is nothing to choose (telegamez#3728):
+**ktx2 is the only build** (owner decision, 2026-10-08). There is no selector and no meshopt
+build any more: two builds of one character under one name is how a meshopt tg-drake reached beta
+when ktx2 was meant, and nothing downstream could tell them apart.
 
-- **Bake** ends by writing the meshopt build to `_compressed/<character>/` beside the bakes.
-- **Upload** sends the build the selector names - ktx2 by default, see
-  [The ktx2 build](#the-ktx2-build-telegamez3662) - or meshopt if you pick it. If it is missing, older than the package, or was made in
-  another mode, Upload makes it first and then uploads - one press, and the journal always
-  says `COMPRESSED build`.
-- **Compress** remains for an explicit re-compress; you will rarely need it.
-
-The size column reads:
-
-```
-telly    87 -> 50 MB · meshopt              ready as it stands
-tommy    87 MB · compresses on publish      no build yet; Upload makes one
-telly    87 MB · compressed build is STALE  the bake changed; Upload remakes it
-```
-
-There is no `-MeshoptConfirmed` any more. The switch still starts the console, and does
-nothing.
-
-### What meshopt does to the model
-
-Geometry and morph targets are quantised: about 0.85 mm median drift on the largest
-expression targets, compared against the original through the real runtime with the material
-profile, hair calibration and clothing textures live, and indistinguishable. Textures are not
-touched; stage 03 already caps and de-alphas them, which is where most of the weight was.
-
-`full` (KTX2 textures only) exists in the compressor for measurement and cannot be published:
-the native compositor reads the same files and cannot decode KTX2. WebP sidecar textures are
-held until one is confirmed in a room.
-
-## The ktx2 build (telegamez#3662)
-
-A lighter build for phones: KTX2 textures stay compressed on the GPU, and unused blendshapes are
-dropped. On tg-drake it takes a companion's GPU memory from ~314 MB (meshopt, PNG) to ~108 MB and
-one visit's download from 41.6 MB to 24.5 MB. It carries **two models**:
+The ktx2 build (telegamez#3662) is lighter for phones: KTX2 textures stay compressed on the GPU,
+and unused blendshapes are dropped. On tg-drake it takes a companion's GPU memory from ~314 MB to
+~108 MB and one visit's download from 41.6 MB to 24.5 MB. Its geometry is still
+meshopt-compressed inside the file; that is the codec, not a build. It carries **two models**:
 
 - `<character>.glb` for the browser, with KTX2 textures;
 - `<character>.compositor.glb` for the TV and program output, with PNG textures, because the
   native compositor cannot decode KTX2.
 
-It lives in its own folder, `_compressed_ktx2/<character>/`, so making it never replaces the
-meshopt build. Upload sends both models, the PNGs with a `.ktx2` beside each, and the
-`variants` that route the compositor to its own model (the platform writes them into the
-avatar's `manifest.json`).
+It lives in `_compressed_ktx2/<character>/` beside the bakes. **Bake** ends by making it;
+**Publish** sends it, making it first if it is missing, older than the package, or does not name
+the character's two models; **Compress** remakes it on demand. Upload sends both models, the PNGs
+with a `.ktx2` beside each, and the `variants` that route the compositor to its own model (the
+platform writes them into the avatar's `manifest.json`). Every environment's web app loads it
+(telegamez#4551; beta since 2.0.0-rc52.3).
 
-**It is the default for every environment.** The `build` selector next to Publish / Upload model
-starts on ktx2 for panda, beta and local, and resets to it whenever you switch environment;
-pick meshopt for a one-off fallback. Every environment's web app includes telegamez#4551 (beta
-since 2.0.0-rc52.3); an environment rolled back to an older web app cannot load ktx2, so pick
-meshopt there. A production publish asks for confirmation naming the build.
+**The published path names the build.** The version folder is `<character>-ktx2-<suffix>`, so a
+row reads `avatars/<id>/tg-drake-ktx2-20261008-6326/tg-drake.glb`, and the go-live SQL, the
+rollback and the journal all say ktx2. Older publishes carry no build in the path
+(`tg-drake-20261008-6670`); the journal's `source` line says which build those were, and the
+**live here** line on each character shows it: green for ktx2, amber for anything else.
 
-The size column shows the ktx2 build on its own line when there is one. The journal records
-`COMPRESSED ktx2 build (_compressed_ktx2/)` and the manifest that went up. Go live and roll back
-work exactly as for meshopt: the row points at `<character>.glb` either way.
+Old `_compressed/` (meshopt) folders on disk are ignored. **Remove old versions**, below, deletes
+the published ones.
 
-**The published path names the build.** The version folder is `<character>-<build>-<suffix>`, so
-a row reads `avatars/<id>/tg-drake-ktx2-20261008-6670/tg-drake.glb` (or `-meshopt-`), and the go-live
-SQL, the rollback and the journal say which build they mean. The character id itself never changes:
-it is the avatar's slug (`mh-tg-drake`), and renaming the folder would make the console add a new
-avatar instead of updating the one the companions use. Publishes made before this carry no build in
-the path (`tg-drake-20261008-6670`); the journal's `source` line says which build those were.
+## Names don't matter: bindings and Rename
+
+A package is tied to its avatar in each environment by the avatar's **id**, written into the
+package as `avatar-binding.json` the first time it is matched (by slug `mh-<folder>`) or created
+there. From then on the folder name plays no part: rename it and it still updates the same
+avatar, with the same companions. The row says where a package is bound (`bound: panda, beta`).
+A re-bake keeps the file. Delete an entry only to bind it again.
+
+**Rename**, beside each character, renames the folder, the model, its ktx2 build and the name
+in the sidecar, keeping file times so the build stays current. Nothing in any environment changes.
+Before renaming, connect once to every environment the character exists in, so it is bound there;
+the publisher warns about any it is not. It refuses a name the runtime treats as a calibrated
+character (`telly`, `tele`, `telie`, `telee`, `tele1`, `tele2`, `tele4`), because the web app takes
+hair, scalp and eye tuning from the model file's name. A folder renamed by hand in Explorer is
+listed in red until Rename (with the folder's own name) brings the model in line.
+
+**Sync slugs** makes the ticked avatars' slugs read `mh-<folder>` in the environment you are
+connected to, so the admin pages show the new name too. Cosmetic: id, display name, model and
+companions are untouched, and each change is journaled with its undo. On beta you type `beta`.
+The telegamez seed still names the old slugs; a deploy logs a warning for each and changes nothing.
+
+A package that matches nothing here offers **or update an existing avatar** beside **Add as new**.
+Pick the avatar it really is, and it is bound to it instead of becoming a second one.
 
 ## Previews (telegamez#3662)
 
@@ -224,6 +213,22 @@ the environment you are signed in to, panda or beta.
 
 Each companion is re-read after it is moved, so if the platform ever stops accepting the change
 the run stops before anything is archived.
+
+**Your packages are protected.** An avatar a package in this folder is bound to is marked
+*current: package <name>*, listed first under **Replace with**, never pre-ticked, and refused by
+the dry run if you tick it.
+
+## Removing old versions
+
+Every publish leaves its predecessor in the bucket. **Remove old versions** lists, for the ticked
+characters, every version the journals know of except the one each avatar is live on: meshopt
+builds, uncompressed bakes, older ktx2 publishes. All are pre-ticked. **Dry run**, then **Remove**
+(type `beta` on beta). Each is one `DELETE companion-directory?bakeHash=`, which removes exactly that
+version and refuses the live one, so the live version cannot go even by mistake.
+
+There is **no undo**, and a removed version can no longer be rolled back to: go live and check
+first, then remove. Versions published by some other tool and never mentioned in a journal are not
+found. Removals are journaled in `<env>-cleanup-<time>.md` and not offered again.
 
 ## Publishing doesn't go live
 

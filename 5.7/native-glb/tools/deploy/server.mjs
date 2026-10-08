@@ -186,10 +186,11 @@ function runInto(res, label, file, args) {
 
 /** Environments this console will talk to. Adding one is a line here, not a code change. */
 const ENVIRONMENTS = {
-  // telegamez#3662: panda runs the KTX2 web runtime (#4551), so its publishes default to ktx2.
+  // telegamez#3662: every environment runs the KTX2 web runtime (#4551; beta since 2.0.0-rc52.3),
+  // so publishes default to ktx2 everywhere. meshopt stays selectable on the page.
   panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda', defaultBuild: 'ktx2' },
-  beta: { apiBase: 'https://api.beta.telegames.ai', label: 'beta — PRODUCTION', danger: true },
-  local: { apiBase: 'http://localhost:3005', label: 'local' },
+  beta: { apiBase: 'https://api.beta.telegames.ai', label: 'beta — PRODUCTION', danger: true, defaultBuild: 'ktx2' },
+  local: { apiBase: 'http://localhost:3005', label: 'local', defaultBuild: 'ktx2' },
 };
 
 /**
@@ -914,7 +915,7 @@ const server = http.createServer(async (req, res) => {
       }
       // meshopt (telegamez#3728) or ktx2 (telegamez#3662). `none` saves nothing and `full` cannot
       // be published. Building ktx2 is not gated: it writes its own folder and replaces nothing.
-      const build = mode || 'meshopt';
+      const build = mode || 'ktx2';
       if (build !== 'meshopt' && build !== 'ktx2') {
         return send(res, 400, { error: `only meshopt and ktx2 builds are made here (asked for ${mode})` });
       }
@@ -935,10 +936,10 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(characters) || characters.length === 0) {
         return send(res, 400, { error: 'no characters selected' });
       }
-      // telegamez#3662: which build goes up. meshopt unless the page asks for ktx2. A ktx2 build
+      // telegamez#3662: which build goes up. ktx2 unless the page asks for meshopt. A ktx2 build
       // needs the environment's web app to include telegamez#4551; the page says so beside the
       // selector, and production asks for confirmation naming the build.
-      const build = requested || target.defaultBuild || 'meshopt';
+      const build = requested || target.defaultBuild || 'ktx2';
       if (build !== 'meshopt' && build !== 'ktx2') {
         return send(res, 400, { error: `unknown build: ${requested}` });
       }

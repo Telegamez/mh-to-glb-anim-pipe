@@ -104,12 +104,12 @@
       <button id="publish" class="go">Publish</button>
       <button id="capPreviews">Capture previews</button>
       <button id="pubPreviews">Publish previews</button>
-      <!-- telegamez#3662: meshopt is the standard; ktx2 is the KTX2 browser model + PNG compositor model.
-           Publish makes the chosen build first if it has to. -->
+      <!-- telegamez#3662: ktx2 is the standard (KTX2 browser model + PNG compositor model); meshopt
+           is the fallback. Publish makes the chosen build first if it has to. -->
       <label class="dim" style="font-size:13px">build
         <select id="build" style="width:auto;padding:4px 6px">
-          <option value="meshopt">meshopt</option>
           <option value="ktx2">ktx2</option>
+          <option value="meshopt">meshopt</option>
         </select>
       </label>
       <span class="dim" id="buildNote" style="font-size:12px"></span>
@@ -209,9 +209,9 @@ function envChanged() {
   $('prodWarn').innerHTML = e.danger
     ? '<div class="alert"><b>Production.</b> Real customers. Beta also needs its CORS fix first.</div>'
     : '';
-  // telegamez#3662: reset to the environment's default build on every switch (ktx2 on panda,
-  // meshopt elsewhere), so a choice made for panda never carries into a publish to beta.
-  $('build').value = e.defaultBuild || 'meshopt';
+  // telegamez#3662: reset to the environment's default build on every switch (ktx2 everywhere
+  // now), so a one-off meshopt choice never carries into a publish to another environment.
+  $('build').value = e.defaultBuild || 'ktx2';
   buildChanged();
 }
 function buildChanged() {

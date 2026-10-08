@@ -122,7 +122,8 @@ A MetaHuman bake costs about **87 MB** to download; the meshopt build of the sam
 about **50 MB**, and nobody wants the other one. So there is nothing to choose (telegamez#3728):
 
 - **Bake** ends by writing the meshopt build to `_compressed/<character>/` beside the bakes.
-- **Upload** sends that build. If it is missing, older than the package, or was made in
+- **Upload** sends the build the selector names - ktx2 by default, see
+  [The ktx2 build](#the-ktx2-build-telegamez3662) - or meshopt if you pick it. If it is missing, older than the package, or was made in
   another mode, Upload makes it first and then uploads - one press, and the journal always
   says `COMPRESSED build`.
 - **Compress** remains for an explicit re-compress; you will rarely need it.
@@ -164,11 +165,11 @@ meshopt build. Upload sends both models, the PNGs with a `.ktx2` beside each, an
 `variants` that route the compositor to its own model (the platform writes them into the
 avatar's `manifest.json`).
 
-**It is the default for panda.** The `build` selector next to Publish / Upload model switches to
-ktx2 when you pick panda and to meshopt for beta and local; you can change it either way. Only
-publish ktx2 to an environment whose web app includes telegamez#4551 (panda once `dev` is
-deployed there); on an older web app the browser cannot load it. A production publish asks for
-confirmation naming the build.
+**It is the default for every environment.** The `build` selector next to Publish / Upload model
+starts on ktx2 for panda, beta and local, and resets to it whenever you switch environment;
+pick meshopt for a one-off fallback. Every environment's web app includes telegamez#4551 (beta
+since 2.0.0-rc52.3); an environment rolled back to an older web app cannot load ktx2, so pick
+meshopt there. A production publish asks for confirmation naming the build.
 
 The size column shows the ktx2 build on its own line when there is one. The journal records
 `COMPRESSED ktx2 build (_compressed_ktx2/)` and the manifest that went up. Go live and roll back

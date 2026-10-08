@@ -175,6 +175,13 @@ The size column shows the ktx2 build on its own line when there is one. The jour
 `COMPRESSED ktx2 build (_compressed_ktx2/)` and the manifest that went up. Go live and roll back
 work exactly as for meshopt: the row points at `<character>.glb` either way.
 
+**The published path names the build.** The version folder is `<character>-<build>-<suffix>`, so
+a row reads `avatars/<id>/tg-drake-ktx2-20261008-6670/tg-drake.glb` (or `-meshopt-`), and the go-live
+SQL, the rollback and the journal say which build they mean. The character id itself never changes:
+it is the avatar's slug (`mh-tg-drake`), and renaming the folder would make the console add a new
+avatar instead of updating the one the companions use. Publishes made before this carry no build in
+the path (`tg-drake-20261008-6670`); the journal's `source` line says which build those were.
+
 ## Previews (telegamez#3662)
 
 Previews are captured, **checked**, then published:

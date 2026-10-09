@@ -63,7 +63,7 @@ configured — so none of this applies there. That's why panda is where new work
 
 ### Beta goes live in stages
 
-Panda is: publish, run the SQL, done. Beta isn't.
+Panda is: publish, go live, done. Beta isn't.
 
 1. Publish and verify — flip nothing.
 2. Turn on **one** companion, in one internal room.
@@ -139,8 +139,9 @@ platform writes them into the avatar's `manifest.json`). Every environment's web
 (telegamez#4551; beta since 2.0.0-rc52.3).
 
 **The published path names the build.** The version folder is `<character>-ktx2-<suffix>`, so a
-row reads `avatars/<id>/tg-drake-ktx2-20261008-6326/tg-drake.glb`, and the go-live SQL, the
-rollback and the journal all say ktx2. Older publishes carry no build in the path
+row reads `avatars/<id>/tg-drake-ktx2-20261008-6326/tg-drake.glb`, and the go-live call, the
+rollback and the journal all say ktx2. Since telegamez#4632 phase 1b the build is also sent as
+its own field and recorded on the version, so nothing has to read it out of the name. Older publishes carry no build in the path
 (`tg-drake-20261008-6670`); the journal's `source` line says which build those were, and the
 **live here** line on each character shows it: green for ktx2, amber for anything else.
 
@@ -171,9 +172,9 @@ The telegamez seed still names the old slugs; a deploy logs a warning for each a
 A package that matches nothing here offers **or update an existing avatar** beside **Add as new**.
 Pick the avatar it really is, and it is bound to it instead of becoming a second one.
 
-## Previews (telegamez#3662)
+## Previews (telegamez#3662, telegamez#4632)
 
-Previews are captured, **checked**, then published:
+Previews are captured, **checked**, then published **with the model**:
 
 1. Tick the characters and press **Capture previews**. Each is photographed through the real web
    app: an 8-second video (720x720 MP4), a thumbnail (512 PNG) and a still (1024 JPEG). If nothing
@@ -182,15 +183,27 @@ Previews are captured, **checked**, then published:
 2. The **Previews** panel shows every character's thumbnail, image and playable video as they
    will be uploaded. Framing wrong (feet or head cut off; the log says when auto-framing fell
    back to the default camera)? Tick it and press **Capture previews** again.
-3. **Publish previews** uploads them. It refuses a character with no captured previews.
+3. **Publish** sends them inside the version: the three files and a `character.json` naming them
+   land in the same prefix as the model, so they go live, roll back and get removed together with
+   it (telegamez#4632 phase 1b). A character published without captured previews gets a version
+   with none, and its avatar keeps whatever previews it already has; the log says which.
 
 The files are written next to the model (`thumbnail.png`, `imagePreview.jpg`,
-`videoPreview.mp4`); they are not part of the model publish, so they never change its bake hash.
-Capturing needs the telegamez checkout beside this repo (`S:\Avatars\metahuman\telegamez` on the
-bake box) or `--monorepo <path>`, plus `ffmpeg` on PATH.
+`videoPreview.mp4`). Capturing needs the telegamez checkout beside this repo
+(`S:\Avatars\metahuman\telegamez` on the bake box) or `--monorepo <path>`, plus `ffmpeg` on PATH.
 
-**Go live waits for previews.** It refuses a character whose previews are not published yet. The
-order is: Publish, Capture previews, check them, Publish previews, Go live.
+**Publish previews** is the older path: it uploads the three files to the avatar's own preview
+slots through `smart-upload`, outside any version. Use it only to fix the previews of an avatar
+that is already live without re-publishing its model. The platform removes that route once every
+environment runs the version registry.
+
+**Go live waits for previews.** It refuses a character whose previews are neither inside the
+version it just published nor already on the avatar. The order is: Capture previews, check them,
+Publish, Go live.
+
+**Every change carries a reason.** The **Reason** box in the Characters step is written into each
+character's history by Publish, Go live, Remove old versions and Clean up old avatars; the platform
+keeps that history permanently and the admin pages show it per version.
 
 ## Cleaning up old avatars (telegamez#3662)
 
@@ -204,7 +217,10 @@ the environment you are signed in to, panda or beta.
    to that avatar and keep their names, voices and prompts. A replacement must be active and not
    itself being retired.
 3. **Delete files** only if you want it gone for good (the row and `avatars/<id>/` in S3). Without
-   it the avatar is archived: hidden from pickers, files kept, reversible.
+   it the avatar is archived: hidden from pickers, files kept, reversible. Since telegamez#4632
+   phase 1b an avatar with a lifecycle history (registered versions, or any audited status change)
+   cannot be deleted for good: the platform refuses, the run says *kept* and carries on, and its
+   old versions go through **Remove old versions** instead.
 4. **Dry run** lists every change. Nothing has happened yet. On beta (production) you must type
    `beta` before **Apply** works.
 5. **Apply** makes the changes in that order and stops at the first failure. Every change is
@@ -221,18 +237,30 @@ the dry run if you tick it.
 ## Removing old versions
 
 Every publish leaves its predecessor in the bucket. **Remove old versions** lists, for the ticked
-characters, every version the journals know of except the one each avatar is live on: meshopt
-builds, uncompressed bakes, older ktx2 publishes. All are pre-ticked. **Dry run**, then **Remove**
-(type `beta` on beta). Each is one `DELETE companion-directory?bakeHash=`, which removes exactly that
-version and refuses the live one, so the live version cannot go even by mistake.
+characters, every version except the one each avatar is live on. Where the platform runs the
+version registry (telegamez#4632 phase 1b) the list comes from it, with each version's state:
+`ready` (verified, never live), `retired` (was live), `uploaded` (a publish that never finished),
+`deleting` (a removal to retry). Versions the registry does not know yet, from before its
+backfill, come from the journals marked `unregistered`. Without the registry (beta before the rc
+that carries it) the journals are all there is, as before. All are pre-ticked. **Dry run**, then
+**Remove** (type `beta` on beta). Each is one `DELETE companion-directory?bakeHash=&reason=`, which
+walks a registered version through `deleting` to `deleted`, objects removed one by one, and
+refuses the live one or one a preview still points into.
 
 There is **no undo**, and a removed version can no longer be rolled back to: go live and check
-first, then remove. Versions published by some other tool and never mentioned in a journal are not
-found. Removals are journaled in `<env>-cleanup-<time>.md` and not offered again.
+first, then remove. Removals are journaled in `<env>-cleanup-<time>.md` and not offered again.
 
 ## Publishing doesn't go live
 
-Publishing only uploads files. Nobody sees a change until the SQL runs.
+Publishing only uploads files and, on a platform with the version registry (telegamez#4632 phase
+1b), records a version in state `ready`: every object read back from the bucket and matched. Nobody
+sees a change until **Go live** points the avatar at it, which is one API call
+(`PUT /api/admin/avatars/<id>/model-path` with the key and your reason): the previous version
+becomes `retired`, the new one `live`, and the page reads that state back and shows it.
+
+Never update `avatars.model_path` by hand. The registry would not know, and the platform's
+`db:characters:verify` reports it as pointer drift. Going live does not change the avatar's status
+either: an archived avatar stays archived until it is set active in the admin pages, with a reason.
 
 That's deliberate: a bad publish can't take a working companion down, and undoing it is putting a
 value back rather than restoring files.
@@ -246,9 +274,10 @@ C:\Users\<you>\.telegames-publisher\publishes\<environment>-<bake suffix>.md
 ```
 
 One file per run — all six characters of a batch land together — holding what was published, when,
-against which environment, and **both** SQL statements: the one that goes live and the one that puts
-it back. That second statement is the reason this exists: the value it restores is whatever the row
-pointed at before, and after a publish overwrites it, nothing else remembers it.
+against which environment, the version state the registry reported, whether the previews rode
+inside, the reason, and **both** API calls: the one that goes live and the one that puts it back.
+That second call is the reason this exists: the value it restores is whatever the row pointed at
+before, and after a publish overwrites it, nothing else remembers it.
 
 Failed characters are recorded too. A record saying a publish failed is what tells you it was
 attempted; a missing record would look the same as never having tried.
@@ -265,6 +294,12 @@ The file contains avatar ids and CDN paths. It never contains your cookie.
 | `Port 7311 is already in use` | probably already running — open http://127.0.0.1:7311 |
 | `MANIFEST_AS_FILE` | stray `manifest.json` in a character folder |
 | `Node.js is not on PATH` | open a shell where `node --version` works |
+| `a reason is required` | fill the **Reason** box in the Characters step; it goes into the character's history |
+| `VERSION_NOT_REGISTERED` | the key is not a registered version: publish it through this tool, or have the platform's `db:characters:backfill` register uploads that predate the registry |
+| `BACKFILL_FAILED` | the avatar's current model could not be registered on the way to going live; the message names the prefix and why. Fix the objects or map the primary model, then retry |
+| `lifecycle history` | an avatar with versions or audited changes stays archived; remove its old versions instead of deleting it |
+| `Only retired or unverified (uploaded) versions can be deleted` | the live version, or one a preview still points into. Go live on another version first |
+| `Unsupported file type in companion directory: videoPreview.mp4` | the platform predates telegamez#4644 (video types inside a version); deploy it, or publish without captured previews |
 
 ---
 

@@ -102,10 +102,15 @@
       <span class="dim" id="compressNote" style="font-size:12px">Publish makes or refreshes the ktx2 build itself; Compress only remakes it now.
         Sync slugs renames each ticked avatar's slug here to <span class="mono">mh-&lt;folder&gt;</span>.</span>
     </div>
+    <!-- telegamez#4632 phase 1b: every change is a state change with a reason in the character's
+         history. One box, read by Publish, Go live, Remove old versions and Clean up old avatars. -->
+    <div class="row" style="margin-top:10px">
+      <input id="reason" placeholder="Reason — written into each character's history by Publish, Go live, Remove old versions and Clean up" autocomplete="off">
+    </div>
     <div class="row" style="margin-top:10px">
       <button id="publish" class="go">Publish</button>
       <button id="capPreviews">Capture previews</button>
-      <button id="pubPreviews">Publish previews</button>
+      <button id="pubPreviews" title="Older path: uploads the three files to the avatar's own preview slots, outside any version. Publish carries captured previews inside the version now; use this only to fix the previews of an avatar that is already live.">Publish previews</button>
       <!-- ktx2 is the only build (owner decision 2026-10-08): KTX2 browser model + PNG compositor
            model. There is nothing to choose, so nothing to get wrong. -->
       <span class="dim" style="font-size:13px">build <b class="ok">ktx2</b></span>
@@ -116,8 +121,10 @@
   <div class="step" id="s7" hidden>
     <h2>Remove old versions</h2>
     <div class="msg dim" style="margin-bottom:10px">Every published version of the <b>ticked</b> characters' avatars here,
-      except the one each is live on: meshopt builds, uncompressed bakes, older ktx2 publishes. Deleted from the bucket,
-      no undo. The live version cannot be removed &mdash; the API refuses it as well.</div>
+      except the one each is live on, with its state from the platform's version registry where it runs
+      (<span class="mono">ready</span> never went live, <span class="mono">retired</span> was live, <span class="mono">uploaded</span> never finished,
+      <span class="mono">unregistered</span> predates the registry). Deleted from the bucket, no undo. The live version, and one a preview still
+      points into, cannot be removed &mdash; the API refuses them as well.</div>
     <div class="row" style="margin-bottom:12px">
       <button id="vScan">Scan</button>
       <span class="dim" id="vCount" style="font-size:13px"></span>
@@ -166,7 +173,7 @@
     </div>
     <pre id="sql"></pre>
     <div class="row" style="margin-top:10px">
-      <button id="copySql" class="small">Copy the SQL instead</button>
+      <button id="copySql" class="small">Copy the API calls instead</button>
       <button id="verify" class="small">Check it worked</button>
     </div>
   </div>
@@ -412,6 +419,19 @@ $('capPreviews').onclick = async () => {
 
 const title = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/**
+ * The reason every lifecycle change carries (telegamez#4632 phase 1b). Read at the moment of the
+ * press, never defaulted here: the platform keeps it permanently and shows it per version, so a
+ * generated phrase would only fill the history with noise.
+ */
+const reason = () => $('reason').value.trim();
+const needReason = (what) => {
+  if (reason()) return true;
+  setLog('Fill in the Reason box first: ' + what + ' writes it into each character\'s history.\n');
+  $('reason').focus();
+  return false;
+};
+
 const picked = () =>
   [...document.querySelectorAll('#chars input[type=checkbox]:checked')].map((c) => c.dataset.char);
 
@@ -442,8 +462,12 @@ function count() {
 
 $('publish').onclick = async () => {
   const list = picked();
+  if (!needReason('Publish')) return;
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && !confirm('Publish ' + list.length + ' to PRODUCTION?\n\nBuild: ktx2')) return;
+  // telegamez#4632 phase 1b: captured previews ride inside the version. Said up front, per
+  // character, so a publish without them is a choice and not a surprise at Go live.
+  const bare = list.filter((c) => { const r = CHARS.find((x) => x.id === c); return r && !r.previews; });
 
   // Never typed. A label only has to be new and readable; a timestamp is both, and inventing
   // one by hand is a step that can only go wrong.
@@ -451,6 +475,7 @@ $('publish').onclick = async () => {
 
   $('publish').disabled = true;
   setLog('Publishing ' + list.length + ' to ' + $('env').value + '\n');
+  if (bare.length) log('No captured previews for: ' + bare.join(', ') + '. Their versions will carry none; each avatar keeps the previews it has (Capture previews first to change that).\n');
 
   for (const c of list) {
     log('\n' + c + '\n');
@@ -491,7 +516,7 @@ $('publish').onclick = async () => {
     const res = await fetch('/api/publish?root=' + encodeURIComponent($('root').value), {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp,
-                             avatarIds: { [c]: RESOLVED[c].avatarId }, build: 'ktx2' }),
+                             avatarIds: { [c]: RESOLVED[c].avatarId }, build: 'ktx2', reason: reason() }),
     });
     if (!res.ok) { log((await res.json()).error + '\n'); break; }
 
@@ -502,8 +527,14 @@ $('publish').onclick = async () => {
 
     const m = out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+/);
     if (!m) { log('\nNo published path came back. Stopped.\n'); break; }
-    PUBLISHED[c] = { key: m[0], avatarId: RESOLVED[c].avatarId, before: RESOLVED[c].modelPath, beforeStatus: RESOLVED[c].status };
-    renderSql();
+    // What the version carries and what the registry said (telegamez#4632 phase 1b). `ready` is
+    // every object read back and matched; no state line means an older platform.
+    PUBLISHED[c] = {
+      key: m[0], avatarId: RESOLVED[c].avatarId, before: RESOLVED[c].modelPath, beforeStatus: RESOLVED[c].status,
+      previews: /previews: included/.test(out),
+      state: (out.match(/\] version: \S+ state (\w+)/) || [])[1] || null,
+    };
+    renderCalls();
   }
 
   $('publish').disabled = false;
@@ -539,13 +570,16 @@ $('compress').onclick = async () => {
 };
 
 /**
- * Previews are their own step because they are their own contract: the model goes through the
- * directory route, which writes no row, and these go through smart-upload, which owns the three
- * preview columns and writes them itself. Nothing to run afterwards - no SQL appears for these.
+ * The older preview path: smart-upload writes the three files to the avatar's own preview slots,
+ * outside any version. Kept for fixing the previews of an avatar that is already live without
+ * re-publishing its model; since telegamez#4632 phase 1b Publish carries captured previews
+ * inside the version, and the platform removes this route once every environment runs the
+ * registry.
  */
 $('pubPreviews').onclick = async () => {
   const list = picked();
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (!confirm('Publish previews is the older path: it writes the avatar\'s preview slots directly, outside any version.\n\nFor a new publish, Capture previews and then Publish instead - the previews ride inside the version. Continue only to fix an avatar that is already live.')) return;
   if (e.danger && !confirm('Publish previews for ' + list.length + ' to PRODUCTION?')) return;
 
   // telegamez#3662: publish only previews that exist and have been seen in the Previews panel.
@@ -596,13 +630,16 @@ $('pubPreviews').onclick = async () => {
 $('goLive').onclick = async () => {
   const entries = Object.entries(PUBLISHED);
   if (!entries.length) return;
+  if (!needReason('Go live')) return;
   // telegamez#3662: previews before going live. A character goes live with real previews, or not
-  // at all: the avatar picker would otherwise show a broken card for it.
-  const noPreviews = entries.map(([c]) => c)
-    .filter((c) => !PREVIEWED.has(c) && !(RESOLVED[c] && RESOLVED[c].previewsPublished));
+  // at all: the avatar picker would otherwise show a broken card for it. Since telegamez#4632
+  // phase 1b the previews inside the version it just published count too.
+  const noPreviews = entries
+    .filter(([c, p]) => !p.previews && !PREVIEWED.has(c) && !(RESOLVED[c] && RESOLVED[c].previewsPublished))
+    .map(([c]) => c);
   if (noPreviews.length) {
-    setLog('Publish previews first for: ' + noPreviews.join(', ')
-      + '\nPublish previews captures any that are missing, then uploads them. Nothing went live.\n');
+    setLog('No previews for: ' + noPreviews.join(', ')
+      + '\nCapture previews, check them, then Publish again so they ride inside the version. Nothing went live.\n');
     return;
   }
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
@@ -615,7 +652,7 @@ $('goLive').onclick = async () => {
   for (const [c, p] of entries) {
     const r = await fetch('/api/go-live', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ env: $('env').value, char: c, avatarId: p.avatarId, modelKey: p.key }),
+      body: JSON.stringify({ env: $('env').value, char: c, avatarId: p.avatarId, modelKey: p.key, reason: reason() }),
     });
     const b = await r.json().catch(() => ({}));
     if (!r.ok) { log('\n' + c + ': ' + (b.error || 'failed') + '\nStopped.\n'); break; }
@@ -623,6 +660,10 @@ $('goLive').onclick = async () => {
     log('\n' + c + ' is live\n');
     log('   now ' + b.modelKey + '\n');
     log('   was ' + (b.previous || '(no model on the row)') + '\n');
+    // The registry read back (telegamez#4632 phase 1b): `live` is the proof.
+    if (b.registry === false) log('   registry: no versions route on this platform yet\n');
+    else log('   registry: version ' + (b.versionState || 'not found') + (b.versionState === 'live' ? '' : ' — expected live; check the admin Versions panel') + '\n');
+    if (b.status && b.status !== 'active') log('   status: ' + b.status + ' — going live does not change it; set the avatar active in admin (with a reason) or it stays hidden\n');
     if (b.recorded) log('   recorded in ' + b.recorded + '\n');
   }
 
@@ -630,19 +671,26 @@ $('goLive').onclick = async () => {
   $('goLive').disabled = false;
 };
 
-function renderSql() {
+/**
+ * What Go live will do, as the API calls, so they can be run by hand if the page cannot. Never
+ * SQL: since telegamez#4632 phase 1b going live is a state change on the version, and a hand-run
+ * UPDATE leaves the registry behind (the platform's verify reports it as pointer drift).
+ */
+function renderCalls() {
   const rows = Object.entries(PUBLISHED);
   if (!rows.length) return;
-  let out = 'BEGIN;\n';
-  // status goes with the path: a row the admin API created starts as 'processing', and the
-  // companion form only lists avatars that are isActive AND status=active. Without this the
-  // character publishes correctly and then cannot be picked when making its companion.
-  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + p.key + "', status = 'active', updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
-  out += 'COMMIT;\n\n-- undo\nBEGIN;\n';
-  // The undo restores the status the row actually had, not a guess. Where it was not read
-  // back, status is left out entirely rather than reverted to something invented.
-  for (const [c, p] of rows) out += "  UPDATE avatars SET model_path = '" + (p.before || '') + "'" + (p.beforeStatus ? ", status = '" + p.beforeStatus + "'" : "") + ", updated_at = now() WHERE id = '" + p.avatarId + "';  -- " + c + "\n";
-  out += 'COMMIT;';
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  let out = '-- go live\n';
+  for (const [c, p] of rows) {
+    out += 'PUT ' + e.apiBase + '/api/admin/avatars/' + p.avatarId + '/model-path  {"modelKey":"' + p.key + '","reason":"' + reason().replace(/"/g, '\\"') + '"}  -- ' + c
+      + (p.state ? '  (version ' + p.state + ')' : '') + (p.previews ? '' : '  (no previews in this version)') + '\n';
+  }
+  out += '\n-- undo\n';
+  for (const [c, p] of rows) {
+    out += /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(p.before || '')
+      ? 'PUT ' + e.apiBase + '/api/admin/avatars/' + p.avatarId + '/model-path  {"modelKey":"' + p.before + '","reason":"roll back"}  -- ' + c + '\n'
+      : '-- ' + c + ': ' + (p.before ? 'the previous value is not a published key (' + p.before + '); re-publish that bake to restore it' : 'no model on the row before this publish') + '\n';
+  }
   $('sql').textContent = out;
 }
 
@@ -789,7 +837,7 @@ $('cuDry').onclick = () => {
       lines.push('  used by nothing');
     }
     lines.push(a.status === 'archived' ? '  already archived' : '  archive (hidden from pickers, files kept, reversible)');
-    if (hard) lines.push('  DELETE PERMANENTLY: the row and avatars/' + a.id + '/ in S3 — no undo');
+    if (hard) lines.push('  DELETE PERMANENTLY: the row and avatars/' + a.id + '/ in S3 — no undo (an avatar with a lifecycle history is kept archived instead; the platform refuses)');
     lines.push('');
     plan.push({ avatarId: a.id, replacementId: rep ? rep.id : null, hard });
   }
@@ -803,12 +851,13 @@ $('cuDry').onclick = () => {
 
 $('cuApply').onclick = async () => {
   if (!CU_PLAN) return;
+  if (!needReason('Clean up old avatars')) return;
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && $('cuConfirm').value.trim() !== e.key) { log('\nType "' + e.key + '" to confirm.\n'); return; }
   $('cuApply').disabled = true;
   setLog('Applying on ' + e.key + '\n');
   const res = await fetch('/api/cleanup/apply', { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: e.key, items: CU_PLAN, confirm: $('cuConfirm').value.trim() }) });
+    body: JSON.stringify({ env: e.key, items: CU_PLAN, confirm: $('cuConfirm').value.trim(), reason: reason() }) });
   if (!res.ok) { log((await res.json()).error + '\n'); return; }
   const rd = res.body.getReader(); const dec = new TextDecoder();
   for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
@@ -868,9 +917,12 @@ $('vScan').onclick = async (keepLog) => {
     rows.push('<tr><td></td><td>' + esc(p.char) + '<br><span class="dim" style="font-size:11px">' + esc(p.slug) + '</span></td>'
       + '<td class="mono">' + esc(p.live || '(no model)') + '</td><td>' + (p.liveBuild ? buildTag(p.liveBuild) : '') + ' <span class="dim">&middot; live, kept</span></td></tr>');
     for (const o of p.old) {
-      const i = V.push({ char: p.char, avatarId: p.avatarId, bakeHash: o.bakeHash, build: o.build }) - 1;
+      const i = V.push({ char: p.char, avatarId: p.avatarId, bakeHash: o.bakeHash, build: o.build, state: o.state }) - 1;
+      // The registry's state per version (telegamez#4632 phase 1b); `unregistered` = known only
+      // from the journals, from before the backfill.
+      const state = o.state ? ' <span class="' + (o.state === 'uploaded' || o.state === 'deleting' ? 'warn' : 'dim') + '">&middot; ' + esc(o.state) + '</span>' : '';
       rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '" checked></td><td class="dim">' + esc(p.char) + '</td>'
-        + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + '</td></tr>');
+        + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + state + '</td></tr>');
     }
   }
   $('vRows').innerHTML = rows.join('') || '<tr><td colspan="4" class="dim">Nothing found.</td></tr>';
@@ -878,7 +930,9 @@ $('vScan').onclick = async (keepLog) => {
   V_PLAN = null; $('vApply').disabled = true;
   for (const el of vBoxes()) el.onchange = () => { V_PLAN = null; $('vApply').disabled = true; syncAll($('vAll'), vBoxes()); };
   syncAll($('vAll'), vBoxes());
-  log(V.length + ' old version(s) found. Versions published before these journals were kept, or by another tool, are not known here.\n');
+  log(V.length + ' old version(s) found' + (b.registry
+    ? ', from the platform\'s version registry; versions it does not know yet come from the journals, marked unregistered.\n'
+    : '. This platform has no version registry yet, so only versions the journals know of are listed.\n'));
 };
 $('vAll').onchange = () => {
   for (const b of vBoxes()) b.checked = $('vAll').checked;
@@ -901,12 +955,13 @@ $('vDry').onclick = () => {
 
 $('vApply').onclick = async () => {
   if (!V_PLAN) return;
+  if (!needReason('Remove old versions')) return;
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && $('vConfirm').value.trim() !== e.key) { log('\nType "' + e.key + '" to confirm.\n'); return; }
   $('vApply').disabled = true;
   setLog('Removing ' + V_PLAN.length + ' old version(s) on ' + e.key + '\n');
   const res = await fetch('/api/versions/remove', { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: e.key, items: V_PLAN, confirm: $('vConfirm').value.trim() }) });
+    body: JSON.stringify({ env: e.key, items: V_PLAN, confirm: $('vConfirm').value.trim(), reason: reason() }) });
   if (!res.ok) { log((await res.json()).error + '\n'); return; }
   const rd = res.body.getReader(); const dec = new TextDecoder();
   for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }

@@ -417,8 +417,10 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
     out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${modelKey}", "reason": "..." }`);
     out.push('');
     out.push('-- roll back');
-    if (wasPath && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(wasPath)) {
-      out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${wasPath}", "reason": "..." }`);
+    // `was` came from the admin list, which formats the key into a full URL; the API wants the key.
+    const wasKey = wasPath ? keyOf(wasPath) : null;
+    if (wasKey && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(wasKey)) {
+      out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${wasKey}", "reason": "..." }`);
     } else if (wasPath) {
       out.push(`-- the previous value is not a published key (${wasPath}); restoring it needs a re-publish of that bake`);
     } else {
@@ -475,11 +477,12 @@ function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, prev
   // placeholder is not one, so the FIRST time a character goes live there is nothing to go back
   // to through this door. That is a real limit, and saying so here is better than printing a
   // call that would be refused at the moment somebody needed it to work.
-  const restorable = previous && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(previous);
+  const previousKey = previous ? keyOf(previous) : null;
+  const restorable = previousKey && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(previousKey);
   out.push('To put it back:');
   out.push('```');
   if (restorable) {
-    out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${previous}", "reason": "..." }`);
+    out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${previousKey}", "reason": "..." }`);
   } else if (previous) {
     out.push(`the previous value is not a published key, so the API will not accept it:`);
     out.push(`  ${previous}`);
@@ -552,6 +555,10 @@ function buildOf(hash, versions) {
 
 /** The bake hash a model path points into, whether stored relative or returned as a full URL. */
 const bakeOfPath = (p) => (String(p || '').match(/avatars\/[0-9a-f-]{36}\/([A-Za-z0-9._-]+)\/[^/]+\.glb/i) || [])[1] ?? null;
+
+/** The object key behind a model path: the admin list formats keys into full URLs on the way out,
+ * and the API accepts only the key. */
+const keyOf = (p) => String(p || '').replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '');
 
 /** A reason for the character history (telegamez#4632 phase 1b): required, trimmed, bounded. */
 const reasonOf = (r) => { const s = String(r ?? '').trim(); return s && s.length <= 500 ? s : null; };

@@ -687,8 +687,10 @@ function renderCalls() {
   }
   out += '\n-- undo\n';
   for (const [c, p] of rows) {
-    out += /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(p.before || '')
-      ? 'PUT ' + e.apiBase + '/api/admin/avatars/' + p.avatarId + '/model-path  {"modelKey":"' + p.before + '","reason":"roll back"}  -- ' + c + '\n'
+    // The admin list formats the key into a full URL on the way out; the API wants the key.
+    const before = String(p.before || '').replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '');
+    out += /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(before)
+      ? 'PUT ' + e.apiBase + '/api/admin/avatars/' + p.avatarId + '/model-path  {"modelKey":"' + before + '","reason":"roll back"}  -- ' + c + '\n'
       : '-- ' + c + ': ' + (p.before ? 'the previous value is not a published key (' + p.before + '); re-publish that bake to restore it' : 'no model on the row before this publish') + '\n';
   }
   $('sql').textContent = out;

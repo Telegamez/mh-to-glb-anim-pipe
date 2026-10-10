@@ -110,7 +110,8 @@
     <div class="row" style="margin-top:10px">
       <button id="publish" class="go">Publish</button>
       <button id="capPreviews">Capture previews</button>
-      <button id="pubPreviews" title="Older path: uploads the three files to the avatar's own preview slots, outside any version. Publish carries captured previews inside the version now; use this only to fix the previews of an avatar that is already live.">Publish previews</button>
+      <!-- Publish carries captured previews inside the version (telegamez#4632 phase 1b); the
+           platform's separate preview upload is gone (#4645), and so is the button that used it. -->
       <!-- ktx2 is the only build (owner decision 2026-10-08): KTX2 browser model + PNG compositor
            model. There is nothing to choose, so nothing to get wrong. -->
       <span class="dim" style="font-size:13px">build <b class="ok">ktx2</b></span>
@@ -141,22 +142,23 @@
 
   <div class="step" id="sPrev" hidden>
     <h2>Previews</h2>
-    <div class="msg dim" style="margin-bottom:10px">What <b>Publish previews</b> will upload, as captured on this
-      machine. Not right? Tick the character and press <b>Capture previews</b> again.</div>
+    <div class="msg dim" style="margin-bottom:10px">What <b>Publish</b> will send inside the version, as captured on this
+      machine. Not right? Tick the character and press <b>Capture previews</b> again before publishing.</div>
     <div id="prevList"></div>
   </div>
 
   <div class="step" id="s6" hidden>
     <h2>Clean up old avatars</h2>
     <div class="msg dim" style="margin-bottom:10px">Retire avatars from this environment. Anything using one is
-      moved to the replacement you pick, then the avatar is archived (hidden, files kept, reversible).
-      Tick <b>delete files</b> only to remove it for good. Nothing changes until <b>Apply</b>.</div>
+      moved to the replacement you pick, then the avatar is archived (hidden, files kept, reversible, with your reason
+      in its history). Nothing is deleted for good any more: old versions go through <b>Remove old versions</b>.
+      Nothing changes until <b>Apply</b>.</div>
     <div class="row" style="margin-bottom:12px">
       <button id="cuScan">Scan</button>
       <span class="dim" id="cuCount" style="font-size:13px"></span>
     </div>
     <table><thead><tr>
-      <th style="width:26px"><input type="checkbox" id="cuAll" title="Select all / none"></th><th>Avatar</th><th>Used by</th><th>Replace with</th><th>Delete files</th>
+      <th style="width:26px"><input type="checkbox" id="cuAll" title="Select all / none"></th><th>Avatar</th><th>Used by</th><th>Replace with</th>
     </tr></thead><tbody id="cuRows"></tbody></table>
     <div class="row" style="margin-top:12px">
       <button id="cuDry">Dry run</button>
@@ -205,8 +207,6 @@ const setLog = (s) => { $('log').textContent = s; };
 const show = (id, yes) => { $(id).hidden = !yes; };
 
 let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [], AVATARS = [];
-// Characters whose previews were published in this session (telegamez#3662: Go live needs them).
-const PREVIEWED = new Set();
 
 async function boot() {
   CONFIG = await (await fetch('/api/config')).json();
@@ -393,7 +393,7 @@ function renderPreviews() {
 }
 
 // Capture (or recapture) previews for the ticked characters. Uploads nothing: the Previews panel
-// shows the result, and Publish previews sends it once it looks right.
+// shows the result, and Publish sends it inside the version once it looks right.
 $('capPreviews').onclick = async () => {
   const list = picked();
   if (!list.length) return;
@@ -414,7 +414,7 @@ $('capPreviews').onclick = async () => {
   }
   $('capPreviews').disabled = false;
   await load();   // re-scan so the Previews panel shows what was just captured
-  log('\nCheck the Previews panel, then Publish previews.\n');
+  log('\nCheck the Previews panel, then Publish.\n');
 };
 
 const title = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -457,7 +457,6 @@ function count() {
   const n = picked().length;
   $('pubCount').textContent = n ? n + ' selected' : '';
   $('publish').disabled = n === 0;
-  $('pubPreviews').disabled = n === 0;
 }
 
 $('publish').onclick = async () => {
@@ -570,56 +569,6 @@ $('compress').onclick = async () => {
 };
 
 /**
- * The older preview path: smart-upload writes the three files to the avatar's own preview slots,
- * outside any version. Kept for fixing the previews of an avatar that is already live without
- * re-publishing its model; since telegamez#4632 phase 1b Publish carries captured previews
- * inside the version, and the platform removes this route once every environment runs the
- * registry.
- */
-$('pubPreviews').onclick = async () => {
-  const list = picked();
-  const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  if (!confirm('Publish previews is the older path: it writes the avatar\'s preview slots directly, outside any version.\n\nFor a new publish, Capture previews and then Publish instead - the previews ride inside the version. Continue only to fix an avatar that is already live.')) return;
-  if (e.danger && !confirm('Publish previews for ' + list.length + ' to PRODUCTION?')) return;
-
-  // telegamez#3662: publish only previews that exist and have been seen in the Previews panel.
-  const missing = list.filter((c) => { const r = CHARS.find((x) => x.id === c); return r && !r.previews; });
-  if (missing.length) {
-    setLog('No previews yet for: ' + missing.join(', ')
-      + '\nPress Capture previews, check them in the Previews panel, then Publish previews.\n');
-    return;
-  }
-
-  $('pubPreviews').disabled = true;
-  setLog('Publishing previews for ' + list.length + ' to ' + $('env').value + '\n');
-
-  for (const c of list) {
-    log('\n' + c + '\n');
-    if (!RESOLVED[c] || !RESOLVED[c].avatarId) {
-      log('  no avatar record in this environment yet - publish the model first\n');
-      break;
-    }
-    const res = await fetch('/api/publish-previews?root=' + encodeURIComponent($('root').value), {
-      method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ env: $('env').value, characters:[c],
-                             avatarIds: { [c]: RESOLVED[c].avatarId } }),
-    });
-    if (!res.ok) { log((await res.json()).error + '\n'); break; }
-
-    let out = '';
-    const rd = res.body.getReader(); const dec = new TextDecoder();
-    for (;;) { const t = await rd.read(); if (t.done) break;
-               const x = dec.decode(t.value,{stream:true}); out += x; log(x); }
-
-    // Stop the batch on the first failure, the way the model publish does.
-    if (!/\[publish_previews\] OK/.test(out)) { log('\nStopped.\n'); break; }
-    PREVIEWED.add(c);
-  }
-
-  $('pubPreviews').disabled = false;
-};
-
-/**
  * Going live, without a database.
  *
  * Still its own press: publishing put bytes somewhere and changed nothing anybody sees, and
@@ -632,10 +581,10 @@ $('goLive').onclick = async () => {
   if (!entries.length) return;
   if (!needReason('Go live')) return;
   // telegamez#3662: previews before going live. A character goes live with real previews, or not
-  // at all: the avatar picker would otherwise show a broken card for it. Since telegamez#4632
-  // phase 1b the previews inside the version it just published count too.
+  // at all: the avatar picker would otherwise show a broken card for it. They are either inside
+  // the version it just published (telegamez#4632 phase 1b) or already on the avatar.
   const noPreviews = entries
-    .filter(([c, p]) => !p.previews && !PREVIEWED.has(c) && !(RESOLVED[c] && RESOLVED[c].previewsPublished))
+    .filter(([c, p]) => !p.previews && !(RESOLVED[c] && RESOLVED[c].previewsPublished))
     .map(([c]) => c);
   if (noPreviews.length) {
     setLog('No previews for: ' + noPreviews.join(', ')
@@ -785,12 +734,11 @@ function cuRender() {
       + (a.package ? '<br><span class="ok" style="font-size:11px">current: package ' + cuEsc(a.package) + '</span>' : '') + '</td>'
       + '<td style="font-size:12px">' + (used.length ? used.join('<br>') : '<span class="dim">nothing</span>') + '</td>'
       + '<td><select class="cuRep" data-id="' + a.id + '" style="width:auto">' + opts + '</select></td>'
-      + '<td><input type="checkbox" class="cuHard" data-id="' + a.id + '"></td>'
       + '</tr>';
   }).join('');
   $('cuCount').textContent = CU.length + ' avatars, ' + CU.filter((a) => a.oldId).length + ' old ids pre-ticked';
   CU_PLAN = null; $('cuApply').disabled = true;
-  for (const el of document.querySelectorAll('.cuTick,.cuRep,.cuHard')) {
+  for (const el of document.querySelectorAll('.cuTick,.cuRep')) {
     el.onchange = () => { CU_PLAN = null; $('cuApply').disabled = true; syncAll($('cuAll'), cuBoxes()); };
   }
   syncAll($('cuAll'), cuBoxes());
@@ -827,7 +775,6 @@ $('cuDry').onclick = () => {
   for (const a of ticked) {
     const repId = pick('cuRep', a.id).value || null;
     const rep = CU.find((x) => x.id === repId);
-    const hard = pick('cuHard', a.id).checked;
     lines.push(a.slug + ' (' + a.name + ')');
     if (a.package) problems.push(a.slug + ' is the avatar package ' + a.package + ' publishes to - a current character, not an old one. Untick it.');
     if (cuUses(a)) {
@@ -839,9 +786,10 @@ $('cuDry').onclick = () => {
       lines.push('  used by nothing');
     }
     lines.push(a.status === 'archived' ? '  already archived' : '  archive (hidden from pickers, files kept, reversible)');
-    if (hard) lines.push('  DELETE PERMANENTLY: the row and avatars/' + a.id + '/ in S3 — no undo (an avatar with a lifecycle history is kept archived instead; the platform refuses)');
     lines.push('');
-    plan.push({ avatarId: a.id, replacementId: rep ? rep.id : null, hard });
+    // No delete-for-good: the platform removed it (telegamez#4648). Old versions go through
+    // Remove old versions, one at a time through the lifecycle.
+    plan.push({ avatarId: a.id, replacementId: rep ? rep.id : null });
   }
   if (problems.length) { setLog(lines.join('\n') + '\nCannot apply:\n  ' + problems.join('\n  ') + '\n'); return; }
   CU_PLAN = plan;

@@ -192,10 +192,8 @@ The files are written next to the model (`thumbnail.png`, `imagePreview.jpg`,
 `videoPreview.mp4`). Capturing needs the telegamez checkout beside this repo
 (`S:\Avatars\metahuman\telegamez` on the bake box) or `--monorepo <path>`, plus `ffmpeg` on PATH.
 
-**Publish previews** is the older path: it uploads the three files to the avatar's own preview
-slots through `smart-upload`, outside any version. Use it only to fix the previews of an avatar
-that is already live without re-publishing its model. The platform removes that route once every
-environment runs the version registry.
+There is no separate preview upload any more: the platform's older route is gone (telegamez#4645),
+so changing an avatar's previews means capturing them again and publishing a new version.
 
 **Go live waits for previews.** It refuses a character whose previews are neither inside the
 version it just published nor already on the avatar. The order is: Capture previews, check them,
@@ -216,16 +214,14 @@ the environment you are signed in to, panda or beta.
 2. For an avatar that is in use, pick **Replace with**: its companions and talk-show slots move
    to that avatar and keep their names, voices and prompts. A replacement must be active and not
    itself being retired.
-3. **Delete files** only if you want it gone for good (the row and `avatars/<id>/` in S3). Without
-   it the avatar is archived: hidden from pickers, files kept, reversible. Since telegamez#4632
-   phase 1b an avatar with a lifecycle history (registered versions, or any audited status change)
-   cannot be deleted for good: the platform refuses, the run says *kept* and carries on, and its
-   old versions go through **Remove old versions** instead.
+3. The avatar is archived: hidden from pickers, files kept, reversible, with your reason in its
+   history. Nothing is deleted for good any more (telegamez#4648): the row and its history are
+   permanent, and its old versions go through **Remove old versions**.
 4. **Dry run** lists every change. Nothing has happened yet. On beta (production) you must type
    `beta` before **Apply** works.
 5. **Apply** makes the changes in that order and stops at the first failure. Every change is
    written to `~/.telegames-publisher/publishes/<env>-cleanup-<time>.md` with the exact call that
-   undoes it (permanent deletes have none).
+   undoes it.
 
 Each companion is re-read after it is moved, so if the platform ever stops accepting the change
 the run stops before anything is archived.
@@ -297,7 +293,7 @@ The file contains avatar ids and CDN paths. It never contains your cookie.
 | `a reason is required` | fill the **Reason** box in the Characters step; it goes into the character's history |
 | `VERSION_NOT_REGISTERED` | the key is not a registered version: publish it through this tool, or have the platform's `db:characters:backfill` register uploads that predate the registry |
 | `BACKFILL_FAILED` | the avatar's current model could not be registered on the way to going live; the message names the prefix and why. Fix the objects or map the primary model, then retry |
-| `lifecycle history` | an avatar with versions or audited changes stays archived; remove its old versions instead of deleting it |
+| `not found` on Remove old versions | the version is not in the platform's registry (published before its backfill); have the platform run `db:characters:backfill`, then scan again |
 | `Only retired or unverified (uploaded) versions can be deleted` | the live version, or one a preview still points into. Go live on another version first |
 | `Unsupported file type in companion directory: videoPreview.mp4` | the platform predates telegamez#4644 (video types inside a version); deploy it, or publish without captured previews |
 

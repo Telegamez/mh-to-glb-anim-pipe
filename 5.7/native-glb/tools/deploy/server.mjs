@@ -98,7 +98,6 @@ const findBeside = (name, ...extra) => {
 
 const PUBLISHER = findBeside('publish_to_cdn.ps1');
 const VERIFIER = findBeside('Test-CompanionsLive.ps1');
-const PREVIEWS = findBeside('publish_previews.ps1');
 const COMPRESSOR = findBeside('compress_companion.ps1');
 
 /**
@@ -616,8 +615,8 @@ function stream(res, file, args, extraEnv = {}, onClose) {
 }
 
 // ---------------------------------------------------------------------------------------
-// Previews (telegamez#3662): Publish previews captures any that are missing first, the way
-// Publish makes a missing compressed build. A character folder is finished when its
+// Previews (telegamez#3662, telegamez#4632): captured here and sent inside the version by
+// Publish. A character folder is finished when its
 // thumbnail.png, imagePreview.jpg and videoPreview.mp4 sit beside its model; the capture is
 // the monorepo's own scripts/media/capture-companion-previews.mjs, which photographs the
 // character through the real web app's /dev/companion-capture page, so the frames come from
@@ -721,13 +720,13 @@ function runCapture(res, monorepo, dir) {
 // ---------------------------------------------------------------------------------------
 // Clean up old avatars (telegamez#3662).
 //
-// Retiring an avatar is three changes through the admin API, in this order:
+// Retiring an avatar is two changes through the admin API, in this order:
 //   1. every companion and talk-show slot using it is pointed at a replacement avatar, so
 //      nothing a user sees loses its look (the companion keeps its name, voice and prompts);
-//   2. the avatar is archived (status 'archived', isActive false): hidden from pickers, files
-//      kept, reversible by putting the status back;
-//   3. only where asked, it is deleted for good (`?hard=true`: the row and avatars/<id>/ in S3),
-//      which the API refuses while anything still uses it.
+//   2. the avatar is archived (status 'archived', isActive false, with a reason in its history):
+//      hidden from pickers, files kept, reversible by putting the status back.
+// There is no delete-for-good any more (telegamez#4648): the row and its history are permanent,
+// and old versions go through Remove old versions, one at a time through the lifecycle.
 // The page shows the full plan as a dry run first; production needs its name typed. Every
 // change is written to the journal with how to undo it.
 
@@ -846,7 +845,6 @@ const server = http.createServer(async (req, res) => {
         hasToken: Boolean(session.token),
         publisherFound: fs.existsSync(PUBLISHER),
         verifierFound: fs.existsSync(VERIFIER),
-        previewsFound: fs.existsSync(PREVIEWS),
       });
     }
 
@@ -1411,15 +1409,18 @@ const server = http.createServer(async (req, res) => {
         if (liveOf.get(avatarId) === bakeHash) { res.write(`${bakeHash}: is live — kept\n`); continue; }
         const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${avatarId}/companion-directory?bakeHash=${encodeURIComponent(bakeHash)}&reason=${encodeURIComponent(why)}`);
         if (!r.ok) {
-          res.write(`${bakeHash}: delete failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`);
+          // Since telegamez#4645 the platform deletes only through the registry: a bake it does not
+          // know (listed here from the journals as `unregistered`) is a 404, never a prefix delete.
+          const hint = r.status === 404 ? ' — not in the platform\'s registry; its backfill registers it, then scan again' : '';
+          res.write(`${bakeHash}: delete failed (${r.status}${r.error ? ` ${r.error}` : ''})${hint} — stopped\n`);
           journal.push(`- \`${avatarId}\` ${bakeHash}: FAILED HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`);
           code = 1; break;
         }
-        // A registered version answers with its row: `deleted` means the objects went one by one
-        // and the trail says so. A prefix the registry never knew is removed as before.
+        // The version row answers: `deleted` means the objects went one by one and the trail says
+        // so. A platform without the registry (beta before its rc) answers without one.
         const state = r.body?.version?.state ?? null;
-        res.write(`${bakeHash}: deleted (avatars/${avatarId}/${bakeHash}/)${state ? ` — registry: ${state}` : ' — not in the registry; prefix removed'}\n`);
-        journal.push(`- \`${avatarId}\` deleted avatars/${avatarId}/${bakeHash}/${state ? ` (registry: ${state})` : ' (unregistered prefix)'}. No undo.`);
+        res.write(`${bakeHash}: deleted (avatars/${avatarId}/${bakeHash}/)${state ? ` — registry: ${state}` : ' — no registry on this platform; prefix removed'}\n`);
+        journal.push(`- \`${avatarId}\` deleted avatars/${avatarId}/${bakeHash}/${state ? ` (registry: ${state})` : ' (no registry)'}. No undo.`);
       }
       const recorded = journal.length > 2 ? recordCleanup(env, target.apiBase, journal) : null;
       if (recorded) res.write(`\n[console] recorded: ${recorded}\n`);
@@ -1439,8 +1440,8 @@ const server = http.createServer(async (req, res) => {
      */
     /**
      * Capture (or recapture) one character's previews into its folder, without uploading them.
-     * The page then shows them in the Previews panel; Publish previews sends them once they look
-     * right. Starts the local web app the capture drives if nothing answers at STACK.
+     * The page then shows them in the Previews panel; Publish sends them inside the version once
+     * they look right. Starts the local web app the capture drives if nothing answers at STACK.
      */
     if (url.pathname === '/api/capture-previews' && req.method === 'POST') {
       const { characters } = await readBody(req);
@@ -1485,40 +1486,8 @@ const server = http.createServer(async (req, res) => {
       return undefined;
     }
 
-    if (url.pathname === '/api/publish-previews' && req.method === 'POST') {
-      const { env, characters, avatarIds } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!Array.isArray(characters) || characters.length === 0) {
-        return send(res, 400, { error: 'no characters selected' });
-      }
-
-      // One per request, like the model publish: the page drives the loop so a failure stops
-      // the batch at a character anyone can name.
-      const char = characters[0];
-      const avatarId = (avatarIds || {})[char];
-      if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
-      const pkgDir = path.join(url.searchParams.get('root') || DEFAULT_ROOT, char);
-      if (!fs.existsSync(path.join(pkgDir, `${char}.glb`))) {
-        return send(res, 400, { error: `no package for ${char} in ${path.dirname(pkgDir)}` });
-      }
-
-      // telegamez#3662: capture missing previews first, so publishing them is one press for
-      // any character, a batch included. The files land beside the model, where they belong;
-      // they are not part of the model publish, so this changes no bake hash.
-      // Previews are uploaded only once they exist and have been looked at in the Previews panel:
-      // Capture previews makes them, this sends them. Capturing and uploading in one press sent a
-      // badly framed set to panda before anyone saw it (2026-10-06).
-      if (!hasPreviews(pkgDir)) {
-        return send(res, 400, { error: `${char} has no previews yet: press Capture previews, check them, then publish` });
-      }
-
-      return stream(res, PREVIEWS, [
-        '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
-        '-Source', pkgDir,
-      ], { TG_ADMIN_TOKEN: session.token });
-    }
+    // `/api/publish-previews` is gone: previews ride inside the version that Publish sends
+    // (telegamez#4632 phase 1b), and the platform's separate preview upload answers 410 (#4645).
 
     /**
      * Point a published directory at its avatar row — what the SQL block used to do by hand.
@@ -1631,21 +1600,8 @@ const server = http.createServer(async (req, res) => {
           say('  already archived\n');
         }
 
-        if (item.hard) {
-          const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${a.id}?hard=true&reason=${encodeURIComponent(why)}`);
-          if (r.status === 409 && /lifecycle history/i.test(r.error || '')) {
-            // telegamez#4632 phase 1b: version rows and audited changes are permanent, so an avatar
-            // that has either stays archived. The expected answer, not a failure: nothing was
-            // touched, the files are kept, and its old versions go through Remove old versions.
-            say('  kept: it has a lifecycle history (versions or audited changes), so it stays archived with its files; remove its old versions instead\n');
-            journal.push('- permanent delete refused by the platform (lifecycle history): archived, files kept');
-          } else if (!r.ok) {
-            say(`  permanent delete failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push(`- permanent delete FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`, ''); return finish(1);
-          } else {
-            say(`  deleted permanently (row and avatars/${a.id}/)\n`);
-            journal.push(`- DELETED PERMANENTLY: the row and avatars/${a.id}/ in S3. No undo.`);
-          }
-        }
+        // No delete-for-good: the platform removed it (telegamez#4648, 410 on `?hard=true`). The
+        // row and its history stay; old versions go through Remove old versions.
         journal.push('');
       }
       return finish(0);
@@ -1708,5 +1664,4 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`[deploy-console] http://127.0.0.1:${PORT}`);
   console.log(`[deploy-console] models root: ${DEFAULT_ROOT}`);
   if (!fs.existsSync(PUBLISHER)) console.warn(`[deploy-console] WARNING publisher not found: ${PUBLISHER}`);
-  if (!fs.existsSync(PREVIEWS)) console.warn(`[deploy-console] WARNING preview publisher not found: ${PREVIEWS}`);
 });

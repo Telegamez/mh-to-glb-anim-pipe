@@ -871,22 +871,25 @@ $('vScan').onclick = async (keepLog) => {
     rows.push('<tr><td></td><td>' + esc(p.char) + '<br><span class="dim" style="font-size:11px">' + esc(p.slug) + '</span></td>'
       + '<td class="mono">' + esc(p.live || '(no model)') + '</td><td>' + (p.liveBuild ? buildTag(p.liveBuild) : '') + ' <span class="dim">&middot; live, kept</span></td></tr>');
     for (const o of p.old) {
-      const i = V.push({ char: p.char, avatarId: p.avatarId, bakeHash: o.bakeHash, build: o.build, state: o.state }) - 1;
+      const i = V.push({ char: p.char, avatarId: p.avatarId, bakeHash: o.bakeHash, build: o.build, state: o.state, modelKey: o.modelKey || null }) - 1;
       // The registry's state per version (telegamez#4632 phase 1b); `unregistered` = known only
       // from the journals, from before the backfill. A `ready` version never went live: it is a
       // publish waiting for Go live as often as it is junk, so it is shown but NOT pre-ticked
-      // (panda, 2026-10-10: Tom's fresh publish was removed with the old bakes this way).
+      // (panda, 2026-10-10: Tom's fresh publish was removed with the old bakes this way), and it
+      // gets its own Go live here, so a page refresh between Publish and Go live strands nothing.
       const neverLive = o.state === 'ready';
       const state = o.state ? ' <span class="' + (o.state === 'uploaded' || o.state === 'deleting' || neverLive ? 'warn' : 'dim') + '">&middot; ' + esc(o.state)
         + (neverLive ? ', never went live' : '') + '</span>' : '';
+      const goLive = neverLive && o.modelKey ? ' <button class="small vLive" data-i="' + i + '" title="Take this version live now, with the reason above">Go live</button>' : '';
       rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '"' + (neverLive ? '' : ' checked') + '></td><td class="dim">' + esc(p.char) + '</td>'
-        + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + state + '</td></tr>');
+        + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + state + goLive + '</td></tr>');
     }
   }
   $('vRows').innerHTML = rows.join('') || '<tr><td colspan="4" class="dim">Nothing found.</td></tr>';
   $('vCount').textContent = V.length + ' old version(s)';
   V_PLAN = null; $('vApply').disabled = true;
   for (const el of vBoxes()) el.onchange = () => { V_PLAN = null; $('vApply').disabled = true; syncAll($('vAll'), vBoxes()); };
+  for (const btn of document.querySelectorAll('button.vLive')) btn.onclick = () => vGoLive(V[Number(btn.dataset.i)]);
   syncAll($('vAll'), vBoxes());
   log(V.length + ' old version(s) found' + (b.registry
     ? ', from the platform\'s version registry; versions it does not know yet come from the journals, marked unregistered.\n'
@@ -897,6 +900,31 @@ $('vAll').onchange = () => {
   V_PLAN = null; $('vApply').disabled = true;
   syncAll($('vAll'), vBoxes());
 };
+
+/**
+ * Take a `ready` version live from the versions table: the same call as the Go live step, for a
+ * publish this page no longer remembers (a refresh between Publish and Go live, or a publish
+ * made elsewhere). The registry supplied the model key, so nothing is guessed from a name.
+ */
+async function vGoLive(v) {
+  if (!v || !v.modelKey) return;
+  if (!needReason('Go live')) return;
+  const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  if (e.danger && !confirm('Take ' + v.char + ' live on PRODUCTION on ' + v.bakeHash + '?')) return;
+  setLog('Going live: ' + v.char + ' on ' + v.bakeHash + '\n');
+  const r = await fetch('/api/go-live', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ env: e.key, char: v.char, avatarId: v.avatarId, modelKey: v.modelKey, reason: reason() }),
+  });
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) { log('\n' + v.char + ': ' + (b.error || 'failed') + '\n'); return; }
+  log('\n' + v.char + ' is live\n   now ' + b.modelKey + '\n   was ' + (b.previous || '(no model on the row)') + '\n');
+  if (b.registry === false) log('   registry: no versions route on this platform yet\n');
+  else log('   registry: version ' + (b.versionState || 'not found') + (b.versionState === 'live' ? '' : ' — expected live; check the admin Versions panel') + '\n');
+  if (b.status && b.status !== 'active') log('   status: ' + b.status + ' — going live does not change it; set the avatar active in admin (with a reason) or it stays hidden\n');
+  if (b.recorded) log('   recorded in ' + b.recorded + '\n');
+  $('vScan').onclick(true);   // the version it replaced now shows as retired
+}
 
 $('vDry').onclick = () => {
   const ticked = vBoxes().filter((b) => b.checked).map((b) => V[Number(b.dataset.i)]);

@@ -5,8 +5,8 @@
 .DESCRIPTION
   `publish_characters.ps1` copies a bake into the monorepo's `public/models/<id>/`, which
   serves local development. This publishes the same directory to the platform, and it does so
-  through `POST /api/admin/avatars/<avatarId>/companion-directory` rather than by copying to
-  the bucket.
+  through `POST /api/admin/characters/<id>/versions` (telegamez#4632 phase 2: the character's
+  own id, the same in every environment) rather than by copying to the bucket.
 
   That indirection is the point, and it is plan D4: the admin API stays the one front door for
   assets. A bake box holding bucket credentials and running `aws s3 cp` would be quicker and
@@ -29,15 +29,22 @@
   from them. Without it the compositor falls back to the KTX2 model and fails on the TV.
 
   The publish is content-addressed: files land under `avatars/<avatarId>/<bakeHash>/`, so a
-  re-bake publishes ALONGSIDE the live one rather than over it. Nothing changes for users
-  until the returned `modelKey` is written into the avatar row, and rolling back is putting
-  the old key back - not restoring objects.
+  re-bake publishes ALONGSIDE the live one rather than over it. The platform records it as a
+  version in state `ready` (every object read back and matched). Nothing changes for users
+  until that version goes live (`POST .../versions/<version>/live`), and rolling back is taking
+  the previous version live again - not restoring objects.
 
 .PARAMETER Char
-  Character id, e.g. `telly`. Its directory is taken from -Source.
+  Package folder name, e.g. `tg-drake`: the model is `<Char>.glb` in -Source. Not the identity.
 
-.PARAMETER AvatarId
-  The `avatars` row UUID this directory belongs to.
+.PARAMETER CharacterId
+  The character's id in the platform's registry (`drake`), the same in every environment. The
+  URL names it and the generated character.json must agree, so the platform refuses a mismatch.
+
+.PARAMETER Identity
+  JSON `{ "id", "name", "gender", "tags" }` written into the version's character.json. The id
+  must equal -CharacterId. A first publish of a new id creates the character from it; a later
+  publish whose name, gender or tags differ updates the identity (never its id).
 
 .PARAMETER ApiBase
   Admin API base, e.g. http://localhost:3005 locally.
@@ -68,12 +75,13 @@
   there. Without it the version carries no previews and the avatar keeps whatever it has.
 
 .EXAMPLE
-  ./publish_to_cdn.ps1 -Char telly -AvatarId 8e671d15-... -ApiBase http://localhost:3005
+  ./publish_to_cdn.ps1 -Char tg-drake -CharacterId drake -Identity '{"id":"drake","name":"Drake","gender":"male","tags":[]}' -ApiBase https://api.panda.telegames.ai -Reason "..."
 #>
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$Char,
-  [Parameter(Mandatory = $true)][string]$AvatarId,
+  [Parameter(Mandatory = $true)][string]$CharacterId,
+  [Parameter(Mandatory = $true)][string]$Identity,
   [Parameter(Mandatory = $true)][string]$ApiBase,
   [string]$Token = $env:TG_ADMIN_TOKEN,
   [string]$Source,
@@ -145,10 +153,26 @@ $files = Get-ChildItem -Path $root -Recurse -File |
   }
 }
 
-# Previews ride inside the version (telegamez#4632 phase 1b). `character.json` names them; on
+# The version's character.json (telegamez#4632 phase 2): the identity the platform registers the
+# version under (its id must equal -CharacterId, or the route refuses), the previews when they
+# ride inside the version, and the tuning id so the runtime stops deriving it from the model's
+# file name. Generated here from -Identity, never taken from the source directory.
+if ($files | Where-Object { $_.Relative -eq 'character.json' }) {
+  throw "$Source already holds a character.json; the publisher generates that file from -Identity"
+}
+# Parsed into its own variable: `$identity` IS `$Identity` (names are case-insensitive), and that
+# parameter is typed [string], so assigning the parsed object to it turned it back into a string
+# and `.id` read as empty - every publish failed with "-Identity id '' does not match".
+try { $who = $Identity | ConvertFrom-Json } catch { throw "-Identity is not JSON: $Identity" }
+if ($who.id -cne $CharacterId) { throw "-Identity id '$($who.id)' does not match -CharacterId '$CharacterId'" }
+if (-not $who.name) { throw "-Identity needs a name" }
+$release = [ordered]@{ id = $who.id; name = $who.name }
+$release.gender = if ($who.gender) { $who.gender } else { $null }
+$release.tags = @(if ($who.tags) { $who.tags } else { @() })
+
+# Previews ride inside the version (telegamez#4632 phase 1b). character.json names them; on
 # go-live the platform mirrors them onto the avatar's preview columns, on rollback the previous
-# version's come back, and Remove old versions takes them with their version. It also carries
-# the tuning id, so the runtime stops deriving it from the model's file name.
+# version's come back, and Remove old versions takes them with their version.
 $extras = @()
 $previewsIncluded = $false
 if ($PreviewsFrom) {
@@ -157,22 +181,17 @@ if ($PreviewsFrom) {
   if ($missingPreviews.Count -gt 0) {
     throw "-PreviewsFrom $PreviewsFrom is missing $($missingPreviews -join ', ') - capture previews first, or publish without -PreviewsFrom"
   }
-  if ($files | Where-Object { $_.Relative -eq 'character.json' }) {
-    throw "$Source already holds a character.json; the publisher generates that file from the previews"
-  }
   foreach ($p in $PREVIEW_ASSETS) {
     $item = Get-Item (Join-Path $PreviewsFrom $p)
     $extras += [PSCustomObject]@{ FullName = $item.FullName; Relative = $p; Length = $item.Length; Bytes = $null }
   }
-  $release = [ordered]@{
-    previews = [ordered]@{ thumbnail = 'thumbnail.png'; image = 'imagePreview.jpg'; video = 'videoPreview.mp4' }
-  }
-  # -cmatch: the platform's schema is case-sensitive lowercase; -match would pass a name it refuses.
-  if ($Char -cmatch '^[a-z0-9][a-z0-9_-]{0,63}$') { $release.tuningId = $Char }
-  $releaseBytes = [Text.Encoding]::UTF8.GetBytes((($release | ConvertTo-Json -Depth 4) + "`n"))
-  $extras += [PSCustomObject]@{ FullName = $null; Relative = 'character.json'; Length = $releaseBytes.Length; Bytes = $releaseBytes }
+  $release.previews = [ordered]@{ thumbnail = 'thumbnail.png'; image = 'imagePreview.jpg'; video = 'videoPreview.mp4' }
   $previewsIncluded = $true
 }
+# -cmatch: the platform's schema is case-sensitive lowercase; -match would pass a name it refuses.
+if ($Char -cmatch '^[a-z0-9][a-z0-9_-]{0,63}$') { $release.tuningId = $Char }
+$releaseBytes = [Text.Encoding]::UTF8.GetBytes((($release | ConvertTo-Json -Depth 4) + "`n"))
+$extras += [PSCustomObject]@{ FullName = $null; Relative = 'character.json'; Length = $releaseBytes.Length; Bytes = $releaseBytes }
 $parts = @($files) + @($extras)
 
 if (-not $BakeHash) {
@@ -192,7 +211,7 @@ if (-not $BakeHash) {
 }
 
 $totalMb = [math]::Round(($parts | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
-Write-Host "[publish_to_cdn] $Char -> avatars/$AvatarId/$BakeHash/"
+Write-Host "[publish_to_cdn] $Char -> character $CharacterId, version $BakeHash"
 Write-Host "[publish_to_cdn] $($parts.Count) files, $totalMb MB"
 if ($Build) { Write-Host "[publish_to_cdn] build: $Build" }
 Write-Host "[publish_to_cdn] previews: $(if ($previewsIncluded) { 'included in the version' } else { 'not included (no -PreviewsFrom)' })"
@@ -233,7 +252,7 @@ function Add-QuotedPart {
 }
 
 try {
-  Add-QuotedPart $content ([System.Net.Http.StringContent]::new($BakeHash)) 'bakeHash'
+  Add-QuotedPart $content ([System.Net.Http.StringContent]::new($BakeHash)) 'version'
   Add-QuotedPart $content ([System.Net.Http.StringContent]::new($model)) 'modelPath'
   if ($avatarManifest) {
     Add-QuotedPart $content ([System.Net.Http.StringContent]::new($avatarManifest)) 'manifest'
@@ -256,7 +275,7 @@ try {
     Add-QuotedPart $content $part 'files' $f.Relative
   }
 
-  $url = "$($ApiBase.TrimEnd('/'))/api/admin/avatars/$AvatarId/companion-directory"
+  $url = "$($ApiBase.TrimEnd('/'))/api/admin/characters/$CharacterId/versions"
   Write-Host "[publish_to_cdn] POST $url"
   $response = $client.PostAsync($url, $content).GetAwaiter().GetResult()
   $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -265,21 +284,20 @@ try {
     throw "Ingest failed ($([int]$response.StatusCode)): $body"
   }
 
+  # The response is the version row: `ready` means every object was read back from the bucket
+  # and matched its digest. Its model key names the avatar prefix the platform chose.
   $parsed = $body | ConvertFrom-Json
-  $modelKey = $parsed.data.modelKey
-  Write-Host "[publish_to_cdn] OK - $($parsed.data.files.Count) files published"
-  Write-Host "[publish_to_cdn] modelKey: $modelKey"
-  # Since telegamez#4632 phase 1b the response carries the version row: `ready` means every
-  # object was read back from the bucket and matched its digest. An older platform returns no
-  # version; the line is then omitted rather than invented.
   $version = $parsed.data.version
-  if ($version -and $version.state) {
-    Write-Host "[publish_to_cdn] version: $($version.version) state $($version.state) build $($version.build)"
-  }
+  if (-not $version -or -not $version.modelKey) { throw "The platform returned no version row: $body" }
+  $modelKey = $version.modelKey
+  Write-Host "[publish_to_cdn] OK - $(@($version.manifest).Count) files published"
+  Write-Host "[publish_to_cdn] modelKey: $modelKey"
+  Write-Host "[publish_to_cdn] avatarId: $($version.avatarId)"
+  Write-Host "[publish_to_cdn] version: $($version.version) state $($version.state) build $($version.build)"
   Write-Host ""
-  Write-Host "Publishing bytes does NOT make them live. To go live, through the API:"
-  Write-Host "  PUT $($ApiBase.TrimEnd('/'))/api/admin/avatars/$AvatarId/model-path  { `"modelKey`": `"$modelKey`", `"reason`": `"...`" }"
-  Write-Host "Rolling back is the same call with the previous key. Never update avatars.model_path by hand:"
+  Write-Host "Publishing does NOT make the version live. To go live, through the API:"
+  Write-Host "  POST $($ApiBase.TrimEnd('/'))/api/admin/characters/$CharacterId/versions/$($version.version)/live  { `"reason`": `"...`" }"
+  Write-Host "Rolling back is the same call on the previous version. Never update avatars.model_path by hand:"
   Write-Host "the registry would not know, and db:characters:verify reports it as pointer drift."
 }
 finally {

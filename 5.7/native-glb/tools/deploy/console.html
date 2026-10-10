@@ -20,7 +20,14 @@
   .step{margin-bottom:20px}
   .step[hidden]{display:none}
   .step h2{font-size:13px;margin:0 0 10px;color:var(--dim);font-weight:600;
-           text-transform:uppercase;letter-spacing:.07em}
+           text-transform:uppercase;letter-spacing:.07em;cursor:pointer;user-select:none}
+  /* Every step folds on its heading (owner, 2026-10-10: too much scrolling). The fold is
+     remembered per step; a step that becomes the next thing to do unfolds itself. */
+  .step h2::before{content:'\25BE';display:inline-block;width:1.1em;color:var(--accent)}
+  .step.collapsed h2::before{content:'\25B8'}
+  .step h2:hover{color:var(--ink)}
+  .step.collapsed > :not(h2){display:none}
+  .step.collapsed h2{margin-bottom:0}
 
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   input,select{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:10px 11px;
@@ -186,6 +193,21 @@ const log = (s) => { $('log').textContent += s; $('log').scrollTop = 1e9; };
 const setLog = (s) => { $('log').textContent = s; };
 const show = (id, yes) => { $(id).hidden = !yes; };
 
+// Collapsible steps: a click on the heading folds or unfolds it, remembered per step in this
+// browser. `fold(id, on)` is what the flow calls when a step stops or starts being the next thing.
+const fold = (id, on) => {
+  const step = $(id); if (!step) return;
+  step.classList.toggle('collapsed', on);
+  try { localStorage.setItem('fold:' + id, on ? '1' : '0'); } catch { /* private window */ }
+};
+for (const step of document.querySelectorAll('.step')) {
+  const h = step.querySelector('h2'); if (!h) continue;
+  let remembered = false;
+  try { remembered = localStorage.getItem('fold:' + step.id) === '1'; } catch { /* private window */ }
+  step.classList.toggle('collapsed', remembered);
+  h.onclick = () => fold(step.id, !step.classList.contains('collapsed'));
+}
+
 let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [];
 // Whether the connected environment has the character registry (telegamez#4632 phase 2), and
 // whether it takes characters only by promotion (beta): then nothing here publishes to it.
@@ -233,6 +255,8 @@ $('setToken').onclick = async () => {
   setLog('Connecting to ' + $('env').value + '\n');
   await load();
 };
+// A change of environment starts the flow over: sign in is the next thing again.
+$('env').addEventListener('change', () => fold('s2', false));
 
 async function load() {
   const scan = await (await fetch('/api/scan?root=' + encodeURIComponent($('root').value))).json();
@@ -257,6 +281,8 @@ async function load() {
     + (!REGISTRY ? ' <span class="warn">&middot; no character registry on this platform yet: nothing can be published here</span>'
       : PROMOTION_ONLY ? ' <span class="warn">&middot; receives characters by promotion from panda (admin &rarr; Characters), not by publishing</span>' : '');
   show('s3', true); show('s7', REGISTRY);
+  // Connected: the sign-in step is done with, the characters are the next thing.
+  fold('s2', true); fold('s3', false);
   render();
 }
 
@@ -475,7 +501,8 @@ $('publish').onclick = async () => {
 
   $('publish').disabled = false;
   $('goLive').disabled = false;
-  if (Object.keys(PUBLISHED).length) show('s5', true);
+  // Something is published and not live: Go live is the next thing, so it unfolds.
+  if (Object.keys(PUBLISHED).length) { show('s5', true); fold('s5', false); }
 };
 
 /**

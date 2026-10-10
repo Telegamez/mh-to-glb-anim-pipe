@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>MetaHuman → Avatar</title>
+<title>MetaHuman bake</title>
 <style>
   :root{
     --bg:#0f1419;--panel:#161d26;--line:#252f3d;--ink:#e6edf5;--dim:#8b9bb0;
@@ -28,7 +28,7 @@
   button.go{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
   button.sel{background:var(--accent);color:#07222a;border-color:var(--accent);font-weight:600}
   button.small{padding:6px 11px;font-size:13px}
-  /* Destructive, and coloured like the alert box rather than like the go buttons. */
+  /* Destructive, and coloured like a warning rather than like the go buttons. */
   button.danger{border-color:#5d2c22;color:#f0b5a4}
   button.danger:hover:not(:disabled){border-color:var(--bad);background:#2a1614}
 
@@ -49,15 +49,12 @@
   .dot.warn{background:var(--warn)}
   .dot.run{background:var(--run);animation:pulse 1s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  .unknown{color:#3a4655}
 
   .phase{margin-top:22px}
   .phase h2{font-size:11px;margin:0 0 4px;color:var(--dim);font-weight:600;
             text-transform:uppercase;letter-spacing:.08em}
   .phase .hint{font-size:12.5px;color:var(--dim);margin:0 0 10px}
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .alert{border:1px solid #5d2c22;background:#2a1614;color:#f0b5a4;border-radius:5px;
-         padding:9px 12px;margin-bottom:10px;font-size:13.5px}
   .note{color:var(--warn);font-size:12.5px;margin-top:8px}
   pre{background:#0a0e13;border:1px solid var(--line);border-radius:5px;padding:11px;
       font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;margin:0;
@@ -79,17 +76,12 @@
 <body>
 
 <header>
-  <h1>MetaHuman → Avatar</h1>
-  <div class="row">
-    <span class="sub" id="conn">not connected</span>
-    <select id="env" style="width:auto"></select>
-  </div>
+  <h1>MetaHuman bake</h1>
+  <span class="sub">this machine only · publishing is the Publisher's</span>
 </header>
 
 <main>
 <div class="col">
-
-  <div id="prodWarn"></div>
 
   <!--
     The grid is the whole point. It is never hidden and never scrolled off: whatever else is
@@ -102,9 +94,6 @@
       <th class="step">Bake</th>
       <th class="step">Previews</th>
       <th class="step">Size</th>
-      <th class="step">Upload</th>
-      <th class="step">Assets</th>
-      <th class="step">Live</th>
     </tr></thead>
     <tbody id="grid"></tbody>
   </table>
@@ -117,13 +106,13 @@
     <!-- Hidden until something is ticked: a delete button with nothing selected is only ever
          a question about what it would delete. -->
     <button id="del" class="small danger" hidden>Delete</button>
+    <span class="sub" id="count"></span>
     <span class="sub" id="picked"></span>
   </div>
 
-  <!-- Phase 1 -->
   <div class="phase">
-    <h2>1 · Create — on this machine</h2>
-    <p class="hint">Unreal and Blender make the model; the local stack photographs it.</p>
+    <h2>Make a package — on this machine</h2>
+    <p class="hint">Unreal and Blender make the model; the local stack photographs it; Compress makes the ktx2 build.</p>
     <div class="row">
       <button id="pickAsset">Choose MetaHuman…</button>
       <!-- Optional. Empty means the asset's own name, which is what it always used to be.
@@ -136,38 +125,26 @@
       <button id="bake" class="go" disabled>Bake</button>
       <button id="capture" class="small" disabled>Previews only</button>
       <!-- Local like the two beside it: it reads the finished package and writes the ktx2
-           build next to it. The bake does this itself and Upload remakes a stale one, so this
-           is the explicit re-compress. The original is untouched. -->
-      <button id="compress" class="small" disabled title="Remake the ktx2 build now. Bake makes one; Upload remakes a stale one.">Compress</button>
+           build next to it. The bake does this itself and the Publisher remakes a stale one,
+           so this is the explicit re-compress. The original is untouched. -->
+      <button id="compress" class="small" disabled title="Remake the ktx2 build now. Bake makes one; the Publisher remakes a stale one.">Compress</button>
     </div>
     <div class="note" id="compNote" hidden></div>
     <div class="note" id="stackNote" hidden></div>
   </div>
 
-  <!-- Phase 2 -->
+  <!--
+    Publishing used to be a second phase on this page, against the platform's avatar routes.
+    Those routes are retired (telegamez#4632 phase 2); the Publisher publishes by character id.
+  -->
   <div class="phase">
-    <h2>2 · Publish — to the environment</h2>
-    <p class="hint">Each button fills one column above. Nothing a user sees changes until Go live.</p>
-    <div class="row" style="margin-bottom:10px">
-      <input id="token" type="password" placeholder="Paste admin cookie" autocomplete="off" style="flex:1;min-width:180px">
-      <button id="connect" class="go">Connect</button>
-      <a href="#" id="getCookie" class="sub">get it</a>
-    </div>
-    <div class="alert" id="connErr" hidden></div>
-    <div class="row">
-      <!-- Before Upload, because Upload cannot run without the row this makes. -->
-      <button id="mkRecord" disabled>Create record</button>
-      <button id="pubModel" disabled>Upload model</button>
-      <!-- telegamez#3728/#3662: Upload sends the ktx2 build (KTX2 browser model + PNG compositor
-           model), making or refreshing it first when it has to. Owner decision 2026-10-08: it is
-           the only build, so this is a label, not a selector. -->
-      <span class="hint" id="build" style="display:inline">build <b>ktx2</b></span>
-      <span class="hint" id="buildNote" style="display:inline">the environment's web app must include telegamez#4551</span>
-      <button id="pubPreviews" disabled>Upload previews</button>
-      <button id="goLive" class="go" disabled>Go live</button>
-      <button id="verify" class="small" disabled>Check</button>
-      <span class="sub" id="count"></span>
-    </div>
+    <h2>Publish — in the Publisher</h2>
+    <p class="hint">
+      A finished package goes to panda through the Publisher (<code>Start-Publisher.ps1</code>, port 7311):
+      it reads the character's id from the package's <code>character.json</code>, publishes the ktx2 build
+      as a version, takes it live and removes old versions, every call with a reason. Beta is reached by
+      promotion from panda, on the platform's admin page, never from here.
+    </p>
   </div>
 
 </div>

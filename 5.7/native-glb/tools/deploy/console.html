@@ -473,6 +473,9 @@ $('publish').onclick = async () => {
   const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + String(Date.now()).slice(-4);
 
   $('publish').disabled = true;
+  // Go live waits for the whole batch: pressed mid-batch it took seven of eight live on panda
+  // (2026-10-10) and the eighth, still uploading, was later removed as "old" by mistake.
+  $('goLive').disabled = true;
   setLog('Publishing ' + list.length + ' to ' + $('env').value + '\n');
   if (bare.length) log('No captured previews for: ' + bare.join(', ') + '. Their versions will carry none; each avatar keeps the previews it has (Capture previews first to change that).\n');
 
@@ -537,6 +540,7 @@ $('publish').onclick = async () => {
   }
 
   $('publish').disabled = false;
+  $('goLive').disabled = false;
   if (Object.keys(PUBLISHED).length) show('s5', true);
 };
 
@@ -869,9 +873,13 @@ $('vScan').onclick = async (keepLog) => {
     for (const o of p.old) {
       const i = V.push({ char: p.char, avatarId: p.avatarId, bakeHash: o.bakeHash, build: o.build, state: o.state }) - 1;
       // The registry's state per version (telegamez#4632 phase 1b); `unregistered` = known only
-      // from the journals, from before the backfill.
-      const state = o.state ? ' <span class="' + (o.state === 'uploaded' || o.state === 'deleting' ? 'warn' : 'dim') + '">&middot; ' + esc(o.state) + '</span>' : '';
-      rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '" checked></td><td class="dim">' + esc(p.char) + '</td>'
+      // from the journals, from before the backfill. A `ready` version never went live: it is a
+      // publish waiting for Go live as often as it is junk, so it is shown but NOT pre-ticked
+      // (panda, 2026-10-10: Tom's fresh publish was removed with the old bakes this way).
+      const neverLive = o.state === 'ready';
+      const state = o.state ? ' <span class="' + (o.state === 'uploaded' || o.state === 'deleting' || neverLive ? 'warn' : 'dim') + '">&middot; ' + esc(o.state)
+        + (neverLive ? ', never went live' : '') + '</span>' : '';
+      rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '"' + (neverLive ? '' : ' checked') + '></td><td class="dim">' + esc(p.char) + '</td>'
         + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + state + '</td></tr>');
     }
   }
@@ -895,7 +903,10 @@ $('vDry').onclick = () => {
   if (!ticked.length) { setLog('Nothing ticked.\n'); return; }
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   const lines = ['DRY RUN on ' + e.key + ' — nothing has changed yet.', '', 'Delete from the bucket, no undo:'];
-  for (const v of ticked) lines.push('  ' + v.char + '  avatars/' + v.avatarId + '/' + v.bakeHash + '/  (' + v.build + ')');
+  for (const v of ticked) lines.push('  ' + v.char + '  avatars/' + v.avatarId + '/' + v.bakeHash + '/  (' + v.build + (v.state ? ', ' + v.state : '') + ')');
+  const neverLive = ticked.filter((v) => v.state === 'ready');
+  if (neverLive.length) lines.push('', 'NEVER WENT LIVE, ticked by you: ' + neverLive.map((v) => v.bakeHash).join(', ')
+    + '. A ready version is usually a publish waiting for Go live. Untick it unless you mean to throw it away.');
   V_PLAN = ticked.map((v) => ({ avatarId: v.avatarId, bakeHash: v.bakeHash }));
   $('vConfirm').hidden = !e.danger; $('vConfirm').value = '';
   $('vApply').disabled = false;

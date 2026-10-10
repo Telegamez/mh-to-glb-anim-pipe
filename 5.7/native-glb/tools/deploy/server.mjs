@@ -1366,7 +1366,7 @@ const server = http.createServer(async (req, res) => {
           if (v.version === live || v.state === 'live' || v.state === 'deleted') continue;
           // `modelKey` rides along so a `ready` version can be taken live from the page without a
           // re-publish (a page refresh otherwise forgets what was published this session).
-          old.push({ bakeHash: v.version, build: v.build && v.build !== 'unknown' ? v.build : buildOf(v.version, versions), state: v.state, modelKey: v.modelKey ?? null });
+          old.push({ bakeHash: v.version, build: v.build && v.build !== 'unknown' ? v.build : buildOf(v.version, versions), state: v.state, modelKey: v.modelKey ?? null, uploadedAt: v.uploadedAt ?? null });
         }
         for (const [hash, v] of versions.entries()) {
           if (v.avatarId !== avatarId || hash === live || known.has(hash)) continue;

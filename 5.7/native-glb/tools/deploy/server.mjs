@@ -1130,15 +1130,6 @@ const server = http.createServer(async (req, res) => {
     }
 
     /**
-     * The other half of publishing an avatar: its thumbnail, image and video.
-     *
-     * A separate route and a separate step because it is a separate contract. The model goes
-     * through `companion-directory`, which writes bytes and deliberately touches no row; these
-     * go through `smart-upload`, which owns the three preview columns and writes them itself.
-     * So this one needs no SQL afterwards — and, as a side effect, takes the row out of the
-     * 'processing' state a newly created avatar starts in.
-     */
-    /**
      * Capture (or recapture) one character's previews into its folder, without uploading them.
      * The page then shows them in the Previews panel; Publish sends them inside the version once
      * they look right. Starts the local web app the capture drives if nothing answers at STACK.

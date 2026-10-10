@@ -1,33 +1,32 @@
 /**
- * MetaHuman to Avatar — one console for the whole route.
+ * MetaHuman bake console — one grid for making a package on this machine.
  *
- * Two phases in one page, over one state. Phase 1 makes a package on this machine: Unreal and
- * Blender produce the model, the local stack photographs it. Phase 2 puts that package into an
- * environment: bytes to the CDN, previews to the avatar's asset slots, then the row pointed at
- * the model. The grid across the top says where every character is at every step, so nobody has
- * to remember which of two tools was run last.
+ * Unreal and Blender produce the model, the local stack photographs it, the compressor makes
+ * the ktx2 build. The grid across the top says where every character is at every step, so
+ * nobody has to remember which tool was run last.
+ *
+ * Publishing is not here. A finished package goes to an environment through the Publisher
+ * (`Start-Publisher.ps1`, `tools/deploy/`), by the character id in its `character.json`, and
+ * go-live and version removal live there too (telegamez#4632 phase 2). This console used to
+ * carry a copy of that flow against the platform's avatar routes (`POST /api/admin/avatars`,
+ * `PUT .../model-path`, the preview upload); those routes are retired and the copy went with
+ * them, so there is no admin token here and nothing on this page can reach an environment.
  *
  * ## Why a server and not a static page
  *
  * The work is on this host: reading bake directories, launching Unreal and Blender, driving a
- * browser, holding an admin cookie for the length of a run. A page can do none of those. So this
- * is the smallest thing that can — one file, Node built-ins only, nothing to install.
+ * browser. A page can do none of those. So this is the smallest thing that can — one file, Node
+ * built-ins only, nothing to install.
  *
  * ## It does not reimplement the pipeline
  *
  * Every button shells out to the script that already does the job: the stage launchers RUN.md
- * dispatches, `publish_to_cdn.ps1`, `publish_previews.ps1`, `Test-CompanionsLive.ps1`, and the
- * monorepo's capture script. The scripts stay the source of truth and stay runnable without
- * this. A console that grew its own copy of the publish logic would drift, and the drift would
- * surface as "it worked from the console but not from the script".
+ * dispatches, `package_character.ps1`, `compress_companion.ps1` and the monorepo's capture
+ * script. The scripts stay the source of truth and stay runnable without this. A console that
+ * grew its own copy of the logic would drift, and the drift would surface as "it worked from
+ * the console but not from the script".
  *
- * ## The token
- *
- * Typed in the browser, held in memory for the process lifetime, passed to children through the
- * environment. Never written to disk, never logged, never echoed back. It is a live admin
- * session, so this binds to 127.0.0.1 only.
- *
- * Usage:  node server.mjs [--port 7311] [--root <packages dir>] [--stack <url>]
+ * Usage:  node server.mjs [--port 7312] [--root <packages dir>] [--stack <url>]
  */
 
 import http from 'node:http';
@@ -87,7 +86,7 @@ const DEFAULT_ROOT = arg('root', null)
 /**
  * Find the scripts whether this is running from the repo or from the shared bundle.
  *
- * In the repo the publisher sits one level up in `tools/`; in the zip everything is flat beside
+ * In the repo the compressor sits one level up in `tools/`; in the zip everything is flat beside
  * this file. One search rather than two copies of the tool - a bundle that drifts from the repo
  * is a bundle that gets sent out stale.
  */
@@ -99,9 +98,6 @@ const findBeside = (name, ...extra) => {
   return path.join(HERE, name);   // report the flat location when genuinely missing
 };
 
-const PUBLISHER = findBeside('publish_to_cdn.ps1');
-const VERIFIER = findBeside('Test-CompanionsLive.ps1');
-const PREVIEWS = findBeside('publish_previews.ps1');
 const COMPRESSOR = findBeside('compress_companion.ps1');
 
 /**
@@ -122,9 +118,10 @@ const ONE_BUILD = 'ktx2 is the only build (owner decision 2026-10-08: meshopt, n
 /**
  * Where the ktx2 build of a character lives: `<root>/_compressed_ktx2/<char>/`.
  *
- * Beside the character folders rather than inside one, because `publish_to_cdn.ps1` uploads
- * its `-Source` recursively — a compressed copy nested in the character directory would be
- * published alongside the original and double the payload instead of cutting it.
+ * Beside the character folders rather than inside one, because the Publisher's
+ * `publish_to_cdn.ps1` uploads its `-Source` recursively — a compressed copy nested in the
+ * character directory would be published alongside the original and double the payload
+ * instead of cutting it.
  */
 const COMPRESSED_DIR = '_compressed_ktx2';
 const compressedPath = (root, char) => path.join(root, COMPRESSED_DIR, char);
@@ -299,34 +296,6 @@ function uassetKind(file) {
   }
 }
 
-/** Environments this console will talk to. Adding one is a line here, not a code change. */
-const ENVIRONMENTS = {
-  // Every environment publishes the ktx2 build (BUILD above); its web app must include
-  // telegamez#4551, the KTX2 runtime. Panda and beta do.
-  panda: { apiBase: 'https://api.panda.telegames.ai', label: 'panda' },
-  beta: { apiBase: 'https://api.beta.telegames.ai', label: 'beta — PRODUCTION', danger: true },
-  local: { apiBase: 'http://localhost:3005', label: 'local' },
-};
-
-/**
- * The shipping roster, from packages/shared/db/src/seed-metahuman-roster.ts.
- *
- * Used ONLY to decide what is pre-selected. Everything found is still listed and can still be
- * ticked by hand — the scan found `telly-research` sitting beside the six, which is a research
- * variant that must not reach a picker. Listing it and leaving it unticked is the useful
- * behaviour; hiding it would make the directory's contents unanswerable from the console, and
- * pre-ticking it would publish it on the first careless run.
- */
-const ROSTER = [
-  // The tg-* roster (telegamez#3725 rebakes, the greenfield packages), the ids the avatar records use.
-  'tg-drake', 'tg-jan', 'tg-jen', 'tg-jules', 'tg-ken', 'tg-mae', 'tg-rick', 'tg-tom',
-  // The pre-tg ids, still pre-ticked when their folders are found.
-  'telly', 'tele', 'telie', 'telee', 'tele1', 'tele2',
-];
-
-/** Held for the process lifetime only. Never persisted. */
-const session = { token: null, prior: {} };
-
 // ---------------------------------------------------------------------------------------
 
 /**
@@ -361,9 +330,9 @@ function scanRoot(root) {
     // compressed build has to be compared against.
     const payloadMb = Math.round(payloadBytes(dir, name) / 1048576);
 
-    // The three assets that fill avatars' preview columns. Not required to publish the model
-    // directory — they go through a different route — so their absence is reported, never a
-    // problem that blocks the publish.
+    // The three preview assets. The Publisher sends them inside the version when they are here
+    // and publishes the model without them when they are not, so their absence is reported,
+    // never a problem that blocks anything.
     const PREVIEW_FILES = ['thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4'];
     const previews = PREVIEW_FILES.every((f) => fs.existsSync(path.join(dir, f)));
 
@@ -386,7 +355,7 @@ function scanRoot(root) {
 
     characters.push({
       id: name, dir, mb, payloadMb, sidecar, textures, strayManifest, previews, body, compressed,
-      ready: problems.length === 0, problems, inRoster: ROSTER.includes(name),
+      ready: problems.length === 0, problems,
     });
   }
   return { root, characters };
@@ -450,149 +419,13 @@ function readBody(req) {
  * Plain chunked text rather than SSE: the consumer is one page showing a log, and a batch that
  * takes minutes should show its first line immediately rather than after the last one.
  */
-// ---------------------------------------------------------------------------------------
-// The publish journal
-//
-// A publish streams to the browser and is then gone. That is survivable for the model key,
-// which can be read back off the CDN, and not survivable at all for the *previous* model_path:
-// nothing else records it, and it is the entire rollback. So every publish — including a failed
-// one — appends a record to disk.
-//
-// Records are grouped by bake suffix rather than by date, because the suffix is the batch's own
-// identity: one run's characters land in one file however long the run takes or how near midnight
-// it starts.
-//
-// No token is ever written here. Avatar ids and CDN keys are not credentials.
-
-const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
-
-function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, compressed, build = BUILD }) {
-  const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
-  const modelKey = grab(/modelKey:\s*(\S+)/);
-  const files = grab(/OK - (\d+ files published)/);
-  const size = grab(/\d+ files, ([\d.]+ MB)/);
-
-  const out = [`## ${char}`, ''];
-  out.push(`- when    ${new Date().toISOString()}`);
-  out.push(`- avatar  \`${avatarId}\``);
-  out.push(`- bake    \`${bakeHash}\``);
-  if (files || size) out.push(`- upload  ${[files, size].filter(Boolean).join(', ')}`);
-  // Which bytes went up. A compressed publish and an uncompressed one produce the same
-  // model key and the same SQL, so nothing else in this record distinguishes them — and
-  // "why is this companion 87 MB again" is answered here or not at all.
-  out.push(`- source  ${compressed ? `COMPRESSED ${build} build (${COMPRESSED_DIR}/)` : 'uncompressed bake'}`);
-  // telegamez#3662: a ktx2 publish also writes manifest.json routing the compositor to its own
-  // PNG model. Recorded because rolling back the row does not remove it from the old prefix.
-  const manifest = grab(/avatar manifest:\s*(\{.*\})/);
-  if (manifest) out.push(`- manifest \`${manifest}\``);
-  const wasPath = previous?.modelPath ?? null;
-  const wasStatus = previous?.status ?? null;
-  out.push(`- was     ${wasPath ? `\`${wasPath}\`` : '(no model on the row)'}${wasStatus ? `, status \`${wasStatus}\`` : ''}`);
-  out.push('');
-
-  if (code !== 0 || !modelKey) {
-    // Worth a record precisely because it failed — this is the evidence that a character in a
-    // batch was attempted and did not land, which the absence of a record would not show.
-    out.push(`**FAILED** — exit ${code}. Nothing was published; the row is untouched.`, '');
-  } else {
-    out.push('```sql');
-    out.push('-- go live');
-    // status is set alongside the path because a row created by the admin API starts as
-    // 'processing', and the companion form only offers avatars that are isActive AND active.
-    // Without this the character publishes correctly and cannot be picked.
-    out.push(`update avatars set model_path = '${modelKey}', status = 'active' where id = '${avatarId}';`);
-    out.push('');
-    out.push('-- roll back');
-    out.push(`update avatars set model_path = ${wasPath ? `'${wasPath}'` : 'NULL'}`
-      + `${wasStatus ? `, status = '${wasStatus}'` : ''} where id = '${avatarId}';`);
-    if (!wasPath) out.push('-- (the row carried no model before this publish)');
-    if (!wasStatus) out.push('-- (previous status unknown — left as it is, rather than guessed)');
-    out.push('```', '');
-  }
-
-  try {
-    fs.mkdirSync(JOURNAL_DIR, { recursive: true });
-    const file = path.join(JOURNAL_DIR, `${env}-${bakeSuffix}.md`);
-    if (!fs.existsSync(file)) {
-      fs.writeFileSync(file, [
-        `# Publish to ${env}`, '',
-        `${apiBase}`,
-        `bake suffix \`${bakeSuffix}\``, '',
-        'Publishing moved bytes only. Nothing below is live until its "go live" statement runs.',
-        '', '---', '',
-      ].join('\n'));
-    }
-    fs.appendFileSync(file, out.join('\n') + '\n');
-    return file;
-  } catch {
-    // A journal that cannot be written must not take the publish down with it — the publish is
-    // the thing that matters, and it has already succeeded by the time we get here.
-    return null;
-  }
-}
-
-/**
- * Record a character going live, in the same file as the publish that produced it.
- *
- * The undo is the point. A publish is content-addressed and immutable, so rolling back is
- * putting the previous key back — and the moment this call returns, the previous key exists
- * nowhere else. Written here rather than printed, because a value that only appears in a
- * browser pane is a value nobody has when they need it.
- */
-function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, previous }) {
-  const out = [`## ${char} — live`, ''];
-  out.push(`- when    ${new Date().toISOString()}`);
-  out.push(`- avatar  \`${avatarId}\``);
-  out.push(`- now     \`${modelKey}\``);
-  out.push(`- was     ${previous ? `\`${previous}\`` : '(no model on the row)'}`);
-  out.push('');
-  // Only a published key can be restored through the API — the route refuses anything that is
-  // not a content-addressed object under this avatar, which is what makes it safe. A seeded
-  // placeholder is not one, so the FIRST time a character goes live there is nothing to go back
-  // to through this door. That is a real limit, and saying so here is better than printing a
-  // call that would be refused at the moment somebody needed it to work.
-  const restorable = previous && /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(previous);
-  out.push('To put it back:');
-  out.push('```');
-  if (restorable) {
-    out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${previous}" }`);
-  } else if (previous) {
-    out.push(`the previous value is not a published key, so the API will not accept it:`);
-    out.push(`  ${previous}`);
-    out.push(`restoring it needs a database update, or a re-publish of that bake`);
-  } else {
-    out.push('the row carried no model before this, so there is nothing to restore');
-  }
-  out.push('```', '');
-
-  try {
-    fs.mkdirSync(JOURNAL_DIR, { recursive: true });
-    const file = path.join(JOURNAL_DIR, `${env}-${bakeSuffix}.md`);
-    fs.appendFileSync(file, out.join('\n') + '\n');
-    return file;
-  } catch {
-    return null;
-  }
-}
-
-function stream(res, file, args, extraEnv = {}, onClose) {
-  // A step may already have streamed into this response (publish compresses first when it
-  // must), and headers go out once.
-  if (!res.headersSent) res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-  const child = spawn('pwsh', ['-NoProfile', '-File', file, ...args], {
-    env: { ...process.env, ...extraEnv },
-    windowsHide: true,
-  });
-  // Held only to lift the key and counts out at the end, and capped: the browser is the live
-  // view, this is a fixed-size tail, and a chatty child cannot grow it without bound.
-  let seen = '';
-  const keep = (d) => { if (seen.length < 64_000) seen += d.toString(); };
-  child.stdout.on('data', (d) => { keep(d); res.write(d); });
-  child.stderr.on('data', (d) => { keep(d); res.write(d); });
+function stream(res, file, args) {
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+  const child = spawn('pwsh', ['-NoProfile', '-File', file, ...args], { windowsHide: true });
+  child.stdout.on('data', (d) => res.write(d));
+  child.stderr.on('data', (d) => res.write(d));
   child.on('error', (e) => { res.write(`\n[console] failed to start: ${e.message}\n`); res.end(); });
   child.on('close', (code) => {
-    const recorded = onClose ? onClose(seen, code) : null;
-    if (recorded) res.write(`\n[console] recorded: ${recorded}\n`);
     res.write(`\n[console] exit ${code}\n`);
     res.end();
   });
@@ -778,17 +611,12 @@ const server = http.createServer(async (req, res) => {
         // the grid rescans, correctly, in a folder nothing was written to. That is a silent
         // failure with a completed bake behind it, which is the worst kind to debug.
         packagesRoot: PACKAGES,
-        environments: Object.entries(ENVIRONMENTS).map(([k, v]) => ({ key: k, ...v })),
-        hasToken: Boolean(session.token),
-        publisherFound: fs.existsSync(PUBLISHER),
-        verifierFound: fs.existsSync(VERIFIER),
-        previewsFound: fs.existsSync(PREVIEWS),
         compressorFound: fs.existsSync(COMPRESSOR),
         // The build every environment publishes. Fixed, reported so the page labels it rather
         // than offering a choice (owner decision 2026-10-08).
         build: BUILD,
-        // The create half. Reported rather than enforced: a machine without Unreal can still
-        // publish packages somebody else baked, and should be told which half it can do.
+        // Reported rather than enforced: a machine without Unreal can still photograph and
+        // compress packages somebody else baked, and should be told what it can do.
         ueContent: ueContentDir(),
         monorepo: guessMonorepo() ?? null,
         stack: STACK,
@@ -858,150 +686,6 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, result);
     }
 
-    if (url.pathname === '/api/token' && req.method === 'POST') {
-      const { token } = await readBody(req);
-      session.token = token || null;
-      // Deliberately does not echo the value back.
-      return send(res, 200, { hasToken: Boolean(session.token) });
-    }
-
-    /**
-     * Resolve each character to its avatar row in the TARGET environment.
-     *
-     * The console asked the operator to type uuids. That was wrong in a way worth naming: the
-     * ids differ per environment — panda seeded its own rows — so a remembered uuid is not
-     * merely inconvenient, it is a way to publish a correct directory under a stranger's
-     * avatar. The environment is the only authority on its own ids, so ask it.
-     *
-     * A character with no row comes back `avatarId: null` rather than as an error: that is a
-     * real and expected state for a character that has never been published here, and the page
-     * offers to create it.
-     */
-    if (url.pathname === '/api/resolve' && req.method === 'POST') {
-      const { env, characters } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-
-      const r = await fetch(`${target.apiBase}/api/admin/avatars?limit=200`, {
-        headers: { Authorization: `Bearer ${session.token}` },
-      });
-      if (!r.ok) return send(res, 502, { error: `admin API ${r.status} — is the cookie for ${env}?` });
-      const body = await r.json();
-      const rows = body.avatars || body.data || [];
-
-      const resolved = (characters || []).map((char) => {
-        const slug = `mh-${char}`;
-        const row = rows.find((x) => x.slug === slug);
-        return {
-          char, slug,
-          avatarId: row ? row.id : null,
-          name: row ? row.name : null,
-          active: row ? Boolean(row.isActive) : null,
-          modelPath: row ? row.modelPath : null,
-          // A new row is created with status 'processing', and the admin companion form only
-          // offers avatars matching isActive=true AND status=active. Left alone, a freshly
-          // published character is simply absent from that dropdown with nothing to explain
-          // why — so the status is carried here and the go-live SQL sets it.
-          status: row ? (row.status ?? null) : null,
-          // Whether the three preview columns are filled. A row created through the admin API
-          // gets placeholder URLs pointing at objects that do not exist, so presence alone
-          // says nothing — only a real uploaded asset key does.
-          previewsPublished: Boolean(
-            row && ['thumbnailUrl', 'imagePreviewUrl', 'videoPreviewUrl']
-              .every((f) => typeof row[f] === 'string' && row[f].includes('/avatars/') && !/\/(thumbnail|preview)\.(png|mp4|jpg)$/i.test(row[f])),
-          ),
-          // Not anchored, deliberately. The column stores the relative key that was written
-          // to it, but the admin LIST endpoint formats it into a full CDN URL on the way out
-          // — so a row that is genuinely live comes back as
-          // `https://<bucket>.s3.../avatars/<id>/<hash>/<file>.glb`. Anchoring at `^avatars/`
-          // reported every live avatar as unpublished. Searching for the published segment
-          // anywhere still excludes the seeded placeholder, which is `models/<id>/<id>.glb`
-          // in either form.
-          published: /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(row?.modelPath || ''),
-        };
-      });
-      // What each row points at *now*, kept for the journal. A publish overwrites this value,
-      // and after that it exists nowhere else — so it is captured here, before it can be lost,
-      // rather than asked for at rollback time when the answer is already gone.
-      for (const row of resolved) {
-        session.prior[`${env}/${row.char}`] = { modelPath: row.modelPath || null, status: row.status || null };
-      }
-
-      return send(res, 200, { environment: env, resolved });
-    }
-
-    /**
-     * Create the avatar row for a character that has none.
-     *
-     * `modelPath` is deliberately not sent, and the route would not accept it: the registry is
-     * pointed at bytes as a separate step, after they exist. So a row created here is a real
-     * row with no model yet, which is exactly the state the publish then fills.
-     */
-    if (url.pathname === '/api/create-avatar' && req.method === 'POST') {
-      const { env, char, name, gender, description, category } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!char || !name) return send(res, 400, { error: 'char and name are required' });
-
-      // 'human', because the database says so. chk_avatar_category allows exactly
-      // human | fantasy | robot | animal | abstract | other, and 'metahuman' is not one of
-      // them - it violated the constraint on every attempt. The metahuman marker belongs in
-      // tags, which carries no constraint and is what the six existing rows are found by.
-      const payload = {
-        name,
-        slug: `mh-${char}`,
-        category: category || 'human',
-        gender: gender || undefined,
-        description: description || undefined,
-        tags: ['metahuman'],
-      };
-
-      const r = await fetch(`${target.apiBase}/api/admin/avatars`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      // Read as text first: a failure that is not JSON still has something to say, and
-      // .json() would swallow it.
-      const raw = await r.text();
-      let out = {};
-      try { out = raw ? JSON.parse(raw) : {}; } catch { /* not JSON - the text is the message */ }
-
-      if (!r.ok) {
-        // The admin API special-cases a duplicate slug and collapses everything else into one
-        // sentence, with the reason left in its own log. "Failed to create avatar" alone
-        // cannot be told apart from a rejected field, a constraint violation or a database
-        // that is down - so carry the status and the payload that caused it.
-        const said = out.error || out.message || raw.slice(0, 300) || '(empty body)';
-        return send(res, 502, { error: `admin API ${r.status}: ${said}`, sent: payload });
-      }
-      return send(res, 200, { avatarId: out.id || out.avatar?.id || null, raw: out });
-    }
-
-    if (url.pathname === '/api/verify' && req.method === 'POST') {
-      const { env, characters } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      // Said rather than spawned. A missing script makes `stream` fail with a spawn error in
-      // the log pane, which reads as "Check is broken" -- and the reason, that the file is
-      // somewhere this console cannot see, is nowhere in that message.
-      if (!fs.existsSync(VERIFIER)) {
-        return send(res, 400, { error: `verifier not found at ${VERIFIER}` });
-      }
-      // Check what is TICKED, not a list compiled when the roster was six characters. The
-      // default in the script is those six by name, so a newly published companion -- the one
-      // most likely to need checking -- was the one case it silently skipped.
-      const args = ['-ApiBase', target.apiBase];
-      if (Array.isArray(characters) && characters.length) {
-        args.push('-Slugs', characters.map((c) => `mh-${c}`).join(','));
-      }
-      return stream(res, VERIFIER, args, { TG_ADMIN_TOKEN: session.token });
-    }
-
     /**
      * Compress one companion before publishing it — #3662.
      *
@@ -1028,160 +712,13 @@ const server = http.createServer(async (req, res) => {
       // produce a build of a half-written character and report success, so it waits like a
       // second bake does.
       if (busy) return send(res, 409, { error: `${busy} is baking — one at a time` });
-      // One per request, like publish: the page drives the loop so a failure stops the batch
+      // One per request, like a bake: the page drives the loop so a failure stops the batch
       // at a character anyone can name.
       const char = characters[0];
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
       const args = ['-Char', char, '-Root', root, '-Mode', build];
       if (Number(texturePx) > 0) args.push('-TexturePx', String(Number(texturePx)));
       return stream(res, COMPRESSOR, args);
-    }
-
-    if (url.pathname === '/api/publish' && req.method === 'POST') {
-      const { env, characters, bakeHashSuffix, avatarIds, build: requested } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!Array.isArray(characters) || characters.length === 0) {
-        return send(res, 400, { error: 'no characters selected' });
-      }
-      // telegamez#3662: the ktx2 build goes up, to every environment (owner decision 2026-10-08).
-      // Its web app must include telegamez#4551; the page says so beside the fixed build label,
-      // and production asks for confirmation naming the build. A request naming another build
-      // is refused rather than quietly upgraded.
-      const build = requested || BUILD;
-      if (build !== BUILD) {
-        return send(res, 400, { error: `${ONE_BUILD}; asked for ${requested}` });
-      }
-      if (!/^[A-Za-z0-9._-]+$/.test(bakeHashSuffix || '')) {
-        return send(res, 400, { error: 'bake hash suffix must be [A-Za-z0-9._-]' });
-      }
-      // One character per request keeps the stream readable and lets a failure stop the batch
-      // at a known point; the page drives the loop.
-      const char = characters[0];
-      const avatarId = (avatarIds || {})[char];
-      if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
-
-      const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      const pkgDir = path.join(root, char);
-      if (!fs.existsSync(path.join(pkgDir, `${char}.glb`))) {
-        return send(res, 400, { error: `no package for ${char} in ${root}` });
-      }
-
-      // telegamez#3728: what goes up is the compressed build, always - now the ktx2 one. A missing
-      // build, a stale one (older than the model, the sidecar or a texture) or one without its
-      // compositor variant is remade here first, so a publish is one action and the journal can
-      // only ever say "compressed". A page that still sends `useCompressed` is ignored.
-      let made = compressedInfo(root, char, contentTimeOf(pkgDir, char));
-      if (!made || !made.current) {
-        if (!fs.existsSync(COMPRESSOR)) {
-          return send(res, 400, {
-            error: `compress_companion.ps1 is not beside this console and ${char} has no current ${build} build`,
-          });
-        }
-        // Compressing reads the package a bake may be writing, so it waits like a second bake.
-        if (busy) return send(res, 409, { error: `${busy} is baking — one at a time` });
-        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-        const why = !made ? `no ${build} build yet`
-          : made.stale ? `${build} build is older than the package`
-            : `${build} build is mode="${made.mode}"`
-              + (!made.publishable ? ' without its compositor variant' : '');
-        const { code } = await runStep(res, {
-          label: `Compress — ${char} (${why})`,
-          cmd: 'pwsh',
-          args: ['-NoProfile', '-File', COMPRESSOR, '-Char', char, '-Root', root, '-Mode', build],
-        });
-        made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char)) : null;
-        if (!made || !made.current) {
-          res.write(`\n[console] compress failed (exit ${code}) — nothing was uploaded\n[console] exit 1\n`);
-          res.end();
-          return undefined;
-        }
-      }
-
-      return stream(res, PUBLISHER, [
-        '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
-        '-Source', made.dir,
-        '-BakeHash', `${char}-${bakeHashSuffix}`,
-      ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
-        env, apiBase: target.apiBase, char, avatarId,
-        bakeSuffix: bakeHashSuffix, bakeHash: `${char}-${bakeHashSuffix}`,
-        previous: session.prior[`${env}/${char}`] ?? null,
-        output, code, compressed: true, build,
-      }));
-    }
-
-    /**
-     * The other half of publishing an avatar: its thumbnail, image and video.
-     *
-     * A separate route and a separate step because it is a separate contract. The model goes
-     * through `companion-directory`, which writes bytes and deliberately touches no row; these
-     * go through `smart-upload`, which owns the three preview columns and writes them itself.
-     * So this one needs no SQL afterwards — and, as a side effect, takes the row out of the
-     * 'processing' state a newly created avatar starts in.
-     */
-    if (url.pathname === '/api/publish-previews' && req.method === 'POST') {
-      const { env, characters, avatarIds } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!Array.isArray(characters) || characters.length === 0) {
-        return send(res, 400, { error: 'no characters selected' });
-      }
-
-      // One per request, like the model publish: the page drives the loop so a failure stops
-      // the batch at a character anyone can name.
-      const char = characters[0];
-      const avatarId = (avatarIds || {})[char];
-      if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
-
-      return stream(res, PREVIEWS, [
-        '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
-        '-Source', path.join(url.searchParams.get('root') || DEFAULT_ROOT, char),
-      ], { TG_ADMIN_TOKEN: session.token });
-    }
-
-    /**
-     * Point a published directory at its avatar row — what the SQL block used to do by hand.
-     *
-     * Still a separate press from Publish, because it is still a separate decision: bytes go up
-     * without changing anything a user sees, and this is the moment they do. What changes is
-     * that it no longer needs database access, and the rollback value is written down by the
-     * tool instead of depending on someone keeping a text file.
-     */
-    if (url.pathname === '/api/go-live' && req.method === 'POST') {
-      const { env, char, avatarId, modelKey } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!avatarId || !modelKey) return send(res, 400, { error: 'avatarId and modelKey are required' });
-
-      const r = await fetch(`${target.apiBase}/api/admin/avatars/${avatarId}/model-path`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ modelKey }),
-      });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        return send(res, 502, { error: body?.error ?? body?.message ?? `admin API ${r.status}` });
-      }
-
-      // The bake suffix is already in the key, so the record lands in the same file as the
-      // publish it completes rather than needing the page to carry it back here.
-      //
-      // The key's segment is `<char>-<suffix>`, because publish passes -BakeHash that way, but
-      // publish names its file from the bare suffix. Taking the segment whole put every go-live
-      // in a file of its own beside the publish it belonged to - which is how the original six
-      // ended up as panda-tele-*, panda-tele1-* and so on, apart from their publishes.
-      const segment = String(modelKey).split('/')[2] ?? 'unknown';
-      const suffix = segment.startsWith(`${char}-`) ? segment.slice(char.length + 1) : segment;
-      const previous = body?.data?.previousModelPath ?? null;
-      const recorded = recordGoLive({
-        env, apiBase: target.apiBase, char, avatarId,
-        bakeSuffix: suffix, modelKey, previous,
-      });
-
-      return send(res, 200, { char, avatarId, modelKey, previous, recorded });
     }
 
     if (url.pathname === '/api/assets') {
@@ -1364,11 +901,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// 127.0.0.1 only. This holds a live admin session; it must not be reachable from the network.
+// 127.0.0.1 only. It launches Unreal, Blender and a browser on this machine and reads and
+// removes folders here; it must not be reachable from the network.
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[deploy-console] http://127.0.0.1:${PORT}`);
-  console.log(`[deploy-console] models root: ${DEFAULT_ROOT}`);
-  if (!fs.existsSync(PUBLISHER)) console.warn(`[deploy-console] WARNING publisher not found: ${PUBLISHER}`);
-  if (!fs.existsSync(PREVIEWS)) console.warn(`[deploy-console] WARNING preview publisher not found: ${PREVIEWS}`);
-  console.log('[deploy-console] publishes the ktx2 build (the only build); a missing or stale one is made first (telegamez#3662)');
+  console.log(`[bake-console] http://127.0.0.1:${PORT}`);
+  console.log(`[bake-console] packages root: ${DEFAULT_ROOT}`);
+  if (!fs.existsSync(COMPRESSOR)) console.warn(`[bake-console] WARNING compressor not found: ${COMPRESSOR}`);
+  console.log('[bake-console] every bake ends with the ktx2 build (the only build); publishing is the Publisher\'s (Start-Publisher.ps1)');
 });

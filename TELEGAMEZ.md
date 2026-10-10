@@ -120,6 +120,21 @@ New character-manifest keys (all optional):
 
 Stage 03's `target_tri_budget` is still advisory and `max_texture_px` still global; a per-character override and an opt-in "delete body faces under rigid armour" pass are tracked on the same ticket and not in this change.
 
+## The bake console bakes; the Publisher publishes (telegamez#4632 phase 2, 2026-10-10)
+
+The platform retired the avatar routes the console's "2 · Publish" phase called (`POST
+/api/admin/avatars` to create a row, `PUT .../model-path` to go live, the preview upload;
+telegamez#4662), and the Publisher moved to the character registry's slug routes, publishing by
+the id in the package's `character.json` (metahuman-to-glb #48). The console's copy of the old
+flow had not worked since #44 removed `publish_previews.ps1` and #48 changed
+`publish_to_cdn.ps1`'s parameters; after #4662 every call it made answers 410.
+
+| Change | Why |
+|---|---|
+| `tools/console/`: the Publish phase is gone — the token field, Create record, Upload model, Upload previews, Go live and Check; `/api/token`, `/api/resolve`, `/api/create-avatar`, `/api/publish`, `/api/publish-previews`, `/api/go-live` and `/api/verify`; the environment select; the Upload, Assets and Live columns; its copy of the publish journal. The page keeps Bake, Previews only, Compress and Delete, and says where publishing is | One publish path, by character id, with a reason on every call. A second copy against retired routes would answer 410 at the first press, and a copy that happened to work would be a second place to drift. |
+| `Start-Console.ps1` defaults to port 7312 | The Publisher owns 7311; both run at once during a bake-then-publish session. |
+| `tools/bake/` (`Start-Bake.ps1`, the August bake-only console) is untouched | `tools/console/` superseded it on 2026-08-28 and nothing has changed it since; whether it goes is the owner's call. |
+
 ## ktx2 is the only build (owner decision, 2026-10-08)
 
 "The ktx2 compressed versions of these characters is the default going forward on panda and beta

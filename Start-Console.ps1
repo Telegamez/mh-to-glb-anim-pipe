@@ -1,19 +1,22 @@
 <#
 .SYNOPSIS
-  Start the MetaHuman to Avatar console and open it in your browser.
+  Start the MetaHuman bake console and open it in your browser.
 
 .DESCRIPTION
-  One command, one page, the whole route: bake a MetaHuman out of Unreal, photograph it, and
-  publish it into an environment's avatar catalogue. The grid at the top shows where every
+  One command, one page: bake a MetaHuman out of Unreal, photograph it, make its ktx2 build,
+  and leave a finished package for the Publisher. The grid at the top shows where every
   character has got to, so you can see what is left rather than remember it.
+
+  Publishing is not on this page any more (telegamez#4632 phase 2): the platform's avatar
+  routes this console used to call are retired, and a package reaches panda through
+  Start-Publisher.ps1, by the character id in its character.json.
 
   Leave the window open while you work; Ctrl+C stops it.
 
-  Making a character needs Unreal, Blender and the local stack on this machine. Publishing one
-  needs only a browser and an admin cookie — the console reports which half it can do.
+  Making a character needs Unreal, Blender and the local stack on this machine.
 
 .PARAMETER Port
-  Defaults to 7311.
+  Defaults to 7312. The Publisher uses 7311, so both can run at once.
 
 .PARAMETER Root
   The folder holding finished character packages. Remembered between runs once you pick one,
@@ -27,15 +30,15 @@
 
 .PARAMETER MeshoptConfirmed
   Ignored. ktx2 is the only build (owner decision 2026-10-08; meshopt was removed as a build):
-  every bake ends with a ktx2 build and Upload sends that build, making or refreshing it first
-  when it has to. The switch stays so an old shortcut still starts the console.
+  every bake ends with a ktx2 build and the Publisher sends that build, making or refreshing it
+  first when it has to. The switch stays so an old shortcut still starts the console.
 
 .EXAMPLE
   ./Start-Console.ps1
 #>
 [CmdletBinding()]
 param(
-  [int]$Port = 7311,
+  [int]$Port = 7312,
   [string]$Root,
   [string]$Stack,
   [switch]$NoBrowser,
@@ -66,7 +69,7 @@ if ($busy) {
 }
 
 Write-Host ""
-Write-Host "  MetaHuman to Avatar" -ForegroundColor Cyan
+Write-Host "  MetaHuman bake" -ForegroundColor Cyan
 Write-Host "  http://127.0.0.1:$Port" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Leave this window open. Ctrl+C to stop." -ForegroundColor DarkGray

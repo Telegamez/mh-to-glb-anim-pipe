@@ -878,10 +878,15 @@ $('vScan').onclick = async (keepLog) => {
       // (panda, 2026-10-10: Tom's fresh publish was removed with the old bakes this way), and it
       // gets its own Go live here, so a page refresh between Publish and Go live strands nothing.
       const neverLive = o.state === 'ready';
+      // An `uploaded` row registered minutes ago may still be uploading: a publish cut by a slow
+      // network resumes when it recovers, and removing it meanwhile leaves objects behind under a
+      // deleted prefix (panda, 2026-10-10, Tom 7963). Shown, labelled, not pre-ticked for 20 min.
+      const minutes = o.uploadedAt ? Math.round((Date.now() - new Date(o.uploadedAt).getTime()) / 60000) : null;
+      const inFlight = o.state === 'uploaded' && minutes !== null && minutes < 20;
       const state = o.state ? ' <span class="' + (o.state === 'uploaded' || o.state === 'deleting' || neverLive ? 'warn' : 'dim') + '">&middot; ' + esc(o.state)
-        + (neverLive ? ', never went live' : '') + '</span>' : '';
+        + (neverLive ? ', never went live' : '') + (inFlight ? ', started ' + minutes + ' min ago and may still be uploading' : '') + '</span>' : '';
       const goLive = neverLive && o.modelKey ? ' <button class="small vLive" data-i="' + i + '" title="Take this version live now, with the reason above">Go live</button>' : '';
-      rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '"' + (neverLive ? '' : ' checked') + '></td><td class="dim">' + esc(p.char) + '</td>'
+      rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '"' + (neverLive || inFlight ? '' : ' checked') + '></td><td class="dim">' + esc(p.char) + '</td>'
         + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + state + goLive + '</td></tr>');
     }
   }

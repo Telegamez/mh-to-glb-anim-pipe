@@ -98,9 +98,8 @@
     </tr></thead><tbody id="chars"></tbody></table>
     <div class="row" style="margin-top:16px">
       <button id="compress">Compress</button>
-      <button id="syncSlugs">Sync slugs</button>
       <span class="dim" id="compressNote" style="font-size:12px">Publish makes or refreshes the ktx2 build itself; Compress only remakes it now.
-        Sync slugs renames each ticked avatar's slug here to <span class="mono">mh-&lt;folder&gt;</span>.</span>
+        A package publishes under the id in its <span class="mono">character.json</span>, the same in every environment.</span>
     </div>
     <!-- telegamez#4632 phase 1b: every change is a state change with a reason in the character's
          history. One box, read by Publish, Go live, Remove old versions and Clean up old avatars. -->
@@ -121,10 +120,9 @@
 
   <div class="step" id="s7" hidden>
     <h2>Remove old versions</h2>
-    <div class="msg dim" style="margin-bottom:10px">Every published version of the <b>ticked</b> characters' avatars here,
-      except the one each is live on, with its state from the platform's version registry where it runs
-      (<span class="mono">ready</span> never went live, <span class="mono">retired</span> was live, <span class="mono">uploaded</span> never finished,
-      <span class="mono">unregistered</span> predates the registry). Deleted from the bucket, no undo. The live version, and one a preview still
+    <div class="msg dim" style="margin-bottom:10px">Every version of the <b>ticked</b> characters here except the one each is
+      live on, with its state from the platform's registry (<span class="mono">ready</span> never went live, <span class="mono">retired</span> was live,
+      <span class="mono">uploaded</span> never finished). Deleted from the bucket, no undo. The live version, and one a preview still
       points into, cannot be removed &mdash; the API refuses them as well.</div>
     <div class="row" style="margin-bottom:12px">
       <button id="vScan">Scan</button>
@@ -147,25 +145,8 @@
     <div id="prevList"></div>
   </div>
 
-  <div class="step" id="s6" hidden>
-    <h2>Clean up old avatars</h2>
-    <div class="msg dim" style="margin-bottom:10px">Retire avatars from this environment. Anything using one is
-      moved to the replacement you pick, then the avatar is archived (hidden, files kept, reversible, with your reason
-      in its history). Nothing is deleted for good any more: old versions go through <b>Remove old versions</b>.
-      Nothing changes until <b>Apply</b>.</div>
-    <div class="row" style="margin-bottom:12px">
-      <button id="cuScan">Scan</button>
-      <span class="dim" id="cuCount" style="font-size:13px"></span>
-    </div>
-    <table><thead><tr>
-      <th style="width:26px"><input type="checkbox" id="cuAll" title="Select all / none"></th><th>Avatar</th><th>Used by</th><th>Replace with</th>
-    </tr></thead><tbody id="cuRows"></tbody></table>
-    <div class="row" style="margin-top:12px">
-      <button id="cuDry">Dry run</button>
-      <input id="cuConfirm" class="mono" placeholder="type the environment name" style="max-width:220px" hidden>
-      <button id="cuApply" class="go" disabled>Apply</button>
-    </div>
-  </div>
+  <!-- Clean up old avatars is gone (telegamez#4632 phase 2): retiring, withdrawing and re-pointing
+       characters are the platform's, on its admin Characters page. -->
 
   <div class="step" id="s5" hidden>
     <h2>Go live</h2>
@@ -176,7 +157,6 @@
     <pre id="sql"></pre>
     <div class="row" style="margin-top:10px">
       <button id="copySql" class="small">Copy the API calls instead</button>
-      <button id="verify" class="small">Check it worked</button>
     </div>
   </div>
 
@@ -206,7 +186,10 @@ const log = (s) => { $('log').textContent += s; $('log').scrollTop = 1e9; };
 const setLog = (s) => { $('log').textContent = s; };
 const show = (id, yes) => { $(id).hidden = !yes; };
 
-let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [], AVATARS = [];
+let CONFIG = null, RESOLVED = {}, PUBLISHED = {}, CHARS = [];
+// Whether the connected environment has the character registry (telegamez#4632 phase 2), and
+// whether it takes characters only by promotion (beta): then nothing here publishes to it.
+let REGISTRY = false, PROMOTION_ONLY = false;
 
 async function boot() {
   CONFIG = await (await fetch('/api/config')).json();
@@ -223,9 +206,8 @@ function envChanged() {
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   // Ids, publishes and SQL are all per-environment. Carrying any of them across is the
   // mistake this resets to prevent, so the flow restarts rather than partially updating.
-  RESOLVED = {}; PUBLISHED = {}; CHARS = []; AVATARS = [];
-  show('s3', false); show('s5', false); show('s6', false); show('s7', false);
-  CU = []; CU_PLAN = null; $('cuRows').innerHTML = ''; $('cuCount').textContent = '';
+  RESOLVED = {}; PUBLISHED = {}; CHARS = []; REGISTRY = false; PROMOTION_ONLY = false;
+  show('s3', false); show('s5', false); show('s7', false);
   V = []; V_PLAN = null; $('vRows').innerHTML = ''; $('vCount').textContent = '';
   $('token').value = ''; $('tokenState').innerHTML = ''; $('chars').innerHTML = '';
   $('signinHost').textContent = e.apiBase;
@@ -270,9 +252,11 @@ async function load() {
 
   RESOLVED = {};
   for (const r of body.resolved) RESOLVED[r.char] = r;
-  AVATARS = body.avatars || [];
-  $('tokenState').innerHTML = '<span class="ok">Connected</span>';
-  show('s3', true); show('s6', true); show('s7', true);
+  REGISTRY = Boolean(body.registry); PROMOTION_ONLY = Boolean(body.promotionOnly);
+  $('tokenState').innerHTML = '<span class="ok">Connected</span>'
+    + (!REGISTRY ? ' <span class="warn">&middot; no character registry on this platform yet: nothing can be published here</span>'
+      : PROMOTION_ONLY ? ' <span class="warn">&middot; receives characters by promotion from panda (admin &rarr; Characters), not by publishing</span>' : '');
+  show('s3', true); show('s7', REGISTRY);
   render();
 }
 
@@ -289,54 +273,41 @@ function render() {
 
   for (const c of CHARS) {
     const r = RESOLVED[c.id] || {};
-    /* Whether a record already exists is the publisher's problem, not the operator's. Both
-     * cases are one tick and one button; the only thing a brand-new character genuinely needs
-     * from a person is a display name, so that is the only thing it asks for - inline, filled
-     * in, editable. No separate step, no id, nothing to look up first. */
-    let action, needsName = false;
+    /* The character's id comes from the package's character.json (telegamez#4632 phase 2);
+     * whether the registry already has it is the publisher's problem, not the operator's: a new
+     * id is created on its first publish, an existing one gets a new version. */
+    let action;
     if (!c.ready) action = '<span class="bad">' + esc(c.problems[0]) + '</span>';
-    else if (r.bindingProblem) action = '<span class="bad">' + esc(r.bindingProblem) + '</span>';
-    else if (!r.avatarId) { action = '<span class="ok">Add as new</span>'; needsName = true; }
+    else if (r.problem) action = '<span class="bad">' + esc(r.problem) + '</span>';
+    else if (!REGISTRY) action = '<span class="warn">no character registry here</span>';
+    else if (PROMOTION_ONLY) action = '<span class="warn">promotion only: publish to panda, promote from admin</span>';
+    else if (!r.exists) action = '<span class="ok">First publish creates ' + esc(r.characterId) + '</span>';
     else if (r.published) action = '<span class="dim">Update to a new version</span>';
     else action = '<span class="dim">Add its model</span>';
-    const usable = c.ready && !r.bindingProblem;
+    const usable = c.ready && !r.problem && REGISTRY && !PROMOTION_ONLY;
 
-    // What this environment serves for the character now, by build, and which avatar it is. The
-    // slug is shown only when it differs from the folder: that is what Sync slugs would change.
-    const live = r.avatarId
-      ? '<br><span style="font-size:11px">live here: ' + (r.liveBuild ? buildTag(r.liveBuild) + ' <span class="dim mono">' + esc(r.liveBake) + '</span>' : '<span class="dim">no model yet</span>')
-        + (r.slug !== 'mh-' + c.id ? '<br><span class="dim">slug ' + esc(r.slug) + ' &middot; Sync slugs renames it</span>' : '')
+    // What this environment serves for the character now: the live version and its build.
+    const live = r.exists
+      ? '<br><span style="font-size:11px">live here: ' + (r.liveBuild ? buildTag(r.liveBuild) + ' <span class="dim mono">' + esc(r.liveBake) + '</span>' : '<span class="dim">no live version yet</span>')
+        + (r.state && r.state !== 'active' ? ' <span class="warn">&middot; ' + esc(r.state) + '</span>' : '')
         + '</span>'
       : '';
-    // A package that matches nothing here may still BE an existing avatar - a re-bake under a new
-    // id, a folder renamed somewhere else. Offer those before creating a second one.
-    const existing = needsName && AVATARS.length
-      ? '<br><select class="bindTo" data-char="' + esc(c.id) + '" style="margin-top:5px;padding:4px 6px;font-size:12px;max-width:260px">'
-        + '<option value="">or update an existing avatar…</option>'
-        + AVATARS.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.name) + ' (' + esc(a.slug) + ')</option>').join('')
-        + '</select>'
-      : '';
-    const bound = Object.keys(c.bindings || {});
 
-    const tick = usable && c.inRoster;
+    const tick = usable && Boolean(c.identity);
     const tr = document.createElement('tr');
     if (!usable) tr.className = 'off';
     tr.innerHTML = '<td><input type="checkbox" data-char="' + esc(c.id) + '"'
       + (tick ? ' checked' : '') + (usable ? '' : ' disabled') + '></td>'
-      + '<td>' + esc(c.id) + (c.inRoster ? '' : ' <span class="dim">&middot; extra</span>')
+      + '<td>' + esc(c.id)
       + ' <button class="small rename" data-char="' + esc(c.id) + '" title="Rename the folder, model and ktx2 build">Rename</button>'
-      + '<br><span class="dim" style="font-size:11px">' + (bound.length ? 'bound: ' + esc(bound.join(', ')) : 'not bound yet') + '</span></td>'
+      + '<br><span class="dim" style="font-size:11px">' + (c.identity ? 'character <span class="mono">' + esc(c.identity.id) + '</span>' + (c.identity.name ? ' &middot; ' + esc(c.identity.name) : '') : 'no character.json') + '</span></td>'
       + '<td class="mono dim">' + c.mb + ' MB'
       + (c.compressed && c.compressed.current
           ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressed.mb + ' MB ktx2 (both models)</span>'
           : '<br><span class="warn" style="font-size:11px">&rarr; ktx2 build '
             + (c.compressed ? (c.compressed.stale ? 'stale' : 'unusable') + ', remade' : 'made') + ' on publish</span>')
       + '</td>'
-      + '<td>' + action + live
-      + (needsName ? '<br><input class="nm" data-char="' + esc(c.id) + '" value="' + esc(title(c.id))
-          + '" style="margin-top:5px;padding:5px 8px;font-size:13px;max-width:220px">' : '')
-      + existing
-      + '</td>';
+      + '<td>' + action + live + '</td>';
     tb.appendChild(tr);
   }
   for (const cb of document.querySelectorAll('#chars input[type=checkbox]')) cb.onchange = count;
@@ -346,9 +317,8 @@ function render() {
 }
 
 /**
- * Rename a package locally: folder, model, ktx2 build. Its avatar binding moves with it, so it
- * keeps publishing to the same avatars; nothing in any environment changes. Sync slugs, after,
- * if the admin pages should show the new name too.
+ * Rename a package locally: folder, model, ktx2 build. Its character.json moves with it, so it
+ * keeps publishing under the same character id; nothing in any environment changes.
  */
 async function renameChar(from) {
   const c = CHARS.find((x) => x.id === from) || {};
@@ -356,18 +326,13 @@ async function renameChar(from) {
   // and build to match it.
   const to = (prompt('Rename ' + from + ' to:', from) || '').trim();
   if (!to || (to === from && !c.modelMismatch)) return;
-  const bound = Object.keys(c.bindings || {});
-  const missing = CONFIG.environments.map((e) => e.key).filter((k) => !bound.includes(k));
-  if (missing.length && !confirm(from + ' is not bound on: ' + missing.join(', ')
-      + '.\n\nWhere it is not bound, it is found by slug mh-' + from + ', and after the rename it would look for mh-' + to
-      + ' instead. Connect to each of those environments once first if this character exists there.\n\nRename anyway?')) return;
   setLog('Renaming ' + from + ' -> ' + to + '\n');
   const r = await fetch('/api/rename?root=' + encodeURIComponent($('root').value), {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from, to }),
   });
   const b = await r.json().catch(() => ({}));
   if (!r.ok) { log((b.error || 'rename failed') + '\n' + ((b.done || []).map((d) => '  done: ' + d).join('\n')) + '\n'); return; }
-  log(b.done.map((d) => '  ' + d).join('\n') + '\n  still bound on: ' + (b.boundIn.join(', ') || 'nothing') + '\n');
+  log(b.done.map((d) => '  ' + d).join('\n') + '\n  character: ' + (b.characterId || '(no character.json)') + '\n');
   await load();
 }
 
@@ -481,44 +446,11 @@ $('publish').onclick = async () => {
 
   for (const c of list) {
     log('\n' + c + '\n');
-    // Create the record if this character has never existed here. The operator ticked a box;
-    // whether that means create-then-publish or just publish is not a distinction worth
-    // making them hold.
-    if (!RESOLVED[c] || !RESOLVED[c].avatarId) {
-      // "Update an existing avatar" wins over "Add as new": binding to the avatar that already
-      // exists is what keeps its companions on the new model.
-      const pick = document.querySelector('select.bindTo[data-char="' + c + '"]');
-      if (pick && pick.value) {
-        log('  binding to ' + pick.options[pick.selectedIndex].textContent + '\n');
-        const bd = await fetch('/api/bind?root=' + encodeURIComponent($('root').value), {
-          method:'POST', headers:{'content-type':'application/json'},
-          body: JSON.stringify({ env: $('env').value, char: c, avatarId: pick.value }),
-        });
-        if (!bd.ok) { log('  ' + (await bd.json()).error + '\n'); break; }
-      } else {
-        const el = document.querySelector('input.nm[data-char="' + c + '"]');
-        const name = (el && el.value.trim()) || title(c);
-        log('  adding as ' + name + '\n');
-        const mk = await fetch('/api/create-avatar?root=' + encodeURIComponent($('root').value), {
-          method:'POST', headers:{'content-type':'application/json'},
-          body: JSON.stringify({ env: $('env').value, char: c, name, category:'metahuman' }),
-        });
-        if (!mk.ok) { log('  ' + (await mk.json()).error + '\n'); break; }
-      }
-      // Re-ask rather than trust the create response's shape for the id.
-      const rr = await fetch('/api/resolve?root=' + encodeURIComponent($('root').value), {
-        method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ env: $('env').value, characters:[c] }),
-      });
-      const rb = await rr.json();
-      if (!rr.ok || !rb.resolved[0].avatarId) { log('  could not read the new record back\n'); break; }
-      RESOLVED[c] = rb.resolved[0];
-    }
-
+    // The character's id is in the package (telegamez#4632 phase 2): a new id is created by this
+    // first publish, an existing one gets a new version. Nothing to create or bind first.
     const res = await fetch('/api/publish?root=' + encodeURIComponent($('root').value), {
       method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp,
-                             avatarIds: { [c]: RESOLVED[c].avatarId }, build: 'ktx2', reason: reason() }),
+      body: JSON.stringify({ env: $('env').value, characters:[c], bakeHashSuffix: stamp, build: 'ktx2', reason: reason() }),
     });
     if (!res.ok) { log((await res.json()).error + '\n'); break; }
 
@@ -528,13 +460,15 @@ $('publish').onclick = async () => {
                const s = dec.decode(t.value,{stream:true}); out += s; log(s); }
 
     const m = out.match(/avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/\S+/);
-    if (!m) { log('\nNo published path came back. Stopped.\n'); break; }
-    // What the version carries and what the registry said (telegamez#4632 phase 1b). `ready` is
-    // every object read back and matched; no state line means an older platform.
+    const v = out.match(/\] version: (\S+) state (\w+)/);
+    if (!m || !v) { log('\nNo published version came back. Stopped.\n'); break; }
+    // What the version carries and what the registry said: `ready` is every object read back
+    // and matched. `before` is the version that was live, for the rollback call.
+    const r = RESOLVED[c] || {};
     PUBLISHED[c] = {
-      key: m[0], avatarId: RESOLVED[c].avatarId, before: RESOLVED[c].modelPath, beforeStatus: RESOLVED[c].status,
+      key: m[0], characterId: r.characterId, version: v[1], state: v[2],
+      before: r.liveBake || null, beforeState: r.state || null,
       previews: /previews: included/.test(out),
-      state: (out.match(/\] version: \S+ state (\w+)/) || [])[1] || null,
     };
     renderCalls();
   }
@@ -605,46 +539,48 @@ $('goLive').onclick = async () => {
   for (const [c, p] of entries) {
     const r = await fetch('/api/go-live', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ env: $('env').value, char: c, avatarId: p.avatarId, modelKey: p.key, reason: reason() }),
+      body: JSON.stringify({ env: $('env').value, char: c, characterId: p.characterId, version: p.version, reason: reason() }),
     });
     const b = await r.json().catch(() => ({}));
     if (!r.ok) { log('\n' + c + ': ' + (b.error || 'failed') + '\nStopped.\n'); break; }
     done++;
-    log('\n' + c + ' is live\n');
-    log('   now ' + b.modelKey + '\n');
-    log('   was ' + (b.previous || '(no model on the row)') + '\n');
-    // The registry read back (telegamez#4632 phase 1b): `live` is the proof.
-    if (b.registry === false) log('   registry: no versions route on this platform yet\n');
-    else log('   registry: version ' + (b.versionState || 'not found') + (b.versionState === 'live' ? '' : ' — expected live; check the admin Versions panel') + '\n');
-    if (b.status && b.status !== 'active') log('   status: ' + b.status + ' — going live does not change it; set the avatar active in admin (with a reason) or it stays hidden\n');
-    if (b.recorded) log('   recorded in ' + b.recorded + '\n');
+    logLive(c, b);
   }
 
   $('liveCount').textContent = done + ' of ' + entries.length + ' live';
   $('goLive').disabled = false;
 };
 
+/** What a go-live answered, in the pane: the registry's state is the proof. */
+function logLive(c, b) {
+  log('\n' + c + ' is live on ' + b.version + '\n');
+  log('   now ' + b.modelKey + '\n');
+  log('   was ' + (b.previous || '(no live version before)') + '\n');
+  log('   registry: version ' + (b.versionState || 'not found') + (b.versionState === 'live' ? '' : ' — expected live; check the admin Characters page') + '\n');
+  if (b.status && b.status !== 'active') log('   status: ' + b.status + ' — going live does not change it; set the character active in admin (with a reason) or it stays hidden\n');
+  if (b.recorded) log('   recorded in ' + b.recorded + '\n');
+}
+
 /**
  * What Go live will do, as the API calls, so they can be run by hand if the page cannot. Never
- * SQL: since telegamez#4632 phase 1b going live is a state change on the version, and a hand-run
- * UPDATE leaves the registry behind (the platform's verify reports it as pointer drift).
+ * SQL: going live is a state change on the version (telegamez#4632), and a hand-run UPDATE leaves
+ * the registry behind (the platform's verify reports it as pointer drift).
  */
 function renderCalls() {
   const rows = Object.entries(PUBLISHED);
   if (!rows.length) return;
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
+  const why = reason().replace(/"/g, '\\"');
   let out = '-- go live\n';
   for (const [c, p] of rows) {
-    out += 'PUT ' + e.apiBase + '/api/admin/avatars/' + p.avatarId + '/model-path  {"modelKey":"' + p.key + '","reason":"' + reason().replace(/"/g, '\\"') + '"}  -- ' + c
+    out += 'POST ' + e.apiBase + '/api/admin/characters/' + p.characterId + '/versions/' + p.version + '/live  {"reason":"' + why + '"}  -- ' + c
       + (p.state ? '  (version ' + p.state + ')' : '') + (p.previews ? '' : '  (no previews in this version)') + '\n';
   }
   out += '\n-- undo\n';
   for (const [c, p] of rows) {
-    // The admin list formats the key into a full URL on the way out; the API wants the key.
-    const before = String(p.before || '').replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '');
-    out += /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(before)
-      ? 'PUT ' + e.apiBase + '/api/admin/avatars/' + p.avatarId + '/model-path  {"modelKey":"' + before + '","reason":"roll back"}  -- ' + c + '\n'
-      : '-- ' + c + ': ' + (p.before ? 'the previous value is not a published key (' + p.before + '); re-publish that bake to restore it' : 'no model on the row before this publish') + '\n';
+    out += p.before
+      ? 'POST ' + e.apiBase + '/api/admin/characters/' + p.characterId + '/versions/' + p.before + '/live  {"reason":"roll back"}  -- ' + c + '\n'
+      : '-- ' + c + ': no live version before this publish, nothing to go back to\n';
   }
   $('sql').textContent = out;
 }
@@ -653,18 +589,6 @@ $('copySql').onclick = () => {
   navigator.clipboard.writeText($('sql').textContent);
   $('copySql').textContent = 'Copied';
   setTimeout(() => { $('copySql').textContent = 'Copy'; }, 1400);
-};
-
-$('verify').onclick = async () => {
-  setLog('Checking ' + $('env').value + '\n\n');
-  // The avatars published from this page, by the slugs they carry here; else the ticked ones.
-  const chars = Object.keys(PUBLISHED).length ? Object.keys(PUBLISHED) : picked();
-  const slugs = chars.map((c) => RESOLVED[c] && RESOLVED[c].avatarId ? RESOLVED[c].slug : null).filter(Boolean);
-  const res = await fetch('/api/verify', { method:'POST', headers:{'content-type':'application/json'},
-                                           body: JSON.stringify({ env: $('env').value, slugs }) });
-  if (!res.ok) { log((await res.json()).error + '\n'); return; }
-  const rd = res.body.getReader(); const dec = new TextDecoder();
-  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value,{stream:true})); }
 };
 
 // ---- folder picker ---------------------------------------------------------------------
@@ -702,153 +626,13 @@ $('pUse').onclick = async () => {
 
 boot();
 // ---------------------------------------------------------------------------------------
-// Clean up old avatars (telegamez#3662). Scan -> tick -> Dry run -> Apply.
-let CU = [];          // scan result
-let CU_PLAN = null;   // the plan the last dry run showed; Apply sends exactly this
-
-const cuEsc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-const cuUses = (a) => a.companions.length + a.talkShowSlots.length;
-
-function cuRender() {
-  const active = CU.filter((a) => a.status !== 'archived' && a.isActive);
-  $('cuRows').innerHTML = CU.map((a) => {
-    const used = [
-      ...a.companions.map((c) => 'companion ' + cuEsc(c.name)),
-      ...a.talkShowSlots.map((s) => 'talk show ' + cuEsc(s.showName) + ' / ' + cuEsc(s.label)),
-    ];
-    // Grouped and sorted so a replacement can be found: the avatars this folder's packages are
-    // bound to first, then everything else, each labelled "Name (short id)" with the `mh-` prefix
-    // dropped. A flat list of 25 raw slugs in scan order hid `mh-tg-drake` in the middle
-    // (2026-10-06). Grouped by binding, not by a slug prefix, so a rename changes nothing here.
-    const shortId = (x) => String(x.slug || '').replace(/^mh-/, '');
-    const label = (x) => (!x.name || x.name.toLowerCase() === shortId(x).toLowerCase()
-      ? cuEsc(shortId(x)) : cuEsc(x.name) + ' (' + cuEsc(shortId(x)) + ')');
-    const byLabel = (p, q) => shortId(p).localeCompare(shortId(q));
-    const pool = active.filter((x) => x.id !== a.id);
-    const roster = pool.filter((x) => x.package).sort(byLabel);
-    const others = pool.filter((x) => !x.package).sort(byLabel);
-    const group = (title, list) => list.length
-      ? '<optgroup label="' + title + '">' + list.map((x) => '<option value="' + x.id + '">' + label(x) + '</option>').join('') + '</optgroup>'
-      : '';
-    const opts = '<option value="">' + (cuUses(a) ? 'choose…' : '(not needed)') + '</option>'
-      + group('Your packages', roster) + group('Other active avatars', others);
-    return '<tr' + (a.status === 'archived' ? ' class="off"' : '') + '>'
-      + '<td><input type="checkbox" class="cuTick" data-id="' + a.id + '"' + (a.oldId ? ' checked' : '') + '></td>'
-      + '<td>' + cuEsc(a.slug) + '<br><span class="dim" style="font-size:11px">' + cuEsc(a.name) + ' · ' + cuEsc(a.status) + '</span>'
-      + (a.package ? '<br><span class="ok" style="font-size:11px">current: package ' + cuEsc(a.package) + '</span>' : '') + '</td>'
-      + '<td style="font-size:12px">' + (used.length ? used.join('<br>') : '<span class="dim">nothing</span>') + '</td>'
-      + '<td><select class="cuRep" data-id="' + a.id + '" style="width:auto">' + opts + '</select></td>'
-      + '</tr>';
-  }).join('');
-  $('cuCount').textContent = CU.length + ' avatars, ' + CU.filter((a) => a.oldId).length + ' old ids pre-ticked';
-  CU_PLAN = null; $('cuApply').disabled = true;
-  for (const el of document.querySelectorAll('.cuTick,.cuRep')) {
-    el.onchange = () => { CU_PLAN = null; $('cuApply').disabled = true; syncAll($('cuAll'), cuBoxes()); };
-  }
-  syncAll($('cuAll'), cuBoxes());
-}
-
-const cuBoxes = () => [...document.querySelectorAll('.cuTick')];
-$('cuAll').onchange = () => {
-  for (const b of cuBoxes()) b.checked = $('cuAll').checked;
-  CU_PLAN = null; $('cuApply').disabled = true;
-  syncAll($('cuAll'), cuBoxes());
-};
-
-// keepLog: the re-scan after Apply appends below Apply's output instead of clearing it.
-$('cuScan').onclick = async (keepLog) => {
-  if (keepLog === true) log('\nScanning avatars on ' + $('env').value + '…\n');
-  else setLog('Scanning avatars on ' + $('env').value + '…\n');
-  const r = await fetch('/api/cleanup/scan?root=' + encodeURIComponent($('root').value), { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: $('env').value }) });
-  const b = await r.json().catch(() => ({}));
-  if (!r.ok) { log((b.error || 'scan failed') + '\n'); return; }
-  CU = b.avatars || [];
-  cuRender();
-  log(CU.length + ' avatars read.\n');
-};
-
-$('cuDry').onclick = () => {
-  const pick = (cls, id) => document.querySelector('.' + cls + '[data-id="' + id + '"]');
-  const ticked = CU.filter((a) => pick('cuTick', a.id).checked);
-  if (!ticked.length) { setLog('Nothing ticked.\n'); return; }
-  const retiring = new Set(ticked.map((a) => a.id));
-  const lines = ['DRY RUN on ' + $('env').value + ' — nothing has changed yet.', ''];
-  const problems = [];
-  const plan = [];
-  for (const a of ticked) {
-    const repId = pick('cuRep', a.id).value || null;
-    const rep = CU.find((x) => x.id === repId);
-    lines.push(a.slug + ' (' + a.name + ')');
-    if (a.package) problems.push(a.slug + ' is the avatar package ' + a.package + ' publishes to - a current character, not an old one. Untick it.');
-    if (cuUses(a)) {
-      if (!rep) problems.push(a.slug + ' is in use: choose a replacement');
-      else if (retiring.has(rep.id)) problems.push(a.slug + ': its replacement ' + rep.slug + ' is also being retired');
-      for (const c of a.companions) lines.push('  companion ' + c.name + ' -> ' + (rep ? rep.slug : '?'));
-      for (const s of a.talkShowSlots) lines.push('  talk show ' + s.showName + ' / ' + s.label + ' -> ' + (rep ? rep.slug : '?'));
-    } else {
-      lines.push('  used by nothing');
-    }
-    lines.push(a.status === 'archived' ? '  already archived' : '  archive (hidden from pickers, files kept, reversible)');
-    lines.push('');
-    // No delete-for-good: the platform removed it (telegamez#4648). Old versions go through
-    // Remove old versions, one at a time through the lifecycle.
-    plan.push({ avatarId: a.id, replacementId: rep ? rep.id : null });
-  }
-  if (problems.length) { setLog(lines.join('\n') + '\nCannot apply:\n  ' + problems.join('\n  ') + '\n'); return; }
-  CU_PLAN = plan;
-  const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  $('cuConfirm').hidden = !e.danger; $('cuConfirm').value = '';
-  $('cuApply').disabled = false;
-  setLog(lines.join('\n') + (e.danger ? '\nProduction: type "' + e.key + '" in the box, then Apply.\n' : '\nApply to make these changes.\n'));
-};
-
-$('cuApply').onclick = async () => {
-  if (!CU_PLAN) return;
-  if (!needReason('Clean up old avatars')) return;
-  const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  if (e.danger && $('cuConfirm').value.trim() !== e.key) { log('\nType "' + e.key + '" to confirm.\n'); return; }
-  $('cuApply').disabled = true;
-  setLog('Applying on ' + e.key + '\n');
-  const res = await fetch('/api/cleanup/apply', { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: e.key, items: CU_PLAN, confirm: $('cuConfirm').value.trim(), reason: reason() }) });
-  if (!res.ok) { log((await res.json()).error + '\n'); return; }
-  const rd = res.body.getReader(); const dec = new TextDecoder();
-  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
-  CU_PLAN = null;
-  $('cuScan').onclick(true);   // show the environment as it now stands, below what Apply did
-};
+// Clean up old avatars and Sync slugs are gone (telegamez#4632 phase 2): retiring, withdrawing
+// and re-pointing characters are the platform's admin Characters page, and the character's id in
+// character.json replaced the mh-<folder> slug convention.
 
 // ---------------------------------------------------------------------------------------
-// Sync slugs: each ticked package's avatar slug here becomes mh-<folder>. Cosmetic - the
-// binding is what the publisher follows - but it is where the admin pages show a rename.
-$('syncSlugs').onclick = async () => {
-  const list = picked();
-  if (!list.length) return;
-  const e = CONFIG.environments.find((x) => x.key === $('env').value);
-  const changes = list.filter((c) => RESOLVED[c] && RESOLVED[c].avatarId && RESOLVED[c].slug !== 'mh-' + c)
-    .map((c) => RESOLVED[c].slug + ' -> mh-' + c);
-  if (!changes.length) { setLog('Every ticked slug already matches its folder.\n'); return; }
-  let confirmText = '';
-  if (e.danger) {
-    confirmText = (prompt('PRODUCTION: rename ' + changes.length + ' slug(s) on ' + e.key + ':\n\n' + changes.join('\n')
-      + '\n\nIds, names, models and companions are untouched. Type "' + e.key + '" to confirm.') || '').trim();
-    if (confirmText !== e.key) { setLog('Not confirmed; nothing changed.\n'); return; }
-  } else if (!confirm('Rename ' + changes.length + ' slug(s) on ' + e.key + '?\n\n' + changes.join('\n'))) return;
-  setLog('Syncing slugs on ' + e.key + '\n');
-  const res = await fetch('/api/sync-slugs?root=' + encodeURIComponent($('root').value), {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: e.key, characters: list, confirm: confirmText }),
-  });
-  if (!res.ok) { log((await res.json()).error + '\n'); return; }
-  const rd = res.body.getReader(); const dec = new TextDecoder();
-  for (;;) { const t = await rd.read(); if (t.done) break; log(dec.decode(t.value, { stream: true })); }
-  await load();
-};
-
-// ---------------------------------------------------------------------------------------
-// Remove old versions. Scan -> tick -> Dry run -> Remove. Old means "not what the avatar is live
-// on"; every one found is pre-ticked, because the decision on record is one build and no others.
+// Remove old versions. Scan -> tick -> Dry run -> Remove. Old means "not what the character is
+// live on"; retired and stale partial uploads are pre-ticked, a version that never went live is not.
 let V = [];
 let V_PLAN = null;
 const vBoxes = () => [...document.querySelectorAll('.vTick')];
@@ -868,15 +652,15 @@ $('vScan').onclick = async (keepLog) => {
   const rows = [];
   for (const p of b.packages || []) {
     if (p.problem) { rows.push('<tr class="off"><td></td><td>' + esc(p.char) + '</td><td colspan="2" class="bad">' + esc(p.problem) + '</td></tr>'); continue; }
-    rows.push('<tr><td></td><td>' + esc(p.char) + '<br><span class="dim" style="font-size:11px">' + esc(p.slug) + '</span></td>'
-      + '<td class="mono">' + esc(p.live || '(no model)') + '</td><td>' + (p.liveBuild ? buildTag(p.liveBuild) : '') + ' <span class="dim">&middot; live, kept</span></td></tr>');
+    rows.push('<tr><td></td><td>' + esc(p.char) + '<br><span class="dim" style="font-size:11px">character <span class="mono">' + esc(p.characterId) + '</span></span></td>'
+      + '<td class="mono">' + esc(p.live || '(no live version)') + '</td><td>' + (p.liveBuild ? buildTag(p.liveBuild) : '') + ' <span class="dim">&middot; live, kept</span></td></tr>');
     for (const o of p.old) {
-      const i = V.push({ char: p.char, avatarId: p.avatarId, bakeHash: o.bakeHash, build: o.build, state: o.state, modelKey: o.modelKey || null }) - 1;
-      // The registry's state per version (telegamez#4632 phase 1b); `unregistered` = known only
-      // from the journals, from before the backfill. A `ready` version never went live: it is a
-      // publish waiting for Go live as often as it is junk, so it is shown but NOT pre-ticked
-      // (panda, 2026-10-10: Tom's fresh publish was removed with the old bakes this way), and it
-      // gets its own Go live here, so a page refresh between Publish and Go live strands nothing.
+      const i = V.push({ char: p.char, characterId: p.characterId, bakeHash: o.bakeHash, build: o.build, state: o.state }) - 1;
+      // The registry's state per version (telegamez#4632 phase 1b). A `ready` version never went
+      // live: it is a publish waiting for Go live as often as it is junk, so it is shown but NOT
+      // pre-ticked (panda, 2026-10-10: Tom's fresh publish was removed with the old bakes this
+      // way), and it gets its own Go live here, so a page refresh between Publish and Go live
+      // strands nothing.
       const neverLive = o.state === 'ready';
       // An `uploaded` row registered minutes ago may still be uploading: a publish cut by a slow
       // network resumes when it recovers, and removing it meanwhile leaves objects behind under a
@@ -885,7 +669,7 @@ $('vScan').onclick = async (keepLog) => {
       const inFlight = o.state === 'uploaded' && minutes !== null && minutes < 20;
       const state = o.state ? ' <span class="' + (o.state === 'uploaded' || o.state === 'deleting' || neverLive ? 'warn' : 'dim') + '">&middot; ' + esc(o.state)
         + (neverLive ? ', never went live' : '') + (inFlight ? ', started ' + minutes + ' min ago and may still be uploading' : '') + '</span>' : '';
-      const goLive = neverLive && o.modelKey ? ' <button class="small vLive" data-i="' + i + '" title="Take this version live now, with the reason above">Go live</button>' : '';
+      const goLive = neverLive ? ' <button class="small vLive" data-i="' + i + '" title="Take this version live now, with the reason above">Go live</button>' : '';
       rows.push('<tr><td><input type="checkbox" class="vTick" data-i="' + i + '"' + (neverLive || inFlight ? '' : ' checked') + '></td><td class="dim">' + esc(p.char) + '</td>'
         + '<td class="mono">' + esc(o.bakeHash) + '</td><td>' + buildTag(o.build) + state + goLive + '</td></tr>');
     }
@@ -896,9 +680,7 @@ $('vScan').onclick = async (keepLog) => {
   for (const el of vBoxes()) el.onchange = () => { V_PLAN = null; $('vApply').disabled = true; syncAll($('vAll'), vBoxes()); };
   for (const btn of document.querySelectorAll('button.vLive')) btn.onclick = () => vGoLive(V[Number(btn.dataset.i)]);
   syncAll($('vAll'), vBoxes());
-  log(V.length + ' old version(s) found' + (b.registry
-    ? ', from the platform\'s version registry; versions it does not know yet come from the journals, marked unregistered.\n'
-    : '. This platform has no version registry yet, so only versions the journals know of are listed.\n'));
+  log(V.length + ' old version(s) found, from the platform\'s registry.\n');
 };
 $('vAll').onchange = () => {
   for (const b of vBoxes()) b.checked = $('vAll').checked;
@@ -909,25 +691,21 @@ $('vAll').onchange = () => {
 /**
  * Take a `ready` version live from the versions table: the same call as the Go live step, for a
  * publish this page no longer remembers (a refresh between Publish and Go live, or a publish
- * made elsewhere). The registry supplied the model key, so nothing is guessed from a name.
+ * made elsewhere). The registry named the version, so nothing is guessed from a name.
  */
 async function vGoLive(v) {
-  if (!v || !v.modelKey) return;
+  if (!v || !v.characterId) return;
   if (!needReason('Go live')) return;
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   if (e.danger && !confirm('Take ' + v.char + ' live on PRODUCTION on ' + v.bakeHash + '?')) return;
   setLog('Going live: ' + v.char + ' on ' + v.bakeHash + '\n');
   const r = await fetch('/api/go-live', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ env: e.key, char: v.char, avatarId: v.avatarId, modelKey: v.modelKey, reason: reason() }),
+    body: JSON.stringify({ env: e.key, char: v.char, characterId: v.characterId, version: v.bakeHash, reason: reason() }),
   });
   const b = await r.json().catch(() => ({}));
   if (!r.ok) { log('\n' + v.char + ': ' + (b.error || 'failed') + '\n'); return; }
-  log('\n' + v.char + ' is live\n   now ' + b.modelKey + '\n   was ' + (b.previous || '(no model on the row)') + '\n');
-  if (b.registry === false) log('   registry: no versions route on this platform yet\n');
-  else log('   registry: version ' + (b.versionState || 'not found') + (b.versionState === 'live' ? '' : ' — expected live; check the admin Versions panel') + '\n');
-  if (b.status && b.status !== 'active') log('   status: ' + b.status + ' — going live does not change it; set the avatar active in admin (with a reason) or it stays hidden\n');
-  if (b.recorded) log('   recorded in ' + b.recorded + '\n');
+  logLive(v.char, b);
   $('vScan').onclick(true);   // the version it replaced now shows as retired
 }
 
@@ -936,11 +714,11 @@ $('vDry').onclick = () => {
   if (!ticked.length) { setLog('Nothing ticked.\n'); return; }
   const e = CONFIG.environments.find((x) => x.key === $('env').value);
   const lines = ['DRY RUN on ' + e.key + ' — nothing has changed yet.', '', 'Delete from the bucket, no undo:'];
-  for (const v of ticked) lines.push('  ' + v.char + '  avatars/' + v.avatarId + '/' + v.bakeHash + '/  (' + v.build + (v.state ? ', ' + v.state : '') + ')');
+  for (const v of ticked) lines.push('  ' + v.char + '  ' + v.characterId + '  version ' + v.bakeHash + '  (' + v.build + (v.state ? ', ' + v.state : '') + ')');
   const neverLive = ticked.filter((v) => v.state === 'ready');
   if (neverLive.length) lines.push('', 'NEVER WENT LIVE, ticked by you: ' + neverLive.map((v) => v.bakeHash).join(', ')
     + '. A ready version is usually a publish waiting for Go live. Untick it unless you mean to throw it away.');
-  V_PLAN = ticked.map((v) => ({ avatarId: v.avatarId, bakeHash: v.bakeHash }));
+  V_PLAN = ticked.map((v) => ({ characterId: v.characterId, version: v.bakeHash }));
   $('vConfirm').hidden = !e.danger; $('vConfirm').value = '';
   $('vApply').disabled = false;
   setLog(lines.join('\n') + '\n\nThese can no longer be rolled back to.'

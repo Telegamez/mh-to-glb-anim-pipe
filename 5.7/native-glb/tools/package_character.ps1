@@ -67,10 +67,11 @@ if (-not (Test-Path $model)) {
 }
 
 # Photographs of the character, not part of the built model. Excluded from the copy and left
-# in place at the destination. So is avatar-binding.json, the publisher's record of which avatar
-# this package is in each environment: a re-bake that wiped it would send the package back to
-# being matched by its folder name.
-$PreviewAssets = @('preview.png', 'index.html', 'thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4', 'avatar-binding.json')
+# in place at the destination. So is character.json, the character's identity (its id in every
+# environment's registry, telegamez#4632 phase 2): a re-bake that wiped it would leave the
+# package unpublishable until someone typed the id again. avatar-binding.json is the retired
+# per-environment binding; kept in place where it still exists, read by nothing.
+$PreviewAssets = @('preview.png', 'index.html', 'thumbnail.png', 'imagePreview.jpg', 'videoPreview.mp4', 'character.json', 'avatar-binding.json')
 
 $dest = Join-Path $Packages $Char
 New-Item -ItemType Directory -Force -Path $dest | Out-Null

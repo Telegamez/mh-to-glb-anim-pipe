@@ -47,30 +47,19 @@ It copies the same files the repo runs, flat — there is no second copy to drif
 | Sign in at | `api.panda.telegames.ai` | `api.beta.telegames.ai` |
 | Files go to | `telegames-assets-local` | `telegames-assets-beta` |
 | Served from | the bucket directly | CloudFront, `assets.beta.telegames.ai` |
-| Ready to publish? | yes | **not yet** |
+| Publish from here? | yes | **no**: beta takes characters by promotion from panda |
 
-### Beta isn't ready, and it fails silently
+### Beta receives characters by promotion
 
-Beta's CloudFront distribution doesn't yet pass the browser's `Origin` through — tracked as
-**G13**. Until that's fixed, a companion published to beta will upload fine, update fine, report
-success everywhere, **and still not load in a room**. The files are genuinely there; the browser
-is refused when it asks for them. Nothing in the publisher can detect this.
+Since telegamez#4632 phase 2 nothing is uploaded to beta from this machine. A version is published
+to panda, goes live there, gets its approval recorded on panda's admin Characters page, and is then
+**promoted** from beta's admin Characters page: beta copies the files from panda's bucket, verifies
+every digest, and holds the version as `ready` until someone takes it live there, one companion in
+one internal room first. The publisher shows beta as *promotion only* and publishes nothing to it;
+the platform refuses a direct upload there as well.
 
-**Don't publish to beta until someone confirms G13 is done.**
-
-Panda has no distribution at all — it serves straight from the bucket, which is already
-configured — so none of this applies there. That's why panda is where new work is proven.
-
-### Beta goes live in stages
-
-Panda is: publish, go live, done. Beta isn't.
-
-1. Publish and verify — flip nothing.
-2. Turn on **one** companion, in one internal room.
-3. Someone spends fifteen minutes talking to her.
-4. Only then, the rest.
-
-Each step is someone's decision. "Publish to beta" means step 1 unless you're told otherwise.
+Panda has no CDN at all — it serves straight from the bucket — which is why panda is where new
+work is proven.
 
 ### The hosts differ by one word
 
@@ -86,25 +75,33 @@ name, not any environment's address.
 
 ---
 
-## New or existing — you don't have to know
+## The character's id: `character.json`
 
-Tick and publish. The publisher works out whether the character already exists here and either
-adds it or updates it. The **What will happen** column says which:
+Every package folder carries a `character.json` naming the character it publishes as
+(telegamez#4632 phase 2):
+
+```json
+{ "id": "drake", "name": "Drake", "gender": "male" }
+```
+
+The `id` is the character's identity in **every** environment's registry: lowercase letters,
+digits and dashes, chosen once and never renamed. The folder name and the model file name play no
+part (`tg-tom` publishes as `tim`). `name`, `gender` and `tags` are optional for a character the
+registry already knows (its values are kept); a new id needs at least a `name`, and its first
+publish creates the character. A package without the file is listed in red and cannot be
+published. Re-bakes keep the file.
+
+Tick and publish. The **What will happen** column says which case it is:
 
 | | |
 |---|---|
-| **Add as new** | never been here. Type a display name in the box; everything else is handled. |
+| **First publish creates `<id>`** | the registry has no such character yet; this publish creates it |
 | **Update to a new version** | already published — this adds a new version alongside the old one |
-| **Add its model** | the record is here but has no files yet |
-| **extra** | neither a roster id nor bound anywhere. Tick it only if you mean to. |
+| **Add its model** | the character is here but has no live version yet |
 | red text | folder problem, fix before publishing |
 
-### Changing one that already exists
-
-**Edit existing**, top right. Pick a companion from the list and change its name, description,
-gender, or whether it's shown in the picker. Save.
-
-What a companion *is pointed at* isn't editable here — that only changes by publishing.
+A character's display name, gender and tags change by publishing a package whose `character.json`
+says so; what it *serves* changes only by going live.
 
 Folder problems:
 
@@ -113,6 +110,7 @@ Folder problems:
 | *no mh_materials.json* | folder is incomplete — re-copy it. Without this the character publishes fine and renders with no clothing textures or hair tint, which looks exactly like a bad bake. |
 | *no textures/* | same |
 | *stray manifest.json* | delete that file — the publisher makes its own, and one sitting in the folder would be uploaded unchecked |
+| *no character.json* | add one with the character's id (above) |
 
 ---
 
@@ -148,29 +146,19 @@ its own field and recorded on the version, so nothing has to read it out of the 
 Old `_compressed/` (meshopt) folders on disk are ignored. **Remove old versions**, below, deletes
 the published ones.
 
-## Names don't matter: bindings and Rename
+## Names don't matter: the id and Rename
 
-A package is tied to its avatar in each environment by the avatar's **id**, written into the
-package as `avatar-binding.json` the first time it is matched (by slug `mh-<folder>`) or created
-there. From then on the folder name plays no part: rename it and it still updates the same
-avatar, with the same companions. The row says where a package is bound (`bound: panda, beta`).
-A re-bake keeps the file. Delete an entry only to bind it again.
+The id in `character.json` is the whole of a package's identity. Rename the folder and it still
+publishes to the same character, with the same companions, in every environment. The old
+per-environment `avatar-binding.json` is read by nothing any more; where one still sits in a
+package it is harmless.
 
 **Rename**, beside each character, renames the folder, the model, its ktx2 build and the name
 in the sidecar, keeping file times so the build stays current. Nothing in any environment changes.
-Before renaming, connect once to every environment the character exists in, so it is bound there;
-the publisher warns about any it is not. It refuses a name the runtime treats as a calibrated
-character (`telly`, `tele`, `telie`, `telee`, `tele1`, `tele2`, `tele4`), because the web app takes
-hair, scalp and eye tuning from the model file's name. A folder renamed by hand in Explorer is
-listed in red until Rename (with the folder's own name) brings the model in line.
-
-**Sync slugs** makes the ticked avatars' slugs read `mh-<folder>` in the environment you are
-connected to, so the admin pages show the new name too. Cosmetic: id, display name, model and
-companions are untouched, and each change is journaled with its undo. On beta you type `beta`.
-The telegamez seed still names the old slugs; a deploy logs a warning for each and changes nothing.
-
-A package that matches nothing here offers **or update an existing avatar** beside **Add as new**.
-Pick the avatar it really is, and it is bound to it instead of becoming a second one.
+It refuses a name the runtime treats as a calibrated character (`telly`, `tele`, `telie`, `telee`,
+`tele1`, `tele2`, `tele4`), because the web app takes hair, scalp and eye tuning from the model
+file's name where a release carries no tuning id. A folder renamed by hand in Explorer is listed
+in red until Rename (with the folder's own name) brings the model in line.
 
 ## Previews (telegamez#3662, telegamez#4632)
 
@@ -203,60 +191,40 @@ Publish, Go live.
 character's history by Publish, Go live, Remove old versions and Clean up old avatars; the platform
 keeps that history permanently and the admin pages show it per version.
 
-## Cleaning up old avatars (telegamez#3662)
+## Retiring, withdrawing and re-pointing: the platform's
 
-**Clean up old avatars** (below the Characters step once you are connected) retires avatars from
-the environment you are signed in to, panda or beta.
-
-1. **Scan** lists every avatar with the companions and talk-show slots that use it. The six
-   pre-tg ids (`mh-tele`, `mh-telly`, `mh-telie`, `mh-telee`, `mh-tele1`, `mh-tele2`) come
-   pre-ticked; tick or untick anything.
-2. For an avatar that is in use, pick **Replace with**: its companions and talk-show slots move
-   to that avatar and keep their names, voices and prompts. A replacement must be active and not
-   itself being retired.
-3. The avatar is archived: hidden from pickers, files kept, reversible, with your reason in its
-   history. Nothing is deleted for good any more (telegamez#4648): the row and its history are
-   permanent, and its old versions go through **Remove old versions**.
-4. **Dry run** lists every change. Nothing has happened yet. On beta (production) you must type
-   `beta` before **Apply** works.
-5. **Apply** makes the changes in that order and stops at the first failure. Every change is
-   written to `~/.telegames-publisher/publishes/<env>-cleanup-<time>.md` with the exact call that
-   undoes it.
-
-Each companion is re-read after it is moved, so if the platform ever stops accepting the change
-the run stops before anything is archived.
-
-**Your packages are protected.** An avatar a package in this folder is bound to is marked
-*current: package <name>*, listed first under **Replace with**, never pre-ticked, and refused by
-the dry run if you tick it.
+Nothing here retires a character or moves its companions any more (telegamez#4632 phase 2). That
+is the platform's admin **Characters** page: retire (hidden from new selections, keeps serving),
+withdraw from service (every companion and seat moved to a reviewed replacement, or marked
+unavailable), and the change history. The publisher does three things: publish a version, take it
+live, remove old versions.
 
 ## Removing old versions
 
 Every publish leaves its predecessor in the bucket. **Remove old versions** lists, for the ticked
-characters, every version except the one each avatar is live on. Where the platform runs the
-version registry (telegamez#4632 phase 1b) the list comes from it, with each version's state:
-`ready` (verified, never live), `retired` (was live), `uploaded` (a publish that never finished),
-`deleting` (a removal to retry). Versions the registry does not know yet, from before its
-backfill, come from the journals marked `unregistered`. Without the registry (beta before the rc
-that carries it) the journals are all there is, as before. All are pre-ticked. **Dry run**, then
-**Remove** (type `beta` on beta). Each is one `DELETE companion-directory?bakeHash=&reason=`, which
-walks a registered version through `deleting` to `deleted`, objects removed one by one, and
-refuses the live one or one a preview still points into.
+characters, every version the platform's registry holds except the live one, with its state:
+`ready` (verified, never live, **not** pre-ticked and with its own **Go live**), `retired` (was
+live), `uploaded` (a publish that never finished; one started in the last twenty minutes is not
+pre-ticked, it may still be uploading), `deleting` (a removal to retry). **Dry run**, then
+**Remove** (type `beta` on beta). Each is one `DELETE /api/admin/characters/<id>/versions/<version>`
+with your reason, which walks the version through `deleting` to `deleted`, objects removed one by
+one, and refuses the live one or one a preview still points into.
 
 There is **no undo**, and a removed version can no longer be rolled back to: go live and check
-first, then remove. Removals are journaled in `<env>-cleanup-<time>.md` and not offered again.
+first, then remove. Removals are journaled in `<env>-cleanup-<time>.md`.
 
 ## Publishing doesn't go live
 
-Publishing only uploads files and, on a platform with the version registry (telegamez#4632 phase
-1b), records a version in state `ready`: every object read back from the bucket and matched. Nobody
-sees a change until **Go live** points the avatar at it, which is one API call
-(`PUT /api/admin/avatars/<id>/model-path` with the key and your reason): the previous version
-becomes `retired`, the new one `live`, and the page reads that state back and shows it.
+Publishing uploads the package and records a version in state `ready`: every object read back
+from the bucket and matched. Nobody sees a change until **Go live**, which is one API call
+(`POST /api/admin/characters/<id>/versions/<version>/live` with your reason): the previous version
+becomes `retired`, the new one `live`, and the page reads that state back and shows it. Rolling
+back is the same call on the previous version.
 
 Never update `avatars.model_path` by hand. The registry would not know, and the platform's
-`db:characters:verify` reports it as pointer drift. Going live does not change the avatar's status
-either: an archived avatar stays archived until it is set active in the admin pages, with a reason.
+`db:characters:verify` reports it as pointer drift. Going live does not change a retired
+character's state either: it stays retired until it is set active on the admin Characters page,
+with a reason.
 
 That's deliberate: a bad publish can't take a working companion down, and undoing it is putting a
 value back rather than restoring files.
@@ -291,9 +259,12 @@ The file contains avatar ids and CDN paths. It never contains your cookie.
 | `MANIFEST_AS_FILE` | stray `manifest.json` in a character folder |
 | `Node.js is not on PATH` | open a shell where `node --version` works |
 | `a reason is required` | fill the **Reason** box in the Characters step; it goes into the character's history |
-| `VERSION_NOT_REGISTERED` | the key is not a registered version: publish it through this tool, or have the platform's `db:characters:backfill` register uploads that predate the registry |
-| `BACKFILL_FAILED` | the avatar's current model could not be registered on the way to going live; the message names the prefix and why. Fix the objects or map the primary model, then retry |
-| `not found` on Remove old versions | the version is not in the platform's registry (published before its backfill); have the platform run `db:characters:backfill`, then scan again |
+| `no character.json` / `"id" must be` | the package needs a `character.json` with the character's id (see *The character's id*) |
+| `Package identity must match the character URL` | the `id` inside `character.json` is not the one the publisher sent; the file was edited mid-run. Reload and publish again |
+| `Existing avatar matches this identity; apply its reviewed alias mapping first` | the platform has a legacy avatar with this name or slug that nobody has mapped to a character id yet; the platform side applies the reviewed mapping, then publish |
+| `Existing identity requires a reviewed primary alias in this environment` | the character exists but has no reviewed avatar in this environment; the platform side's mapping, not a publish, creates that |
+| `Beta requires verified promotion provenance` | nothing publishes to beta from here; promote from beta's admin Characters page |
+| `no character registry here` | this platform predates phase 2; nothing can be published to it from here |
 | `Only retired or unverified (uploaded) versions can be deleted` | the live version, or one a preview still points into. Go live on another version first |
 | `Unsupported file type in companion directory: videoPreview.mp4` | the platform predates telegamez#4644 (video types inside a version); deploy it, or publish without captured previews |
 

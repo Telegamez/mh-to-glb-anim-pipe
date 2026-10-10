@@ -119,19 +119,28 @@ const BUILD_DIR = '_compressed_ktx2';
 const compressedPath = (root, char) => path.join(root, BUILD_DIR, char);
 
 /**
- * Which avatar a package belongs to, per environment, stored IN the package folder.
- *
- * The folder name used to be the only link: `tg-drake` meant the avatar with slug
- * `mh-tg-drake`, so renaming a folder silently became "Add as new" - a second avatar, with every
- * companion still on the first. The binding is the avatar's id, learned the first time the
- * package is matched or created in an environment and used from then on. The name is free to
- * change; the slug is only the fallback for a package that has never been bound there.
- *
- * Kept in the package because that is the one thing a rename carries along. It is never
- * uploaded: publish sends the ktx2 build folder, which the compressor fills with the model,
- * sidecar and textures only.
+ * The character's identity, stored IN the package folder as `character.json` (telegamez#4632
+ * phase 2): `{ "id": "drake", "name": "Drake", "gender": "male", "tags": [] }`. The id is the
+ * character's id in every environment's registry, chosen once and never renamed; the folder and
+ * model names play no part. A re-bake keeps the file (package_character.ps1). Missing or invalid,
+ * the package is listed and cannot be published. `name`, `gender` and `tags` are optional for a
+ * character the registry already knows (its values are kept); a new id needs at least a name.
  */
-const BINDING_FILE = 'avatar-binding.json';
+const IDENTITY_FILE = 'character.json';
+const ID_OK = /^[a-z0-9][a-z0-9-]{0,63}$/;
+function readIdentity(dir) {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(dir, IDENTITY_FILE), 'utf8'));
+    if (!j || typeof j !== 'object' || Array.isArray(j)) return { error: `${IDENTITY_FILE} must hold an object` };
+    if (typeof j.id !== 'string' || !ID_OK.test(j.id)) return { error: `${IDENTITY_FILE}: "id" must be lowercase letters, digits and dashes, e.g. "drake"` };
+    if (j.name !== undefined && (typeof j.name !== 'string' || !j.name.trim())) return { error: `${IDENTITY_FILE}: "name" must be a non-empty string when given` };
+    if (j.gender !== undefined && j.gender !== null && typeof j.gender !== 'string') return { error: `${IDENTITY_FILE}: "gender" must be a string or null` };
+    if (j.tags !== undefined && (!Array.isArray(j.tags) || j.tags.some((t) => typeof t !== 'string'))) return { error: `${IDENTITY_FILE}: "tags" must be a list of strings` };
+    return { id: j.id, name: j.name?.trim() || null, gender: j.gender ?? null, tags: j.tags ?? null };
+  } catch (e) {
+    return { error: e.code === 'ENOENT' ? `no ${IDENTITY_FILE}: add one with the character's id (PUBLISHER.md, "The character's id")` : `${IDENTITY_FILE} is not valid JSON` };
+  }
+}
 
 /** Newest of the model, the sidecar and the textures - what a compressed build must postdate. */
 function contentTimeOf(dir, name) {
@@ -174,22 +183,6 @@ function compressedInfo(root, name, contentTime) {
     dir, mode, variants, stale, publishable, mb: Math.round(bytes / 1048576),
     current: !stale && publishable,
   };
-}
-
-/** `{ environments: { <env>: { avatarId, apiBase, boundAt, how } } }`, or an empty one. */
-function readBinding(dir) {
-  try {
-    const b = JSON.parse(fs.readFileSync(path.join(dir, BINDING_FILE), 'utf8'));
-    return b && typeof b.environments === 'object' && b.environments ? b : { environments: {} };
-  } catch { return { environments: {} }; }
-}
-
-function writeBinding(dir, env, apiBase, avatarId, how) {
-  const b = readBinding(dir);
-  b.note = 'Which avatar this package publishes to, per environment. Written by the publisher; '
-    + 'the folder and model can be renamed freely. Delete an entry only to re-bind it.';
-  b.environments[env] = { avatarId, apiBase, boundAt: new Date().toISOString(), how };
-  fs.writeFileSync(path.join(dir, BINDING_FILE), JSON.stringify(b, null, 2) + '\n');
 }
 
 /**
@@ -235,22 +228,6 @@ const ENVIRONMENTS = {
  */
 const PROFILE_NAMES = ['telly', 'tele', 'telie', 'telee', 'tele1', 'tele2', 'tele4'];
 const NAME_OK = /^[a-z0-9][a-z0-9._-]{1,62}$/;
-
-/**
- * The shipping roster, from packages/shared/db/src/seed-metahuman-roster.ts.
- *
- * Used ONLY to decide what is pre-selected. Everything found is still listed and can still be
- * ticked by hand — the scan found `telly-research` sitting beside the six, which is a research
- * variant that must not reach a picker. Listing it and leaving it unticked is the useful
- * behaviour; hiding it would make the directory's contents unanswerable from the console, and
- * pre-ticking it would publish it on the first careless run.
- */
-const ROSTER = [
-  // The tg-* roster (telegamez#3725 rebakes, the greenfield packages), the ids the avatar records use.
-  'tg-drake', 'tg-jan', 'tg-jen', 'tg-jules', 'tg-ken', 'tg-mae', 'tg-rick', 'tg-tom',
-  // The pre-tg ids, still pre-ticked when their folders are found.
-  'telly', 'tele', 'telie', 'telee', 'tele1', 'tele2',
-];
 
 /** Held for the process lifetime only. Never persisted. */
 const session = { token: null, prior: {} };
@@ -314,24 +291,25 @@ function scanRoot(root) {
 
     // The ktx2 build, made on Publish when it is missing or older than the package.
     const compressed = modelMismatch ? null : compressedInfo(root, name, contentTime);
-    const bindings = readBinding(dir).environments;
+    // telegamez#4632 phase 2: the character's id comes from the package's character.json.
+    const identity = readIdentity(dir);
 
     const problems = [];
     if (modelMismatch) problems.push(`model is ${modelMismatch}, folder is ${name} — Rename to bring them in line`);
     if (!sidecar) problems.push('no mh_materials.json — would render untextured');
     if (textures === 0) problems.push('no textures/');
     if (strayManifest) problems.push('stray manifest.json — publish would be refused');
+    if (identity.error) problems.push(identity.error);
 
     characters.push({
       id: name, dir, mb, sidecar, textures, strayManifest, previews, compressed, modelMismatch,
-      bindings,
+      identity: identity.error ? null : identity,
       // When the previews were captured, for the Previews panel (and to tell a recapture apart).
       previewsAt: previews
         ? Math.max(...PREVIEW_FILES.map((f) => fs.statSync(path.join(dir, f)).mtimeMs)) : null,
-      // Pre-ticked when it is a roster id or already bound to an avatar somewhere: a renamed
-      // package stays ticked because its binding came with it.
+      // Pre-ticked when it carries an identity: a folder found beside the roster with no
+      // character.json (a research variant, a stray copy) is listed and left unticked.
       ready: problems.length === 0, problems,
-      inRoster: ROSTER.includes(name) || Object.keys(bindings).length > 0,
     });
   }
   return { root, characters };
@@ -374,15 +352,17 @@ function readBody(req) {
 
 const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
 
-function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, previous, output, code, reason = null, previews = false }) {
+function recordPublish({ env, apiBase, char, characterId, bakeSuffix, bakeHash, previous, output, code, reason = null, previews = false }) {
   const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
   const modelKey = grab(/modelKey:\s*(\S+)/);
+  const avatarId = grab(/avatarId:\s*(\S+)/);
   const files = grab(/OK - (\d+ files published)/);
   const size = grab(/\d+ files, ([\d.]+ MB)/);
 
   const out = [`## ${char}`, ''];
   out.push(`- when    ${new Date().toISOString()}`);
-  out.push(`- avatar  \`${avatarId}\``);
+  out.push(`- character \`${characterId}\``);
+  if (avatarId) out.push(`- avatar  \`${avatarId}\``);
   out.push(`- bake    \`${bakeHash}\``);
   if (files || size) out.push(`- upload  ${[files, size].filter(Boolean).join(', ')}`);
   // Which bytes went up. Always the ktx2 build now; still written, because older records in the
@@ -408,22 +388,21 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
     // batch was attempted and did not land, which the absence of a record would not show.
     out.push(`**FAILED** — exit ${code}. Nothing was published; the row is untouched.`, '');
   } else {
-    // Through the API, never SQL: since telegamez#4632 phase 1b going live is a state change on
-    // the version, and a hand-run UPDATE leaves the registry behind (db:characters:verify
-    // reports it as pointer drift).
+    // Through the API, never SQL: going live is a state change on the version (telegamez#4632),
+    // and a hand-run UPDATE leaves the registry behind (db:characters:verify reports it as
+    // pointer drift). Since phase 2 the calls name the character and the version, not a key.
     out.push('```');
     out.push('-- go live');
-    out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${modelKey}", "reason": "..." }`);
+    out.push(`POST ${apiBase}/api/admin/characters/${characterId}/versions/${bakeHash}/live  { "reason": "..." }`);
     out.push('');
     out.push('-- roll back');
-    // `was` came from the admin list, which formats the key into a full URL; the API wants the key.
-    const wasKey = wasPath ? keyOf(wasPath) : null;
-    if (wasKey && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(wasKey)) {
-      out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${wasKey}", "reason": "..." }`);
+    const wasVersion = wasPath ? bakeOfPath(wasPath) : null;
+    if (wasVersion) {
+      out.push(`POST ${apiBase}/api/admin/characters/${characterId}/versions/${wasVersion}/live  { "reason": "..." }`);
     } else if (wasPath) {
-      out.push(`-- the previous value is not a published key (${wasPath}); restoring it needs a re-publish of that bake`);
+      out.push(`-- the previous model is not a registered version (${wasPath}); restoring it needs a re-publish of that bake`);
     } else {
-      out.push('-- the row carried no model before this publish, so there is nothing to restore');
+      out.push('-- the character had no live version before this publish, so there is nothing to restore');
     }
     if (wasStatus && wasStatus !== 'active') out.push(`-- status was \`${wasStatus}\`; going live does not change it, set it in admin with a reason`);
     out.push('```', '');
@@ -458,36 +437,30 @@ function recordPublish({ env, apiBase, char, avatarId, bakeSuffix, bakeHash, pre
  * nowhere else. Written here rather than printed, because a value that only appears in a
  * browser pane is a value nobody has when they need it.
  */
-function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, previous, reason = null, state = null, registry = null, status = null }) {
+function recordGoLive({ env, apiBase, char, characterId, version, bakeSuffix, modelKey, previous, reason = null, state = null, status = null }) {
   const out = [`## ${char} — live`, ''];
   out.push(`- when    ${new Date().toISOString()}`);
-  out.push(`- avatar  \`${avatarId}\``);
+  out.push(`- character \`${characterId}\``);
+  out.push(`- version \`${version}\`${state ? ` (registry: ${state})` : ''}`);
   out.push(`- now     \`${modelKey}\``);
-  out.push(`- was     ${previous ? `\`${previous}\`` : '(no model on the row)'}`);
-  // telegamez#4632 phase 1b: the registry read back after the call. `live` is the proof; a
-  // platform without the versions route (beta before its rc) is written down as such.
-  if (registry === false) out.push('- registry no versions route on this platform yet');
-  else out.push(`- version ${state ? `\`${state}\`` : 'not found in the registry'}`);
+  out.push(`- was     ${previous ? `\`${previous}\`` : '(no live version before)'}`);
   if (status) out.push(`- status  \`${status}\`${status !== 'active' ? ' (going live does not change it; set it in admin with a reason)' : ''}`);
   if (reason) out.push(`- reason  ${reason}`);
   out.push('');
-  // Only a published key can be restored through the API — the route refuses anything that is
-  // not a content-addressed object under this avatar, which is what makes it safe. A seeded
-  // placeholder is not one, so the FIRST time a character goes live there is nothing to go back
-  // to through this door. That is a real limit, and saying so here is better than printing a
-  // call that would be refused at the moment somebody needed it to work.
-  const previousKey = previous ? keyOf(previous) : null;
-  const restorable = previousKey && /^avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/.+\.glb$/i.test(previousKey);
+  // Rolling back is taking the previous version live again. The first time a character goes
+  // live there is nothing to go back to, and saying so here is better than printing a call
+  // that would be refused at the moment somebody needed it to work.
+  const previousVersion = previous ? bakeOfPath(previous) : null;
   out.push('To put it back:');
   out.push('```');
-  if (restorable) {
-    out.push(`PUT ${apiBase}/api/admin/avatars/${avatarId}/model-path  { "modelKey": "${previousKey}", "reason": "..." }`);
+  if (previousVersion) {
+    out.push(`POST ${apiBase}/api/admin/characters/${characterId}/versions/${previousVersion}/live  { "reason": "..." }`);
   } else if (previous) {
-    out.push(`the previous value is not a published key, so the API will not accept it:`);
+    out.push(`the previous model is not a registered version, so the API will not accept it:`);
     out.push(`  ${previous}`);
-    out.push(`restoring it needs a database update, or a re-publish of that bake`);
+    out.push(`restoring it needs a re-publish of that bake`);
   } else {
-    out.push('the row carried no model before this, so there is nothing to restore');
+    out.push('the character had no live version before this, so there is nothing to restore');
   }
   out.push('```', '');
 
@@ -501,78 +474,37 @@ function recordGoLive({ env, apiBase, char, avatarId, bakeSuffix, modelKey, prev
   }
 }
 
-/**
- * Every published version the journals know of in one environment: bake hash -> { avatarId,
- * build }. The CDN cannot be listed through the admin API, so this is how Remove old versions
- * finds what to remove: the `bake` line of each publish, plus the `was` / `now` keys of
- * publishes and go-lives, which is where versions published before these journals existed
- * (the seeded `…-20260904-8044` bakes) turn up.
- *
- * Only files whose header names this environment's API are read; a journal is plain markdown
- * and a hand-copied file must not leak another environment's versions in.
- */
-function journalVersions(env, apiBase) {
-  const versions = new Map();
-  const deleted = new Set();
-  const note = (hash, avatarId, build) => {
-    const v = versions.get(hash) ?? { avatarId, build: null };
-    if (build && !v.build) v.build = build;
-    versions.set(hash, v);
-  };
-  let files = [];
-  try { files = fs.readdirSync(JOURNAL_DIR).filter((f) => f.startsWith(`${env}-`) && f.endsWith('.md')); } catch { return versions; }
-  for (const f of files) {
-    let text;
-    try { text = fs.readFileSync(path.join(JOURNAL_DIR, f), 'utf8'); } catch { continue; }
-    if (!text.split('\n', 4).some((l) => l.trim() === apiBase)) continue;
-    let avatarId = null;
-    let lastHash = null;
-    for (const line of text.split('\n')) {
-      if (line.startsWith('## ')) { avatarId = null; lastHash = null; }
-      const a = line.match(/^- avatar\s+`([0-9a-f-]{36})`/i);
-      if (a) avatarId = a[1];
-      const b = line.match(/^- bake\s+`([A-Za-z0-9._-]+)`/);
-      if (b && avatarId) { lastHash = b[1]; note(lastHash, avatarId, null); }
-      const s = line.match(/^- source\s+(?:COMPRESSED (\w+) build|(uncompressed) bake)/);
-      if (s && lastHash) note(lastHash, avatarId, s[1] || s[2]);
-      for (const k of line.matchAll(/avatars\/([0-9a-f-]{36})\/([A-Za-z0-9._-]+)\/[^\s`']+\.glb/gi)) note(k[2], k[1], null);
-      // What Remove old versions already took, so it is not offered again.
-      const d = line.match(/ deleted avatars\/[0-9a-f-]{36}\/([A-Za-z0-9._-]+)\/\. No undo\./i);
-      if (d) deleted.add(d[1]);
-    }
-  }
-  for (const h of deleted) versions.delete(h);
-  return versions;
-}
+/** What a version holds, when its name says so (`-ktx2-`); the registry records it as well. */
+const buildOf = (hash, recorded = null) => (recorded && recorded !== 'unknown' ? recorded : (String(hash).match(/-(ktx2|meshopt)-\d{8}-/) || [])[1] ?? 'not recorded');
 
-/** What a version holds: from its name when it says (`-ktx2-` / `-meshopt-`), else the journal. */
-function buildOf(hash, versions) {
-  const m = hash.match(/-(ktx2|meshopt)-\d{8}-/);
-  if (m) return m[1];
-  return versions.get(hash)?.build ?? 'not recorded';
-}
-
-/** The bake hash a model path points into, whether stored relative or returned as a full URL. */
+/** The version a model path points into, whether stored relative or returned as a full URL. */
 const bakeOfPath = (p) => (String(p || '').match(/avatars\/[0-9a-f-]{36}\/([A-Za-z0-9._-]+)\/[^/]+\.glb/i) || [])[1] ?? null;
-
-/** The object key behind a model path: the admin list formats keys into full URLs on the way out,
- * and the API accepts only the key. */
-const keyOf = (p) => String(p || '').replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '');
 
 /** A reason for the character history (telegamez#4632 phase 1b): required, trimmed, bounded. */
 const reasonOf = (r) => { const s = String(r ?? '').trim(); return s && s.length <= 500 ? s : null; };
 
 /**
- * The registry's view of one avatar (telegamez#4632 phase 1b): every version with its state, and
- * the state of one version in particular. `registry: false` where the platform has no versions
- * route yet (beta before the rc that carries 1b), so callers fall back to the journals and say so.
+ * The platform's character registry (telegamez#4632 phase 2), by character id. `registry: false`
+ * where the platform has no characters route (an environment before the rc that carries phase
+ * 2): nothing can be published there from here, and the page says so.
  */
-async function registryOf(target, avatarId, version = null) {
-  const r = await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}/versions`);
-  if (r.status === 404) return { registry: false, versions: [], state: null };
-  if (!r.ok) return { registry: true, versions: [], state: null, problem: `versions ${r.status}${r.error ? ` ${r.error}` : ''}` };
+async function listCharacters(target) {
+  const r = await adminCall(target, 'GET', '/api/admin/characters');
+  if (r.status === 404) return { registry: false, characters: new Map() };
+  if (!r.ok) return { registry: true, characters: new Map(), problem: `characters ${r.status}${r.error ? ` ${r.error}` : ''}` };
+  const rows = Array.isArray(r.body?.characters) ? r.body.characters : [];
+  return { registry: true, environment: r.body?.environment ?? null,
+    characters: new Map(rows.map((row) => [row.character?.id, { character: row.character, liveVersion: row.liveVersion ?? null }])) };
+}
+
+/** One character's versions and trail from the registry, and the state of one version in particular. */
+async function registryOf(target, characterId, version = null) {
+  const r = await adminCall(target, 'GET', `/api/admin/characters/${encodeURIComponent(characterId)}/versions`);
+  if (r.status === 404) return { registry: true, exists: false, versions: [], state: null };
+  if (!r.ok) return { registry: true, exists: null, versions: [], state: null, problem: `versions ${r.status}${r.error ? ` ${r.error}` : ''}` };
   const versions = Array.isArray(r.body?.versions) ? r.body.versions : [];
-  return { registry: true, versions, state: version ? versions.find((v) => v.version === version)?.state ?? null : null };
+  return { registry: true, exists: true, character: r.body?.character ?? null, versions,
+    state: version ? versions.find((v) => v.version === version)?.state ?? null : null };
 }
 
 /** Local renames, appended to one file - the history of what each folder used to be called. */
@@ -718,20 +650,9 @@ function runCapture(res, monorepo, dir) {
 }
 
 // ---------------------------------------------------------------------------------------
-// Clean up old avatars (telegamez#3662).
-//
-// Retiring an avatar is two changes through the admin API, in this order:
-//   1. every companion and talk-show slot using it is pointed at a replacement avatar, so
-//      nothing a user sees loses its look (the companion keeps its name, voice and prompts);
-//   2. the avatar is archived (status 'archived', isActive false, with a reason in its history):
-//      hidden from pickers, files kept, reversible by putting the status back.
-// There is no delete-for-good any more (telegamez#4648): the row and its history are permanent,
-// and old versions go through Remove old versions, one at a time through the lifecycle.
-// The page shows the full plan as a dry run first; production needs its name typed. Every
-// change is written to the journal with how to undo it.
-
-/** The pre-tg MetaHuman ids, retired 2026-10-05 (metahuman-to-glb #27). Pre-ticked, nothing more. */
-const RETIRED_SLUGS = ['mh-tele', 'mh-telly', 'mh-telie', 'mh-telee', 'mh-tele1', 'mh-tele2'];
+// Talking to the platform's admin API. Retiring, withdrawing and re-pointing characters are the
+// platform's own (its admin Characters page, telegamez#4632 phase 2); this console publishes
+// versions, takes them live and removes old ones, nothing else.
 
 /** The admin API wraps some responses as { success, data } and returns others bare. */
 const unwrapApi = (b) => (b && typeof b === 'object' && b.data && typeof b.data === 'object' ? b.data : b);
@@ -752,67 +673,6 @@ async function adminCall(target, method, apiPath, json) {
     ok: r.ok, status: r.status, body: unwrapApi(body),
     error: err === null ? null : (typeof err === 'string' ? err : JSON.stringify(err)) + code,
   };
-}
-
-async function adminGet(target, apiPath) {
-  const r = await adminCall(target, 'GET', apiPath);
-  if (!r.ok) throw new Error(`GET ${apiPath}: ${r.status}${r.error ? ` ${r.error}` : ''}`);
-  return r.body;
-}
-
-async function adminGetAll(target, apiPath, key) {
-  const out = [];
-  for (let page = 1; page < 100; page++) {
-    const sep = apiPath.includes('?') ? '&' : '?';
-    const d = await adminGet(target, `${apiPath}${sep}limit=100&page=${page}`);
-    const items = Array.isArray(d?.[key]) ? d[key] : [];
-    out.push(...items);
-    const pages = Number(d?.pagination?.totalPages ?? 1);
-    if (items.length === 0 || page >= pages) break;
-  }
-  return out;
-}
-
-/**
- * avatarId -> package folder name, for every package under `root` bound in `env`. What the
- * cleanup table calls "your packages": the avatars this folder publishes to, whatever their
- * slugs or the folders' names happen to be.
- */
-function boundAvatars(root, env) {
-  const out = new Map();
-  if (!root || !fs.existsSync(root)) return out;
-  for (const name of fs.readdirSync(root)) {
-    if (name.startsWith('_')) continue;
-    const id = readBinding(path.join(root, name)).environments[env]?.avatarId;
-    if (id) out.set(id, name);
-  }
-  return out;
-}
-
-/** Every avatar with what uses it. Read fresh for the page and again before applying. */
-async function cleanupScan(target, bound = new Map()) {
-  const avatars = await adminGetAll(target, '/api/admin/avatars', 'avatars');
-  const companions = await adminGetAll(target, '/api/admin/companions?includeInactive=true', 'companions');
-  const shows = (await adminGet(target, '/api/admin/talk-shows'))?.talkShows ?? [];
-  const slots = [];
-  for (const show of shows) {
-    const d = await adminGet(target, `/api/admin/talk-shows/${show.id}/companions`);
-    for (const c of d?.companions ?? []) {
-      slots.push({
-        showId: show.id, showName: show.name || show.title || show.slug || show.id,
-        slotId: c.id, label: c.displayName || c.role || c.id, avatarId: c.avatarId ?? null,
-      });
-    }
-  }
-  return avatars.map((a) => ({
-    id: a.id, slug: a.slug, name: a.name, status: a.status ?? null, isActive: Boolean(a.isActive),
-    modelPath: a.modelPath ?? null,
-    // Never pre-ticked, and the dry run says so if it is ticked: this is a current character.
-    package: bound.get(a.id) ?? null,
-    oldId: RETIRED_SLUGS.includes(a.slug) && !bound.has(a.id),
-    companions: companions.filter((c) => c.avatarId === a.id).map((c) => ({ id: c.id, name: c.name, slug: c.slug })),
-    talkShowSlots: slots.filter((s) => s.avatarId === a.id),
-  }));
 }
 
 function recordCleanup(env, apiBase, lines) {
@@ -917,16 +777,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     /**
-     * Resolve each character to its avatar row in the TARGET environment.
+     * Resolve each package to its character in the TARGET environment's registry, by the id in
+     * its character.json (telegamez#4632 phase 2). The id is the same everywhere, so nothing is
+     * remembered per environment and nothing is matched by name. A character the registry does
+     * not have yet comes back `exists: false`: a real, expected state for one never published
+     * here, and the first publish creates it.
      *
-     * The console asked the operator to type uuids. That was wrong in a way worth naming: the
-     * ids differ per environment — panda seeded its own rows — so a remembered uuid is not
-     * merely inconvenient, it is a way to publish a correct directory under a stranger's
-     * avatar. The environment is the only authority on its own ids, so ask it.
-     *
-     * A character with no row comes back `avatarId: null` rather than as an error: that is a
-     * real and expected state for a character that has never been published here, and the page
-     * offers to create it.
+     * An environment without the characters route (`registry: false`) cannot be published to
+     * from here at all: it receives characters by promotion from panda, on its admin page.
      */
     if (url.pathname === '/api/resolve' && req.method === 'POST') {
       const { env, characters } = await readBody(req);
@@ -935,166 +793,42 @@ const server = http.createServer(async (req, res) => {
       if (!session.token) return send(res, 400, { error: 'no token set' });
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
 
-      let rows;
-      try {
-        rows = await adminGetAll(target, '/api/admin/avatars', 'avatars');
-      } catch (e) {
-        return send(res, 502, { error: `${e.message} — is the cookie for ${env}?` });
-      }
-      const versions = journalVersions(env, target.apiBase);
+      const registry = await listCharacters(target);
+      if (registry.problem) return send(res, 502, { error: `${registry.problem} — is the cookie for ${env}?` });
 
       const resolved = (characters || []).map((char) => {
-        // The binding first: it is the avatar's id, and survives any rename. The slug only for a
-        // package never bound here - and a slug match is written down as the binding, so the
-        // NEXT rename is safe too. A binding to an avatar the environment no longer has is
-        // reported and stops there; falling back to the slug would publish over whatever
-        // happens to carry the name now.
-        const dir = path.join(root, char);
-        const bound = readBinding(dir).environments[env]?.avatarId ?? null;
-        let row = null;
-        let via = null;
-        let bindingProblem = null;
-        if (bound) {
-          row = rows.find((x) => x.id === bound) ?? null;
-          via = 'binding';
-          if (!row) bindingProblem = `bound to avatar ${bound}, which ${env} does not have`;
-        } else {
-          row = rows.find((x) => x.slug === `mh-${char}`) ?? null;
-          if (row && fs.existsSync(dir)) {
-            via = 'slug';
-            try { writeBinding(dir, env, target.apiBase, row.id, `matched slug ${row.slug}`); via = 'slug, now bound'; } catch { /* read-only folder: still resolved */ }
-          }
-        }
-        const liveBake = bakeOfPath(row?.modelPath);
+        const identity = readIdentity(path.join(root, char));
+        if (identity.error) return { char, characterId: null, problem: identity.error };
+        const known = registry.registry ? registry.characters.get(identity.id) ?? null : null;
+        const live = known?.liveVersion ?? null;
+        const previews = live?.metadata?.previews ?? {};
         return {
-          char, slug: row ? row.slug : `mh-${char}`,
-          via, bindingProblem,
-          // What the row serves now, by name: the build is in every bake hash published since
-          // #39, and the journal's source line says it for the ones before.
-          liveBake, liveBuild: liveBake ? buildOf(liveBake, versions) : null,
-          avatarId: row ? row.id : null,
-          name: row ? row.name : null,
-          active: row ? Boolean(row.isActive) : null,
-          modelPath: row ? row.modelPath : null,
-          // A new row is created with status 'processing', and the admin companion form only
-          // offers avatars matching isActive=true AND status=active. Left alone, a freshly
-          // published character is simply absent from that dropdown with nothing to explain
-          // why — so the status is carried here and the go-live SQL sets it.
-          status: row ? (row.status ?? null) : null,
-          // Whether the three preview columns hold real uploaded assets (telegamez#3662: Go live
-          // waits for them). A row created through the admin API gets placeholder URLs pointing at
-          // objects that do not exist, so presence alone says nothing. Same rule as the bake
-          // console.
-          // A preview that lives inside a published version (`avatars/<id>/<bake>/thumbnail.png`,
-          // telegamez#4632 phase 1b) is real whatever its file name; the placeholder test is only
-          // for the flat legacy slots.
-          previewsPublished: Boolean(
-            row && ['thumbnailUrl', 'imagePreviewUrl', 'videoPreviewUrl']
-              .every((f) => typeof row[f] === 'string' && (
-                /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]{6,64}\/[^/]+$/i.test(row[f])
-                || (row[f].includes('/avatars/') && !/\/(thumbnail|preview)\.(png|mp4|jpg)$/i.test(row[f])))),
-          ),
-          // Not anchored, deliberately. The column stores the relative key that was written
-          // to it, but the admin LIST endpoint formats it into a full CDN URL on the way out
-          // — so a row that is genuinely live comes back as
-          // `https://<bucket>.s3.../avatars/<id>/<hash>/<file>.glb`. Anchoring at `^avatars/`
-          // reported every live avatar as unpublished, which showed up as every row on the
-          // page reading "Add its model" — the label for a character that has no files at all.
-          // Searching for the published segment anywhere still excludes the seeded
-          // placeholder, which is `models/<id>/<id>.glb` in either form.
-          published: /avatars\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\/[^/]+\.glb$/i.test(row?.modelPath || ''),
+          char, characterId: identity.id,
+          exists: Boolean(known),
+          name: known?.character?.displayName ?? identity.name ?? null,
+          state: known?.character?.state ?? null,
+          // What the registry serves now: the live version, its build and its model key.
+          liveBake: live?.version ?? null,
+          liveBuild: live ? buildOf(live.version, live.build) : null,
+          avatarId: live?.avatarId ?? null,
+          modelPath: live?.modelKey ?? null,
+          published: Boolean(live),
+          // Go live waits for previews (telegamez#3662): either inside the version it just
+          // published, or already carried by the live version.
+          previewsPublished: Boolean(previews.video || previews.image || previews.thumbnail),
         };
       });
-      // What each row points at *now*, kept for the journal. A publish overwrites this value,
-      // and after that it exists nowhere else — so it is captured here, before it can be lost,
-      // rather than asked for at rollback time when the answer is already gone.
+      // What each character serves *now*, kept for the journal: a go-live retires it, and the
+      // rollback call needs its version.
       for (const row of resolved) {
-        session.prior[`${env}/${row.char}`] = { modelPath: row.modelPath || null, status: row.status || null };
+        session.prior[`${env}/${row.char}`] = { modelPath: row.modelPath || null, status: row.state || null };
       }
-
-      // For a package with neither a binding nor a matching slug: the page offers "update an
-      // existing avatar" from this list instead of creating a second one. Name-free by design.
-      const avatars = rows
-        .filter((x) => x.status !== 'archived')
-        .map((x) => ({ id: x.id, slug: x.slug, name: x.name }))
-        .sort((p, q) => String(p.name).localeCompare(String(q.name)));
-      return send(res, 200, { environment: env, resolved, avatars });
+      return send(res, 200, { environment: env, registry: registry.registry, promotionOnly: Boolean(target.danger), resolved });
     }
 
-    /**
-     * Bind a package to an avatar that already exists here - "update existing" on the page, for a
-     * package whose name matches nothing (a re-bake under a new id, a folder renamed elsewhere).
-     * Checked against the environment so a typo cannot bind to nothing.
-     */
-    if (url.pathname === '/api/bind' && req.method === 'POST') {
-      const { env, char, avatarId } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      const dir = path.join(url.searchParams.get('root') || DEFAULT_ROOT, String(char || ''));
-      if (!/^[A-Za-z0-9._-]+$/.test(String(char || '')) || !fs.existsSync(dir)) return send(res, 400, { error: `no package ${char}` });
-      const r = await adminCall(target, 'GET', `/api/admin/avatars/${encodeURIComponent(String(avatarId || ''))}`);
-      const a = r.body?.avatar ?? r.body;
-      if (!r.ok || a?.id !== avatarId) return send(res, 400, { error: `avatar ${avatarId} not found on ${env}` });
-      writeBinding(dir, env, target.apiBase, avatarId, `chosen on the page (${a.slug})`);
-      return send(res, 200, { char, avatarId, slug: a.slug });
-    }
-
-    /**
-     * Create the avatar row for a character that has none.
-     *
-     * `modelPath` is deliberately not sent, and the route would not accept it: the registry is
-     * pointed at bytes as a separate step, after they exist. So a row created here is a real
-     * row with no model yet, which is exactly the state the publish then fills.
-     */
-    if (url.pathname === '/api/create-avatar' && req.method === 'POST') {
-      const { env, char, name, gender, description, category } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!char || !name) return send(res, 400, { error: 'char and name are required' });
-
-      // 'human', because the database says so. chk_avatar_category allows exactly
-      // human | fantasy | robot | animal | abstract | other, and 'metahuman' is not one of
-      // them - it violated the constraint on every attempt. The metahuman marker belongs in
-      // tags, which carries no constraint and is what the six existing rows are found by.
-      const payload = {
-        name,
-        slug: `mh-${char}`,
-        category: category || 'human',
-        gender: gender || undefined,
-        description: description || undefined,
-        tags: ['metahuman'],
-      };
-
-      const r = await fetch(`${target.apiBase}/api/admin/avatars`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      // Read as text first: a failure that is not JSON still has something to say, and
-      // .json() would swallow it.
-      const raw = await r.text();
-      let out = {};
-      try { out = raw ? JSON.parse(raw) : {}; } catch { /* not JSON - the text is the message */ }
-
-      if (!r.ok) {
-        // The admin API special-cases a duplicate slug and collapses everything else into one
-        // sentence, with the reason left in its own log. "Failed to create avatar" alone
-        // cannot be told apart from a rejected field, a constraint violation or a database
-        // that is down - so carry the status and the payload that caused it.
-        const said = out.error || out.message || raw.slice(0, 300) || '(empty body)';
-        return send(res, 502, { error: `admin API ${r.status}: ${said}`, sent: payload });
-      }
-      const avatarId = out.id || out.avatar?.id || out.data?.id || null;
-      // Bound at birth, so this package keeps finding its avatar whatever it is renamed to.
-      const dir = path.join(url.searchParams.get('root') || DEFAULT_ROOT, char);
-      if (avatarId && fs.existsSync(dir)) {
-        try { writeBinding(dir, env, target.apiBase, avatarId, `created as ${payload.slug}`); } catch { /* resolve binds it by slug */ }
-      }
-      return send(res, 200, { avatarId, raw: out });
-    }
+    // `/api/bind` and `/api/create-avatar` are gone (telegamez#4632 phase 2): the character's id
+    // in its package's character.json is the binding, and a first publish of a new id creates
+    // the character on the platform.
 
     if (url.pathname === '/api/verify' && req.method === 'POST') {
       const { env, slugs } = await readBody(req);
@@ -1141,7 +875,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/publish' && req.method === 'POST') {
-      const { env, characters, bakeHashSuffix, avatarIds, build: requested, reason } = await readBody(req);
+      const { env, characters, bakeHashSuffix, build: requested, reason } = await readBody(req);
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
@@ -1161,14 +895,30 @@ const server = http.createServer(async (req, res) => {
       // One character per request keeps the stream readable and lets a failure stop the batch
       // at a known point; the page drives the loop.
       const char = characters[0];
-      const avatarId = (avatarIds || {})[char];
-      if (!avatarId) return send(res, 400, { error: `no avatarId for ${char}` });
 
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
       const pkgDir = path.join(root, char);
       if (!fs.existsSync(path.join(pkgDir, `${char}.glb`))) {
         return send(res, 400, { error: `no package for ${char} in ${root}` });
       }
+
+      // telegamez#4632 phase 2: the version is published under the character's id from the
+      // package's character.json. Its name, gender and tags come from the registry when the
+      // character exists there (so a package that names none of them changes none), with the
+      // package's values on top; a new id needs at least a name.
+      const local = readIdentity(pkgDir);
+      if (local.error) return send(res, 400, { error: `${char}: ${local.error}` });
+      const registry = await listCharacters(target);
+      if (!registry.registry) return send(res, 400, { error: `${env} has no character registry: characters reach it by promotion from panda, not by publishing` });
+      if (registry.problem) return send(res, 502, { error: `${registry.problem} — is the cookie for ${env}?` });
+      const known = registry.characters.get(local.id)?.character ?? null;
+      const identity = {
+        id: local.id,
+        name: local.name ?? known?.displayName ?? null,
+        gender: local.gender ?? known?.gender ?? null,
+        tags: local.tags ?? known?.tags ?? [],
+      };
+      if (!identity.name) return send(res, 400, { error: `${char}: ${local.id} is new to ${env}, so its character.json needs a "name"` });
 
       // What goes up is the ktx2 build, always. A missing build, a stale one or one that does not
       // name this character's files is remade here first, so a publish is one action.
@@ -1203,14 +953,15 @@ const server = http.createServer(async (req, res) => {
       // keeps whatever it has (the platform's compatibility rule), which the page reports.
       const previews = hasPreviews(pkgDir);
       return stream(res, PUBLISHER, [
-        '-Char', char, '-AvatarId', avatarId, '-ApiBase', target.apiBase,
+        '-Char', char, '-CharacterId', identity.id, '-Identity', JSON.stringify(identity),
+        '-ApiBase', target.apiBase,
         '-Source', made.dir,
         '-BakeHash', bakeHash,
         '-Build', BUILD,
         '-Reason', why,
         ...(previews ? ['-PreviewsFrom', pkgDir] : []),
       ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
-        env, apiBase: target.apiBase, char, avatarId,
+        env, apiBase: target.apiBase, char, characterId: identity.id,
         bakeSuffix: bakeHashSuffix, bakeHash, reason: why, previews,
         previous: session.prior[`${env}/${char}`] ?? null,
         output, code,
@@ -1283,60 +1034,21 @@ const server = http.createServer(async (req, res) => {
           ...done.map((d) => `- done    ${d}`), `- failed  ${e.message}`]);
         return send(res, 500, { error: `rename stopped after ${done.length} step(s): ${e.message}`, done });
       }
-      const bindings = readBinding(toDir).environments;
+      // The character's id lives in character.json and is untouched by a rename: the package
+      // keeps publishing to the same character (telegamez#4632 phase 2).
+      const identity = readIdentity(toDir);
       recordRename([`## ${from} -> ${to}`, '', `- when    ${new Date().toISOString()}`, `- root    ${root}`,
         ...done.map((d) => `- done    ${d}`),
-        `- bound   ${Object.entries(bindings).map(([e, b]) => `${e}=${b.avatarId}`).join(', ') || '(nowhere yet)'}`]);
-      return send(res, 200, { from, to, done, boundIn: Object.keys(bindings) });
+        `- character ${identity.error ? `(none: ${identity.error})` : `\`${identity.id}\``}`]);
+      return send(res, 200, { from, to, done, characterId: identity.error ? null : identity.id });
     }
 
-    /**
-     * Make each ticked package's avatar slug read `mh-<folder>` here - so a renamed package shows
-     * its new name in the admin pages too. Cosmetic: the binding, not the slug, is what the
-     * publisher follows, and the runtime reads neither. The avatar's id, display name, model and
-     * every companion on it are untouched. Journaled with the undo.
-     */
-    if (url.pathname === '/api/sync-slugs' && req.method === 'POST') {
-      const { env, characters, confirm } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!Array.isArray(characters) || !characters.length) return send(res, 400, { error: 'no characters selected' });
-      if (target.danger && confirm !== env) return send(res, 400, { error: `${env} is production: type "${env}" to confirm` });
-      const root = url.searchParams.get('root') || DEFAULT_ROOT;
-
-      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-      const journal = [];
-      let code = 0;
-      for (const char of characters) {
-        const avatarId = readBinding(path.join(root, String(char))).environments[env]?.avatarId;
-        if (!avatarId) { res.write(`${char}: not bound on ${env} — Connect once so it is matched, then retry\n`); code = 1; continue; }
-        const want = `mh-${char}`;
-        const cur = await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`);
-        const was = (cur.body?.avatar ?? cur.body)?.slug;
-        if (!cur.ok || !was) { res.write(`${char}: could not read avatar ${avatarId} (${cur.status}) — stopped\n`); code = 1; break; }
-        if (was === want) { res.write(`${char}: already ${want}\n`); continue; }
-        const r = await adminCall(target, 'PUT', `/api/admin/avatars/${avatarId}`, { slug: want });
-        const back = r.ok ? await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`) : null;
-        const now = (back?.body?.avatar ?? back?.body)?.slug;
-        if (!r.ok || now !== want) {
-          res.write(`${char}: slug change failed (${r.status}${r.error ? ` ${r.error}` : ''}${r.ok ? `, reads back ${now}` : ''}) — stopped\n`);
-          journal.push(`## ${char}`, '', `- avatar \`${avatarId}\`: slug ${was} -> ${want} FAILED (HTTP ${r.status}${r.error ? ` ${r.error}` : ''})`, '');
-          code = 1; break;
-        }
-        res.write(`${char}: ${was} -> ${want}\n`);
-        journal.push(`## ${char}`, '', `- avatar \`${avatarId}\`: slug ${was} -> ${want}. Undo: PUT /api/admin/avatars/${avatarId} {"slug":"${was}"}`, '');
-      }
-      const recorded = journal.length ? recordCleanup(env, target.apiBase, ['Slug sync', '', ...journal]) : null;
-      if (recorded) res.write(`\n[console] recorded: ${recorded}\n`);
-      res.write(`\n[console] exit ${code}\n`);
-      res.end();
-      return undefined;
-    }
+    // `/api/sync-slugs` is gone (telegamez#4632 phase 2): the character's id is the identity in
+    // every environment, and the legacy `mh-<folder>` slug convention is retired with it.
 
     /**
-     * Old versions of the ticked packages' avatars: every published bake the journals know of,
-     * except the one the avatar is live on. Read-only; the page shows it as a list to tick.
+     * Old versions of the ticked packages' characters, from the platform's registry: every
+     * version except the live one, with its state. Read-only; the page shows it as a list to tick.
      */
     if (url.pathname === '/api/versions/scan' && req.method === 'POST') {
       const { env, characters } = await readBody(req);
@@ -1344,45 +1056,35 @@ const server = http.createServer(async (req, res) => {
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
       const root = url.searchParams.get('root') || DEFAULT_ROOT;
-      const versions = journalVersions(env, target.apiBase);
+      const registry = await listCharacters(target);
+      if (!registry.registry) return send(res, 400, { error: `${env} has no character registry yet` });
+      if (registry.problem) return send(res, 502, { error: `${registry.problem} — is the cookie for ${env}?` });
       const out = [];
-      let registry = null;
       for (const char of characters || []) {
-        const avatarId = readBinding(path.join(root, String(char))).environments[env]?.avatarId;
-        if (!avatarId) { out.push({ char, problem: `not bound on ${env} — Connect once first` }); continue; }
-        const r = await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`);
-        const a = r.body?.avatar ?? r.body;
-        if (!r.ok || !a?.id) { out.push({ char, avatarId, problem: `could not read the avatar (${r.status})` }); continue; }
-        const live = bakeOfPath(a.modelPath);
-        // telegamez#4632 phase 1b: the registry is the authority where it exists, with a state per
-        // version. Versions it does not know yet (published before the backfill) are still offered
-        // from the journals, marked `unregistered`; `deleted` ones are not offered again. Without
-        // the route (beta before its rc) the journals are all there is, as before.
-        const reg = await registryOf(target, avatarId, live);
-        if (registry === null) registry = reg.registry;
-        const known = new Map(reg.versions.map((v) => [v.version, v]));
-        const old = [];
-        for (const v of reg.versions) {
-          if (v.version === live || v.state === 'live' || v.state === 'deleted') continue;
-          // `modelKey` rides along so a `ready` version can be taken live from the page without a
-          // re-publish (a page refresh otherwise forgets what was published this session).
-          old.push({ bakeHash: v.version, build: v.build && v.build !== 'unknown' ? v.build : buildOf(v.version, versions), state: v.state, modelKey: v.modelKey ?? null, uploadedAt: v.uploadedAt ?? null });
-        }
-        for (const [hash, v] of versions.entries()) {
-          if (v.avatarId !== avatarId || hash === live || known.has(hash)) continue;
-          old.push({ bakeHash: hash, build: buildOf(hash, versions), state: reg.registry ? 'unregistered' : null });
-        }
-        old.sort((p, q) => p.bakeHash.localeCompare(q.bakeHash));
-        out.push({ char, avatarId, slug: a.slug, live, liveBuild: live ? buildOf(live, versions) : null, liveState: reg.state, old });
+        const identity = readIdentity(path.join(root, String(char)));
+        if (identity.error) { out.push({ char, problem: identity.error }); continue; }
+        const reg = await registryOf(target, identity.id);
+        if (reg.exists === false) { out.push({ char, characterId: identity.id, problem: `${identity.id} is not on ${env} yet` }); continue; }
+        if (reg.problem) { out.push({ char, characterId: identity.id, problem: reg.problem }); continue; }
+        const liveRow = reg.versions.find((v) => v.state === 'live') ?? null;
+        const old = reg.versions
+          .filter((v) => v.state !== 'live' && v.state !== 'deleted')
+          // `uploadedAt` and the state ride along so the page can tell a publish still uploading
+          // from a stale partial, and a `ready` version can be taken live from the list.
+          .map((v) => ({ bakeHash: v.version, build: buildOf(v.version, v.build), state: v.state, uploadedAt: v.uploadedAt ?? null }))
+          .sort((p, q) => p.bakeHash.localeCompare(q.bakeHash));
+        out.push({ char, characterId: identity.id, name: reg.character?.displayName ?? null, state: reg.character?.state ?? null,
+          live: liveRow?.version ?? null, liveBuild: liveRow ? buildOf(liveRow.version, liveRow.build) : null, old });
       }
-      return send(res, 200, { environment: env, registry: registry ?? false, packages: out });
+      return send(res, 200, { environment: env, registry: true, packages: out });
     }
 
     /**
-     * Delete old versions: [{ avatarId, bakeHash }]. One `DELETE companion-directory?bakeHash=`
-     * each - the route that removes exactly one bake and refuses the one a row points at
-     * (PREFIX_IS_LIVE), so the live version cannot go even if the page were wrong. Re-checked
-     * against the avatar first anyway. No undo: these are deleted from the bucket. Journaled.
+     * Delete old versions: [{ characterId, version }]. One `DELETE /api/admin/characters/<id>/
+     * versions/<version>` each, with the reason: the platform walks the version through
+     * `deleting` to `deleted`, removes its objects one by one, and refuses the live version and
+     * any version a preview still points into. Re-checked against the registry first anyway.
+     * No undo: these are deleted from the bucket. Journaled.
      */
     if (url.pathname === '/api/versions/remove' && req.method === 'POST') {
       const { env, items, confirm, reason } = await readBody(req);
@@ -1399,30 +1101,26 @@ const server = http.createServer(async (req, res) => {
       const journal = ['Remove old versions', '', `- reason ${why}`, ''];
       const liveOf = new Map();
       let code = 0;
-      for (const { avatarId, bakeHash } of items) {
-        if (!/^[0-9a-f-]{36}$/i.test(String(avatarId)) || !/^[A-Za-z0-9._-]{6,64}$/.test(String(bakeHash))) {
+      for (const { characterId, version } of items) {
+        if (!ID_OK.test(String(characterId)) || !/^[A-Za-z0-9._-]{6,64}$/.test(String(version))) {
           res.write(`skipped a malformed item\n`); continue;
         }
-        if (!liveOf.has(avatarId)) {
-          const r = await adminCall(target, 'GET', `/api/admin/avatars/${avatarId}`);
-          if (!r.ok) { res.write(`${avatarId}: could not read the avatar (${r.status}) — stopped\n`); code = 1; break; }
-          liveOf.set(avatarId, bakeOfPath((r.body?.avatar ?? r.body)?.modelPath));
+        if (!liveOf.has(characterId)) {
+          const reg = await registryOf(target, characterId);
+          if (reg.exists === false || reg.problem) { res.write(`${characterId}: could not read the character (${reg.problem ?? 'not found'}) — stopped\n`); code = 1; break; }
+          liveOf.set(characterId, reg.versions.find((v) => v.state === 'live')?.version ?? null);
         }
-        if (liveOf.get(avatarId) === bakeHash) { res.write(`${bakeHash}: is live — kept\n`); continue; }
-        const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${avatarId}/companion-directory?bakeHash=${encodeURIComponent(bakeHash)}&reason=${encodeURIComponent(why)}`);
+        if (liveOf.get(characterId) === version) { res.write(`${version}: is live — kept\n`); continue; }
+        const r = await adminCall(target, 'DELETE', `/api/admin/characters/${encodeURIComponent(characterId)}/versions/${encodeURIComponent(version)}`, { reason: why });
         if (!r.ok) {
-          // Since telegamez#4645 the platform deletes only through the registry: a bake it does not
-          // know (listed here from the journals as `unregistered`) is a 404, never a prefix delete.
-          const hint = r.status === 404 ? ' — not in the platform\'s registry; its backfill registers it, then scan again' : '';
-          res.write(`${bakeHash}: delete failed (${r.status}${r.error ? ` ${r.error}` : ''})${hint} — stopped\n`);
-          journal.push(`- \`${avatarId}\` ${bakeHash}: FAILED HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`);
+          res.write(`${version}: delete failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`);
+          journal.push(`- \`${characterId}\` ${version}: FAILED HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`);
           code = 1; break;
         }
-        // The version row answers: `deleted` means the objects went one by one and the trail says
-        // so. A platform without the registry (beta before its rc) answers without one.
+        // The version row answers: `deleted` means the objects went one by one and the trail says so.
         const state = r.body?.version?.state ?? null;
-        res.write(`${bakeHash}: deleted (avatars/${avatarId}/${bakeHash}/)${state ? ` — registry: ${state}` : ' — no registry on this platform; prefix removed'}\n`);
-        journal.push(`- \`${avatarId}\` deleted avatars/${avatarId}/${bakeHash}/${state ? ` (registry: ${state})` : ' (no registry)'}. No undo.`);
+        res.write(`${version}: deleted (${characterId})${state ? ` — registry: ${state}` : ''}\n`);
+        journal.push(`- \`${characterId}\` deleted version ${version}${state ? ` (registry: ${state})` : ''}. No undo.`);
       }
       const recorded = journal.length > 2 ? recordCleanup(env, target.apiBase, journal) : null;
       if (recorded) res.write(`\n[console] recorded: ${recorded}\n`);
@@ -1491,168 +1189,50 @@ const server = http.createServer(async (req, res) => {
     // `/api/publish-previews` is gone: previews ride inside the version that Publish sends
     // (telegamez#4632 phase 1b), and the platform's separate preview upload answers 410 (#4645).
 
-    /**
-     * Point a published directory at its avatar row — what the SQL block used to do by hand.
-     *
-     * Still a separate press from Publish, because it is still a separate decision: bytes go up
-     * without changing anything a user sees, and this is the moment they do. What changes is
-     * that it no longer needs database access, and the rollback value is written down by the
-     * tool instead of depending on someone keeping a text file.
-     */
-    /** Avatars with their companions and talk-show slots, for the Clean up step. */
-    if (url.pathname === '/api/cleanup/scan' && req.method === 'POST') {
-      const { env } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      try {
-        return send(res, 200, { avatars: await cleanupScan(target, boundAvatars(url.searchParams.get('root') || DEFAULT_ROOT, env)) });
-      } catch (e) {
-        return send(res, 502, { error: `${e.message} — is the cookie for ${env}?` });
-      }
-    }
+    // `/api/cleanup/scan` and `/api/cleanup/apply` are gone (telegamez#4632 phase 2): retiring,
+    // withdrawing and re-pointing characters are the platform's, on its admin Characters page.
 
     /**
-     * Apply a cleanup plan: [{ avatarId, replacementId, hard }]. Streams progress, stops at the
-     * first failure, and journals every change with its undo. The plan is re-checked against a
-     * fresh scan, so a companion added since the dry run is reassigned too, or the run stops.
+     * Take a published version live: `POST /api/admin/characters/<id>/versions/<version>/live`
+     * with the reason (telegamez#4632 phase 2). Still its own press, because it is still its
+     * own decision: publishing changed nothing anybody sees, and this is the moment that does.
+     * The previous version becomes `retired`; the response carries the version row and the
+     * rooms whose cached config was dropped, and the journal records how to put it back.
      */
-    if (url.pathname === '/api/cleanup/apply' && req.method === 'POST') {
-      const { env, items, confirm, reason } = await readBody(req);
-      const target = ENVIRONMENTS[env];
-      if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
-      if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!Array.isArray(items) || items.length === 0) return send(res, 400, { error: 'nothing selected' });
-      if (target.danger && confirm !== env) {
-        return send(res, 400, { error: `${env} is production: type "${env}" to confirm` });
-      }
-      // telegamez#4632 phase 1b: archiving is audited with a reason.
-      const why = reasonOf(reason);
-      if (!why) return send(res, 400, { error: 'a reason is required: it goes into the character history' });
-
-      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-      const journal = [];
-      const say = (s) => res.write(s);
-      const finish = (code) => {
-        const recorded = journal.length ? recordCleanup(env, target.apiBase, journal) : null;
-        if (recorded) say(`\n[console] recorded: ${recorded}\n`);
-        say(`\n[console] exit ${code}\n`);
-        res.end();
-      };
-
-      let fresh;
-      try { fresh = await cleanupScan(target); } catch (e) { say(`could not read ${env}: ${e.message}\n`); return finish(1); }
-      const byId = new Map(fresh.map((a) => [a.id, a]));
-      const retiring = new Set(items.map((i) => i.avatarId));
-
-      for (const item of items) {
-        const a = byId.get(item.avatarId);
-        if (!a) { say(`\n${item.avatarId}: not found on ${env} — skipped\n`); continue; }
-        say(`\n=== ${a.slug} (${a.name})\n`);
-        journal.push(`## ${a.slug}`, '', `- avatar \`${a.id}\` (${a.name}), was status \`${a.status}\`, isActive ${a.isActive}`);
-        const uses = a.companions.length + a.talkShowSlots.length;
-        const rep = item.replacementId ? byId.get(item.replacementId) : null;
-        if (uses > 0) {
-          if (!rep) { say(`  used by ${uses} companion(s)/slot(s) and no replacement chosen — stopped\n`); journal.push('- STOPPED: in use, no replacement', ''); return finish(1); }
-          if (rep.id === a.id || retiring.has(rep.id) || rep.status === 'archived' || !rep.isActive) {
-            say(`  replacement ${rep.slug} is not an active avatar outside this cleanup — stopped\n`);
-            journal.push(`- STOPPED: replacement ${rep.slug} unusable`, '');
-            return finish(1);
-          }
-          journal.push(`- replacement \`${rep.id}\` (${rep.slug})`);
-        }
-
-        for (const c of a.companions) {
-          // `admin.reason` is required: CompanionService.update reads `data.admin.reason` for its
-          // audit row inside the transaction, so a body without it rolls back as a bare 500
-          // UPDATE_ERROR (panda, 2026-10-06). The admin form always sends it.
-          const r = await adminCall(target, 'PUT', `/api/admin/companions/${c.id}`, {
-            companion: { avatarId: rep.id },
-            admin: { reason: `Publisher cleanup: ${a.slug} retired, companion moved to ${rep.slug}` },
-          });
-          // The companion update has no declared avatarId field; it reaches the column through
-          // the update's spread. Read it back so a future API change cannot make this a no-op.
-          const back = r.ok ? await adminCall(target, 'GET', `/api/admin/companions/${c.id}`) : null;
-          const now = back?.body?.companion?.avatarId ?? back?.body?.avatarId ?? null;
-          if (!r.ok || now !== rep.id) {
-            say(`  companion ${c.name}: reassign failed (${r.status}${r.error ? ` ${r.error}` : ''}${r.ok ? `, now ${now}` : ''}) — stopped\n`);
-            journal.push(`- companion \`${c.id}\` (${c.name}): reassign FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}${r.ok ? `, read back avatarId ${now}` : ''}`, '');
-            return finish(1);
-          }
-          say(`  companion ${c.name} -> ${rep.slug}\n`);
-          journal.push(`- companion \`${c.id}\` (${c.name}) -> ${rep.slug}. Undo: PUT /api/admin/companions/${c.id} {"companion":{"avatarId":"${a.id}"},"admin":{"reason":"undo cleanup"}}`);
-        }
-        for (const s of a.talkShowSlots) {
-          const r = await adminCall(target, 'PUT', `/api/admin/talk-shows/${s.showId}/companions/${s.slotId}`, { avatarId: rep.id });
-          if (!r.ok) {
-            say(`  talk show ${s.showName} / ${s.label}: reassign failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`);
-            journal.push(`- talk-show slot \`${s.slotId}\` (${s.showName} / ${s.label}): reassign FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`, '');
-            return finish(1);
-          }
-          say(`  talk show ${s.showName} / ${s.label} -> ${rep.slug}\n`);
-          journal.push(`- talk-show slot \`${s.slotId}\` (${s.showName} / ${s.label}) -> ${rep.slug}. Undo: PUT /api/admin/talk-shows/${s.showId}/companions/${s.slotId} {"avatarId":"${a.id}"}`);
-        }
-
-        if (a.status !== 'archived') {
-          const r = await adminCall(target, 'DELETE', `/api/admin/avatars/${a.id}?reason=${encodeURIComponent(why)}`);
-          if (!r.ok) { say(`  archive failed (${r.status}${r.error ? ` ${r.error}` : ''}) — stopped\n`); journal.push(`- archive FAILED: HTTP ${r.status}${r.error ? ` ${r.error}` : ''}`, ''); return finish(1); }
-          say('  archived\n');
-          journal.push(`- archived. Undo: PUT /api/admin/avatars/${a.id} {"status":"${a.status ?? 'active'}","isActive":${a.isActive}}`);
-        } else {
-          say('  already archived\n');
-        }
-
-        // No delete-for-good: the platform removed it (telegamez#4648, 410 on `?hard=true`). The
-        // row and its history stay; old versions go through Remove old versions.
-        journal.push('');
-      }
-      return finish(0);
-    }
-
     if (url.pathname === '/api/go-live' && req.method === 'POST') {
-      const { env, char, avatarId, modelKey, reason } = await readBody(req);
+      const { env, char, characterId, version, reason } = await readBody(req);
       const target = ENVIRONMENTS[env];
       if (!target) return send(res, 400, { error: `unknown environment: ${env}` });
       if (!session.token) return send(res, 400, { error: 'no token set' });
-      if (!avatarId || !modelKey) return send(res, 400, { error: 'avatarId and modelKey are required' });
+      if (!ID_OK.test(String(characterId || '')) || !/^[A-Za-z0-9._-]{6,64}$/.test(String(version || ''))) {
+        return send(res, 400, { error: 'characterId and version are required' });
+      }
       // telegamez#4632 phase 1b: going live is a state change on the version, with its reason.
       const why = reasonOf(reason);
       if (!why) return send(res, 400, { error: 'a reason is required: it goes into the character history' });
 
-      const r = await fetch(`${target.apiBase}/api/admin/avatars/${avatarId}/model-path`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ modelKey, reason: why }),
-      });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        return send(res, 502, { error: body?.error ?? body?.message ?? `admin API ${r.status}` });
-      }
-      // Read the registry back: the row's path alone cannot say the registry agrees. `live` is
-      // the proof the page shows; a platform without the versions route is reported as such.
-      const check = await registryOf(target, avatarId, String(modelKey).split('/')[2] ?? null);
-      const status = body?.data?.status ?? null;
+      const r = await adminCall(target, 'POST', `/api/admin/characters/${encodeURIComponent(characterId)}/versions/${encodeURIComponent(version)}/live`, { reason: why });
+      if (!r.ok) return send(res, 502, { error: r.error ?? `admin API ${r.status}` });
+      const activated = r.body?.version ?? {};
+      const modelKey = activated.modelKey ?? null;
+      const previous = activated.previousModelPath ?? null;
+      const status = activated.avatarStatus ?? null;
+      // The registry read back, independently of the response: `live` is the proof the page shows.
+      const check = await registryOf(target, characterId, version);
 
-      // The bake suffix is already in the key, so the record lands in the same file as the
-      // publish it completes rather than needing the page to carry it back here.
-      //
-      // The key's segment is `<char>-<build>-<suffix>` (older publishes: `<char>-<suffix>`),
-      // because publish passes -BakeHash that way, but publish names its file from the bare
-      // suffix. Taking the segment whole put every go-live in a file of its own beside the
-      // publish it belonged to - which is how the original six ended up as panda-tele-*,
-      // panda-tele1-* and so on, apart from their publishes.
-      const segment = String(modelKey).split('/')[2] ?? 'unknown';
-      const suffix = segment.startsWith(`${char}-`)
-        ? segment.slice(char.length + 1).replace(/^(?:ktx2|meshopt)-/, '')
-        : segment;
-      const previous = body?.data?.previousModelPath ?? null;
+      // The version is `<char>-<build>-<suffix>`; the record lands in the same journal file as the
+      // publish it completes, which publish named from the bare suffix.
+      const suffix = String(version).startsWith(`${char}-`)
+        ? String(version).slice(String(char).length + 1).replace(/^(?:ktx2|meshopt)-/, '')
+        : String(version);
       const recorded = recordGoLive({
-        env, apiBase: target.apiBase, char, avatarId,
+        env, apiBase: target.apiBase, char, characterId, version,
         bakeSuffix: suffix, modelKey, previous,
-        reason: why, state: check.state, registry: check.registry, status,
+        reason: why, state: check.state, status,
       });
 
-      return send(res, 200, { char, avatarId, modelKey, previous, recorded, status, versionState: check.state, registry: check.registry });
+      return send(res, 200, { char, characterId, version, modelKey, previous, recorded, status,
+        versionState: check.state, roomsRefreshed: r.body?.roomsRefreshed ?? [] });
     }
 
     return send(res, 404, { error: 'not found' });

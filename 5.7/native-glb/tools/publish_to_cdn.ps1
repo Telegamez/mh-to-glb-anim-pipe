@@ -160,12 +160,15 @@ $files = Get-ChildItem -Path $root -Recurse -File |
 if ($files | Where-Object { $_.Relative -eq 'character.json' }) {
   throw "$Source already holds a character.json; the publisher generates that file from -Identity"
 }
-try { $identity = $Identity | ConvertFrom-Json } catch { throw "-Identity is not JSON: $Identity" }
-if ($identity.id -cne $CharacterId) { throw "-Identity id '$($identity.id)' does not match -CharacterId '$CharacterId'" }
-if (-not $identity.name) { throw "-Identity needs a name" }
-$release = [ordered]@{ id = $identity.id; name = $identity.name }
-$release.gender = if ($identity.gender) { $identity.gender } else { $null }
-$release.tags = @(if ($identity.tags) { $identity.tags } else { @() })
+# Parsed into its own variable: `$identity` IS `$Identity` (names are case-insensitive), and that
+# parameter is typed [string], so assigning the parsed object to it turned it back into a string
+# and `.id` read as empty - every publish failed with "-Identity id '' does not match".
+try { $who = $Identity | ConvertFrom-Json } catch { throw "-Identity is not JSON: $Identity" }
+if ($who.id -cne $CharacterId) { throw "-Identity id '$($who.id)' does not match -CharacterId '$CharacterId'" }
+if (-not $who.name) { throw "-Identity needs a name" }
+$release = [ordered]@{ id = $who.id; name = $who.name }
+$release.gender = if ($who.gender) { $who.gender } else { $null }
+$release.tags = @(if ($who.tags) { $who.tags } else { @() })
 
 # Previews ride inside the version (telegamez#4632 phase 1b). character.json names them; on
 # go-live the platform mirrors them onto the avatar's preview columns, on rollback the previous

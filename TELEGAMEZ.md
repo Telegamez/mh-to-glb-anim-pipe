@@ -133,7 +133,7 @@ flow had not worked since #44 removed `publish_previews.ps1` and #48 changed
 |---|---|
 | `tools/console/`: the Publish phase is gone — the token field, Create record, Upload model, Upload previews, Go live and Check; `/api/token`, `/api/resolve`, `/api/create-avatar`, `/api/publish`, `/api/publish-previews`, `/api/go-live` and `/api/verify`; the environment select; the Upload, Assets and Live columns; its copy of the publish journal. The page keeps Bake, Previews only, Compress and Delete, and says where publishing is | One publish path, by character id, with a reason on every call. A second copy against retired routes would answer 410 at the first press, and a copy that happened to work would be a second place to drift. |
 | `Start-Console.ps1` defaults to port 7312 | The Publisher owns 7311; both run at once during a bake-then-publish session. |
-| `tools/bake/` (`Start-Bake.ps1`, the August bake-only console) is untouched | `tools/console/` superseded it on 2026-08-28 and nothing has changed it since; whether it goes is the owner's call. |
+| `tools/bake/` and `Start-Bake.ps1` (the August bake-only console) are removed, on the owner's decision of 2026-10-10 | `tools/console/` superseded it on 2026-08-28 and nothing changed it since; two bake consoles on the same default port (7312) would be one more way to open the wrong one. `Start-Console.ps1` is the bake console. |
 
 ## ktx2 is the only build (owner decision, 2026-10-08)
 

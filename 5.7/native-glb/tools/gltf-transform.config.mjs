@@ -112,10 +112,15 @@ function pruneMorphs() {
       p.keep.sort((x, y) => x - y);
     }
 
-    // Pass 3: apply.
+    applyPlans(document, plans, 'PRUNE');
+  };
+}
+
+/** Remove every target a plan does not keep, with its accessors, names and weights. */
+function applyPlans(document, plans, label) {
     for (const { mesh, prims, count, keep } of plans) {
       if (keep.length === count) {
-        console.log(`PRUNE ${mesh.getName()}\t${count}\t${count}`);
+        console.log(`${label} ${mesh.getName()}\t${count}\t${count}`);
         continue;
       }
       const extras = mesh.getExtras() || {};
@@ -136,8 +141,34 @@ function pruneMorphs() {
       }
       if (names) mesh.setExtras({ ...extras, targetNames: keep.map((t) => names[t]) });
       if (weights.length === count) mesh.setWeights(keep.map((t) => weights[t]));
-      console.log(`PRUNE ${mesh.getName()}\t${keep.length}\t${count}`);
+      console.log(`${label} ${mesh.getName()}\t${keep.length}\t${count}`);
     }
+}
+
+/**
+ * ## keep-morphs
+ *
+ * Keeps only the morph targets whose NAME is in `names`, on every mesh that names its targets
+ * (`extras.targetNames`); a mesh without names is left alone. LOSSY by design: for a surface that
+ * provably drives a subset, such as the seat model (telegamez#4863), whose runtime was measured
+ * to write 49 of the head's 71 channels. A runtime write to a removed name is a no-op.
+ *
+ * Prints one `KEEP <mesh>\t<kept>\t<total>` line per mesh.
+ */
+function keepMorphs(names) {
+  return (document) => {
+    const plans = [];
+    for (const mesh of document.getRoot().listMeshes()) {
+      const prims = mesh.listPrimitives();
+      const count = Math.max(0, ...prims.map((p) => p.listTargets().length));
+      const meshNames = mesh.getExtras()?.targetNames;
+      if (count === 0 || !Array.isArray(meshNames) || meshNames.length !== count) continue;
+      if (prims.some((p) => p.listTargets().length !== count)) continue;
+      const keep = [];
+      meshNames.forEach((n, t) => { if (names.has(n)) keep.push(t); });
+      plans.push({ mesh, prims, count, keep });
+    }
+    applyPlans(document, plans, 'KEEP');
   };
 }
 
@@ -185,6 +216,15 @@ export default {
       .action(({ args, options, logger }) =>
         Session.create(io, logger, args.input, args.output)
           .transform(stripMorphNormals(new RegExp(String(options.meshes)))));
+    program
+      .command('keep-morphs', 'Keep only the named morph targets on every mesh that names them')
+      .help('Lossy by design. Rewrites extras.targetNames and weights to match.')
+      .argument('<input>', 'Path to read glTF 2.0 (.glb, .gltf) model')
+      .argument('<output>', 'Path to write output')
+      .option('--names <list>', 'Comma-separated morph target names to keep', { default: '' })
+      .action(({ args, options, logger }) =>
+        Session.create(io, logger, args.input, args.output)
+          .transform(keepMorphs(new Set(String(options.names).split(',').map((n) => n.trim()).filter(Boolean)))));
     program
       .command('prune-morphs', 'Remove morph targets that move none of a mesh\'s vertices')
       .help('Lossless, per mesh. Rewrites extras.targetNames and weights to match.')

@@ -130,7 +130,27 @@ const leanTextures = flag('lean-textures', 'on') === 'on';
 // the avatar manifest's `variants.seat`; a surface without a seat file loads the room model.
 // On by default; `--seat off` skips it.
 const seat = flag('seat', 'on') !== 'off';
-const SEAT_TEXTURE_PX = 1024;
+const SEAT_TEXTURE_PX = 512;
+// The channels a seat drives (telegamez#4863): measured on the Hold'em fixture with five heads
+// through idle, listening, thinking and speaking (with visemes and from the analyser), every
+// channel that ever moved, plus all the visemes (the fixture's speech has no CH/RR/TH; viseme_sil
+// is kept wherever the room model keeps it, so the name never vanishes) and the few the runtime can
+// drive that the run did not hit (jaw, funnel, blinks, brow down). The runtime warns about every
+// write to a missing name, so channels it writes stay even when they barely move. The other 22
+// (cheekPuff, sneers, dimples, jaw sideways, tongueOut, ...) are cut from the seat.
+const SEAT_MORPHS = [
+  'viseme_PP', 'viseme_FF', 'viseme_TH', 'viseme_DD', 'viseme_kk', 'viseme_CH', 'viseme_SS',
+  'viseme_nn', 'viseme_RR', 'viseme_aa', 'viseme_E', 'viseme_I', 'viseme_O', 'viseme_U',
+  'browInnerUp', 'browOuterUpLeft', 'browOuterUpRight', 'browDownLeft', 'browDownRight',
+  'eyeBlinkLeft', 'eyeBlinkRight', 'eyesClosed', 'eyesLookUp',
+  'eyeLookInLeft', 'eyeLookInRight', 'eyeLookOutLeft', 'eyeLookOutRight', 'eyeLookUpLeft', 'eyeLookUpRight',
+  'eyeSquintLeft', 'eyeSquintRight',
+  'jawOpen', 'mouthFunnel', 'mouthPucker', 'mouthOpen', 'mouthSmile',
+  'mouthLowerDownLeft', 'mouthLowerDownRight', 'mouthUpperUpLeft', 'mouthUpperUpRight',
+  'mouthRollLower', 'mouthShrugLower', 'mouthShrugUpper',
+  'viseme_sil', 'eyesLookDown', 'eyeLookDownLeft', 'eyeLookDownRight',
+  'cheekSquintLeft', 'cheekSquintRight', 'mouthClose',
+];
 const LEAN_TEXTURES = [
   ['MI_Teeth_*', 512],
   ['MI_Eye*', 512],
@@ -279,8 +299,15 @@ let pruned = null;
  * textures, an optional texture cap, then the texture codecs and meshopt last (see "Order
  * matters" above). `tag` keeps each model's intermediate files apart.
  */
-function browserModel(from, normals, capPx, dst, tag) {
+function browserModel(from, normals, capPx, dst, tag, keepNames = null) {
   let cur = from;
+  if (keepNames) {
+    const k = path.join(out, `.tmp-${tag}k.glb`);
+    tmp.push(k);
+    gt(['keep-morphs', cur, k, '--names', keepNames.join(','), '--config', `"${CONFIG}"`],
+       `keep    (${keepNames.length} morph channels the seat drives)`);
+    cur = k;
+  }
   const a = path.join(out, `.tmp-${tag}a.glb`);
   const b = path.join(out, `.tmp-${tag}b.glb`);
   tmp.push(a, b);
@@ -329,7 +356,7 @@ function browserModel(from, normals, capPx, dst, tag) {
   }
   browserModel(roomSrc, morphNormals, 0, outGlb, '');
   gt(['meshopt', srcGlb, compositorGlb], 'meshopt (compositor model, PNG)');
-  if (seat) browserModel(roomSrc, 'drop', SEAT_TEXTURE_PX, seatGlb, 'seat-');
+  if (seat) browserModel(roomSrc, 'drop', SEAT_TEXTURE_PX, seatGlb, 'seat-', SEAT_MORPHS);
 }
 for (const t of tmp) fs.rmSync(t, { force: true });
 
@@ -369,13 +396,16 @@ for (const glb of seat ? [outGlb, compositorGlb, seatGlb] : [outGlb, compositorG
 console.log(`  model ${MB(sizeOf(srcGlb))} MB -> ${MB(sizeOf(outGlb))} MB`);
 console.log(`  compositor model ${MB(sizeOf(compositorGlb))} MB`);
 if (seat) {
-  // The seat model is pruned like the room model and must carry exactly its morph targets: the
-  // lipsync drive and the face writer find them by name.
+  // The seat model carries the room model's targets cut to SEAT_MORPHS (telegamez#4863): per mesh
+  // exactly the room's targets that are in the seat list, in the room's order. The lipsync drive
+  // and the face writer find them by name, so a seat channel the room has must not go missing.
   const roomNames = targetNames(outGlb);
   const seatNames = targetNames(seatGlb);
+  const seatSet = new Set(SEAT_MORPHS);
   for (const [mesh, names] of Object.entries(roomNames)) {
-    if ((seatNames[mesh] || []).join('\n') !== names.join('\n')) {
-      console.error(`\nABORT: ${path.basename(seatGlb)} ${mesh} morph targets differ from the room model's.`);
+    const expected = names.filter((n) => seatSet.has(n));
+    if ((seatNames[mesh] || []).join('\n') !== expected.join('\n')) {
+      console.error(`\nABORT: ${path.basename(seatGlb)} ${mesh} morph targets are not the room model's cut to the seat channels.`);
       process.exit(1);
     }
   }
@@ -453,7 +483,7 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
   },
   compositor_model: { after_bytes: sizeOf(compositorGlb) },
   seat_model: seat
-    ? { after_bytes: sizeOf(seatGlb), morph_normals: 'drop', texture_px_max: SEAT_TEXTURE_PX, structure: structure(seatGlb) }
+    ? { after_bytes: sizeOf(seatGlb), morph_normals: 'drop', texture_px_max: SEAT_TEXTURE_PX, morph_channels: SEAT_MORPHS.length, structure: structure(seatGlb) }
     : null,
   // Room model only. Null when --prune-morphs off.
   pruned_morph_targets: pruned,

@@ -159,7 +159,9 @@ function contentTimeOf(dir, name) {
  * The ktx2 build for `<name>`, or null; `current` is what Publish sends as it stands. Only
  * current if it records the `variants` the publish sends as the avatar manifest, naming this
  * character's files - without them the compositor would fall back to the KTX2 model, and
- * `publish_to_cdn.ps1` refuses a room variant that is not `<char>.glb`.
+ * `publish_to_cdn.ps1` refuses a room variant that is not `<char>.glb`. It must also carry the
+ * seat model (telegamez#4863), so every publish has one: a build made before the seat model
+ * existed is remade rather than sent without it.
  */
 function compressedInfo(root, name, contentTime) {
   const dir = compressedPath(root, name);
@@ -179,9 +181,10 @@ function compressedInfo(root, name, contentTime) {
   const stale = fs.statSync(glb).mtimeMs < contentTime;
   const publishable = mode === BUILD && variants?.room === `${name}.glb` && Boolean(variants?.compositor)
     && fs.existsSync(path.join(dir, variants.compositor));
+  const seat = variants?.seat === `${name}.seat.glb` && fs.existsSync(path.join(dir, variants.seat));
   return {
-    dir, mode, variants, stale, publishable, mb: Math.round(bytes / 1048576),
-    current: !stale && publishable,
+    dir, mode, variants, stale, publishable, seat, mb: Math.round(bytes / 1048576),
+    current: !stale && publishable && seat,
   };
 }
 
@@ -920,8 +923,9 @@ const server = http.createServer(async (req, res) => {
       };
       if (!identity.name) return send(res, 400, { error: `${char}: ${local.id} is new to ${env}, so its character.json needs a "name"` });
 
-      // What goes up is the ktx2 build, always. A missing build, a stale one or one that does not
-      // name this character's files is remade here first, so a publish is one action.
+      // What goes up is the ktx2 build, always. A missing build, a stale one, one that does not
+      // name this character's files or one without the seat model is remade here first, so a
+      // publish is one action.
       let made = compressedInfo(root, char, contentTimeOf(pkgDir, char));
       if (!made || !made.current) {
         if (!fs.existsSync(COMPRESSOR)) {
@@ -932,7 +936,8 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
         const why = !made ? `no ${BUILD} build yet`
           : made.stale ? `${BUILD} build is older than the package`
-            : `${BUILD} build is mode="${made.mode}" or does not name ${char}'s two models`;
+            : !made.publishable ? `${BUILD} build is mode="${made.mode}" or does not name ${char}'s two models`
+              : `${BUILD} build has no seat model`;
         const code = await runInto(res, `Compress — ${char} (${why})`, COMPRESSOR,
           ['-Char', char, '-Root', root, '-Mode', BUILD]);
         made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char)) : null;

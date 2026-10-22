@@ -329,9 +329,11 @@ function render() {
       + '<br><span class="dim" style="font-size:11px">' + (c.identity ? 'character <span class="mono">' + esc(c.identity.id) + '</span>' + (c.identity.name ? ' &middot; ' + esc(c.identity.name) : '') : 'no character.json') + '</span></td>'
       + '<td class="mono dim">' + c.mb + ' MB'
       + (c.compressed && c.compressed.current
-          ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressed.mb + ' MB ktx2 (both models)</span>'
+          ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressed.mb + ' MB ktx2 (room, compositor, seat)</span>'
           : '<br><span class="warn" style="font-size:11px">&rarr; ktx2 build '
-            + (c.compressed ? (c.compressed.stale ? 'stale' : 'unusable') + ', remade' : 'made') + ' on publish</span>')
+            + (c.compressed
+              ? (c.compressed.stale ? 'stale' : !c.compressed.publishable ? 'unusable' : 'has no seat model') + ', remade'
+              : 'made') + ' on publish</span>')
       + '</td>'
       + '<td>' + action + live + '</td>';
     tb.appendChild(tr);

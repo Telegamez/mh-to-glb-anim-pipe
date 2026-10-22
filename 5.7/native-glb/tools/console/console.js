@@ -39,7 +39,7 @@ function steps(c) {
     // or stale one, so neither blocks anything. 'warn' means "the Publisher will compress
     // first"; 'no' is a package the compressor cannot help because it is not finished.
     size: !c.compressed ? (c.ready ? 'warn' : 'no')
-      : (c.compressed.stale || !c.compressed.publishable || c.compressed.mode !== 'ktx2') ? 'warn'
+      : (c.compressed.stale || !c.compressed.publishable || !c.compressed.seat || c.compressed.mode !== 'ktx2') ? 'warn'
         : 'ok',
   };
 }
@@ -65,7 +65,8 @@ function sizeLine(c) {
   if (!k) return `${c.payloadMb} MB · compresses on publish`;
   if (k.stale) return `${c.payloadMb} MB · ktx2 build is STALE — remade on publish`;
   if (k.mode !== 'ktx2') return `${c.payloadMb} MB · ${k.mode} build — remade as ktx2 on publish`;
-  return `${c.payloadMb} → ${k.mb} MB · ktx2${k.publishable ? '' : ' (no compositor variant — remade on publish)'}`;
+  if (!k.publishable) return `${c.payloadMb} → ${k.mb} MB · ktx2 (no compositor variant — remade on publish)`;
+  return `${c.payloadMb} → ${k.mb} MB · ktx2${k.seat ? '' : ' (no seat model — remade on publish)'}`;
 }
 
 function renderGrid() {

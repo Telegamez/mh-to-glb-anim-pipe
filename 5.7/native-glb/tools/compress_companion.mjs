@@ -52,7 +52,9 @@
  *     It shares the room model's sidecar; only the GLB differs. `--seat off` skips it.
  *   - `textures/`: every PNG kept, plus a `.ktx2` sibling for each.
  *   - `mh_materials.json`: paths still name the PNGs (the compositor reads them), plus
- *     `browser_texture_format: "ktx2"`, which tells the browser to fetch the siblings.
+ *     `browser_texture_format: "ktx2"`, which tells the browser to fetch the siblings, and
+ *     `texture_sha256` (telegamez#4863), a fingerprint per .ktx2 so identical maps share one
+ *     GPU copy across characters.
  * `compression_manifest.json` records `variants: { room, compositor, seat }`. The publisher sends that
  * as the avatar manifest's `variants`, which is how the compositor is routed to its own file.
  * Without that routing the compositor falls back to the room model and cannot decode it.
@@ -81,6 +83,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -410,6 +413,18 @@ const sidecar = JSON.parse(fs.readFileSync(srcSidecar, 'utf8'));
 // `browser_texture_format` tells the browser to fetch each one's `.ktx2` sibling instead
 // (`browserTextureUrl` in telegamez's metaHumanMaterials.ts).
 sidecar.browser_texture_format = 'ktx2';
+// telegamez#4863: a fingerprint per browser texture, keyed by its path beside the model. The
+// browser keeps one GPU copy per fingerprint, so the maps every character shares (the outfit,
+// the eyelash coverage) are uploaded once per page rather than once per head. Every .ktx2 counts,
+// including the hair and brow card atlases the runtime derives rather than reads from here.
+const sidecarTex = path.join(out, 'textures');
+sidecar.texture_sha256 = Object.fromEntries(
+  (fs.existsSync(sidecarTex) ? fs.readdirSync(sidecarTex) : [])
+    .filter((f) => /\.ktx2$/i.test(f))
+    .sort()
+    .map((f) => [`textures/${f}`,
+      createHash('sha256').update(fs.readFileSync(path.join(sidecarTex, f))).digest('hex')]),
+);
 fs.writeFileSync(path.join(out, 'mh_materials.json'), JSON.stringify(sidecar, null, 2));
 
 // What one browser visit downloads: the room model and the KTX2 textures;

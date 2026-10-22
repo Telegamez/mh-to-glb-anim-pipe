@@ -196,6 +196,7 @@ and no clothing textures — which reads as a bad bake, not as a compression bug
 |---|---|
 | Room model (KTX2 textures, meshopt) | `characters/<id>/06-web/<id>.glb` |
 | Compositor model (PNG textures, meshopt) | `characters/<id>/06-web/<id>.compositor.glb` |
+| Seat model (KTX2, morph normals dropped, textures <= 1024 px) | `characters/<id>/06-web/<id>.seat.glb` |
 | Sidecar textures, PNG + `.ktx2` sibling each | `characters/<id>/06-web/textures/` |
 | Sidecar (`browser_texture_format: "ktx2"`) | `characters/<id>/06-web/mh_materials.json` |
 | Manifest (records `variants`) | `characters/<id>/06-web/compression_manifest.json` |
@@ -349,15 +350,18 @@ a room and fails on the TV and program output. `ktx2` therefore carries both:
 |---|---|
 | `<id>.glb` — KTX2 textures inside, meshopt | the browser (`variants.room`) |
 | `<id>.compositor.glb` — PNG textures inside, meshopt (what the retired `meshopt` build was) | the compositor (`variants.compositor`) |
+| `<id>.seat.glb` — the room model with morph normals dropped on every mesh and embedded textures capped at 1024 px; same sidecar (telegamez#4863) | the browser at seat size, e.g. the Hold'em table (`variants.seat`); `--seat off` skips it |
 | `textures/*.png` + a `.ktx2` sibling for each | PNG for the compositor, KTX2 for the browser |
 | `mh_materials.json` — paths unchanged, plus `browser_texture_format: "ktx2"` | both |
-| `compression_manifest.json` — records `variants: { room, compositor }` | the publisher |
+| `compression_manifest.json` — records `variants: { room, compositor, seat }` | the publisher |
 
 **Publishing it needs the avatar manifest.** `publish_to_cdn.ps1` reads `variants` from the
 build's `compression_manifest.json` and sends them as the upload route's `manifest` field (the
 route refuses a `manifest.json` sent as a file and writes it from that field). It refuses before
 uploading if `variants.room` is not the model or a variant file is missing. Without
 `variants.compositor` the compositor would fall back to the room model and could not decode it.
+`variants.seat` is optional: a build without it publishes as before, and a seat surface loads the
+room model instead.
 
 The ktx2 build is the only one the consoles publish (2026-10-08; earlier it was a `build`
 selector with meshopt as the default); the target environment's web app must include

@@ -194,7 +194,7 @@ function modelFileOf(dir, name) {
   if (fs.existsSync(path.join(dir, `${name}.glb`))) return `${name}.glb`;
   let glbs = [];
   try {
-    glbs = fs.readdirSync(dir).filter((f) => /\.glb$/i.test(f) && !/\.compositor\.glb$/i.test(f));
+    glbs = fs.readdirSync(dir).filter((f) => /\.glb$/i.test(f) && !/\.(compositor|seat)\.glb$/i.test(f));
   } catch { return null; }
   return glbs.length === 1 ? glbs[0] : null;
 }
@@ -1015,13 +1015,17 @@ const server = http.createServer(async (req, res) => {
         });
         if (buildFrom) {
           if (buildFrom !== buildTo) fs.renameSync(buildFrom, buildTo);
-          for (const [a, b] of [[`${stem}.glb`, `${to}.glb`], [`${stem}.compositor.glb`, `${to}.compositor.glb`]]) {
+          for (const [a, b] of [[`${stem}.glb`, `${to}.glb`], [`${stem}.compositor.glb`, `${to}.compositor.glb`],
+            [`${stem}.seat.glb`, `${to}.seat.glb`]]) {
             if (a !== b && fs.existsSync(path.join(buildTo, a))) fs.renameSync(path.join(buildTo, a), path.join(buildTo, b));
           }
           rewriteJson(path.join(buildTo, 'compression_manifest.json'), (j) => {
             j.companion = to;
             j.source = toDir;
-            if (j.variants) j.variants = { ...j.variants, room: `${to}.glb`, compositor: `${to}.compositor.glb` };
+            if (j.variants) {
+              j.variants = { ...j.variants, room: `${to}.glb`, compositor: `${to}.compositor.glb`,
+                ...(j.variants.seat ? { seat: `${to}.seat.glb` } : {}) };
+            }
           });
           rewriteJson(path.join(buildTo, 'mh_materials.json'), (j) => {
             j.character = to;

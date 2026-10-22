@@ -46,6 +46,10 @@
   Keep teeth/eye maps at full size and the body's specular/roughness maps too.
   By default they go to 512/512/128 px.
 
+.PARAMETER NoSeat
+  Skip <char>.seat.glb, the room model for seat-size slots (telegamez#4863): morph normals
+  dropped on every mesh and embedded textures capped at 1024 px. Made by default.
+
 .PARAMETER TexturePx
   Resample the KTX2 textures to this square size. 0 leaves them alone.
 
@@ -61,6 +65,7 @@ param(
     [switch]$NoPruneMorphs,
     [ValidateSet('small', 'drop', 'keep')][string]$MorphNormals = 'small',
     [switch]$NoLeanTextures,
+    [switch]$NoSeat,
     [string]$KtxBin = ''
 )
 
@@ -83,6 +88,7 @@ if ($KtxBin) { $toolArgs += @('--ktx-bin', $KtxBin) }
 if ($NoPruneMorphs) { $toolArgs += @('--prune-morphs', 'off') }
 $toolArgs += @('--morph-normals', $MorphNormals)
 if ($NoLeanTextures) { $toolArgs += @('--lean-textures', 'off') }
+if ($NoSeat) { $toolArgs += @('--seat', 'off') }
 
 Write-Host "source : $src"
 Write-Host "output : $out"

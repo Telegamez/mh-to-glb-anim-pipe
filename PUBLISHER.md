@@ -123,11 +123,13 @@ when ktx2 was meant, and nothing downstream could tell them apart.
 The ktx2 build (telegamez#3662) is lighter for phones: KTX2 textures stay compressed on the GPU,
 and unused blendshapes are dropped. On tg-drake it takes a companion's GPU memory from ~314 MB to
 ~108 MB and one visit's download from 41.6 MB to 24.5 MB. Its geometry is still
-meshopt-compressed inside the file; that is the codec, not a build. It carries **two models**:
+meshopt-compressed inside the file; that is the codec, not a build. It carries **two models**, plus an optional third:
 
 - `<character>.glb` for the browser, with KTX2 textures;
 - `<character>.compositor.glb` for the TV and program output, with PNG textures, because the
-  native compositor cannot decode KTX2.
+  native compositor cannot decode KTX2;
+- `<character>.seat.glb` for small seats such as the Hold'em table (telegamez#4863): the room
+  model with morph normals dropped and textures capped at 1024 px, on the same sidecar.
 
 It lives in `_compressed_ktx2/<character>/` beside the bakes. **Bake** ends by making it;
 **Publish** sends it, making it first if it is missing, older than the package, or does not name

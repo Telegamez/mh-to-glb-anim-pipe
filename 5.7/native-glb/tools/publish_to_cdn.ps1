@@ -119,7 +119,7 @@ if (Test-Path $compressionManifest) {
     if ($cm.variants.room -ne $model) {
       throw "variants.room '$($cm.variants.room)' is not the model being published ('$model')"
     }
-    foreach ($kind in 'room', 'compositor') {
+    foreach ($kind in 'room', 'compositor', 'seat') {
       $file = $cm.variants.$kind
       if ($file -and -not (Test-Path (Join-Path $Source $file))) {
         throw "variants.$kind names '$file', which is not in $Source"
@@ -127,8 +127,11 @@ if (Test-Path $compressionManifest) {
     }
     # Only the variants. Everything else an avatar manifest can carry (faceProfile,
     # compositorMorphDrops) is a per-rig decision that does not come from compression.
-    $avatarManifest = @{ variants = @{ room = $cm.variants.room; compositor = $cm.variants.compositor } } |
-      ConvertTo-Json -Compress -Depth 4
+    $variants = @{ room = $cm.variants.room; compositor = $cm.variants.compositor }
+    # telegamez#4863: the seat-size model, when the build has one. A build without it publishes
+    # exactly as before, and the browser loads the room model in its place.
+    if ($cm.variants.seat) { $variants.seat = $cm.variants.seat }
+    $avatarManifest = @{ variants = $variants } | ConvertTo-Json -Compress -Depth 4
   }
 }
 

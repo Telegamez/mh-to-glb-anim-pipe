@@ -332,7 +332,8 @@ function render() {
           ? '<br><span class="ok" style="font-size:11px">&rarr; ' + c.compressed.mb + ' MB ktx2 (room, compositor, seat)</span>'
           : '<br><span class="warn" style="font-size:11px">&rarr; ktx2 build '
             + (c.compressed
-              ? (c.compressed.stale ? 'stale' : !c.compressed.publishable ? 'unusable' : 'has no seat model') + ', remade'
+              ? (c.compressed.stale ? 'stale' : !c.compressed.publishable ? 'unusable'
+                : !c.compressed.seat ? 'has no seat model' : 'has no texture fingerprints') + ', remade'
               : 'made') + ' on publish</span>')
       + '</td>'
       + '<td>' + action + live + '</td>';

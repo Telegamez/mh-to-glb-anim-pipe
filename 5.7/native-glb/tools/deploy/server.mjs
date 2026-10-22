@@ -182,9 +182,15 @@ function compressedInfo(root, name, contentTime) {
   const publishable = mode === BUILD && variants?.room === `${name}.glb` && Boolean(variants?.compositor)
     && fs.existsSync(path.join(dir, variants.compositor));
   const seat = variants?.seat === `${name}.seat.glb` && fs.existsSync(path.join(dir, variants.seat));
+  // telegamez#4863: the sidecar's per-texture fingerprints, which let characters share GPU copies.
+  let fingerprinted = false;
+  try {
+    const side = JSON.parse(fs.readFileSync(path.join(dir, 'mh_materials.json'), 'utf8'));
+    fingerprinted = Boolean(side.texture_sha256) && typeof side.texture_sha256 === 'object';
+  } catch { /* no readable sidecar: not fingerprinted */ }
   return {
-    dir, mode, variants, stale, publishable, seat, mb: Math.round(bytes / 1048576),
-    current: !stale && publishable && seat,
+    dir, mode, variants, stale, publishable, seat, fingerprinted, mb: Math.round(bytes / 1048576),
+    current: !stale && publishable && seat && fingerprinted,
   };
 }
 
@@ -937,7 +943,8 @@ const server = http.createServer(async (req, res) => {
         const why = !made ? `no ${BUILD} build yet`
           : made.stale ? `${BUILD} build is older than the package`
             : !made.publishable ? `${BUILD} build is mode="${made.mode}" or does not name ${char}'s two models`
-              : `${BUILD} build has no seat model`;
+              : !made.seat ? `${BUILD} build has no seat model`
+                : `${BUILD} build has no texture fingerprints`;
         const code = await runInto(res, `Compress — ${char} (${why})`, COMPRESSOR,
           ['-Char', char, '-Root', root, '-Mode', BUILD]);
         made = code === 0 ? compressedInfo(root, char, contentTimeOf(pkgDir, char)) : null;

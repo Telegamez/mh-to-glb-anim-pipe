@@ -7,7 +7,7 @@
  * implementation instead of three.
  *
  *   node compress_companion.mjs --src <charDir> --out <outDir> [--mode ktx2]
- *                               [--texture-px N] [--ktx-bin <dir>]
+ *                               [--texture-px N] [--ktx-bin <dir>] [--seat off]
  *
  * ## One build: ktx2
  *
@@ -47,10 +47,13 @@
  *   - `<name>.glb`: the room model, KTX2 embedded textures + meshopt.
  *   - `<name>.compositor.glb`: PNG embedded textures + meshopt (model for model, what the
  *     retired `meshopt` build was).
+ *   - `<name>.seat.glb`: the room model for small on-screen seats (telegamez#4863, the Hold'em
+ *     pilot): morph normals dropped on every mesh and embedded textures capped at 1024 px.
+ *     It shares the room model's sidecar; only the GLB differs. `--seat off` skips it.
  *   - `textures/`: every PNG kept, plus a `.ktx2` sibling for each.
  *   - `mh_materials.json`: paths still name the PNGs (the compositor reads them), plus
  *     `browser_texture_format: "ktx2"`, which tells the browser to fetch the siblings.
- * `compression_manifest.json` records `variants: { room, compositor }`. The publisher sends that
+ * `compression_manifest.json` records `variants: { room, compositor, seat }`. The publisher sends that
  * as the avatar manifest's `variants`, which is how the compositor is routed to its own file.
  * Without that routing the compositor falls back to the room model and cannot decode it.
  *
@@ -117,6 +120,14 @@ const morphNormals = flag('morph-normals', 'small');
 // KTX2 encoding. Teeth are 512 rather than 256 because the tongue shares their material and
 // loses its surface detail at 256 with the mouth open; 512 keeps it, for ~1 MB.
 const leanTextures = flag('lean-textures', 'on') === 'on';
+// telegamez#4863: `<name>.seat.glb`, a second browser model for seat-size slots (the Hold'em table
+// draws heads at most 180 x 150 px). The room model's pipeline with morph normals dropped on every
+// mesh (`drop`, see above: the shallower creases are invisible at that size) and every embedded
+// texture capped at SEAT_TEXTURE_PX. Sidecar textures are shared with the room model. Routed by
+// the avatar manifest's `variants.seat`; a surface without a seat file loads the room model.
+// On by default; `--seat off` skips it.
+const seat = flag('seat', 'on') !== 'off';
+const SEAT_TEXTURE_PX = 1024;
 const LEAN_TEXTURES = [
   ['MI_Teeth_*', 512],
   ['MI_Eye*', 512],
@@ -255,17 +266,55 @@ const before = structure(srcGlb);
 const outGlb = path.join(out, `${name}.glb`);
 // The compositor's own model, routed to it through the avatar manifest's variants.
 const compositorGlb = path.join(out, `${name}.compositor.glb`);
+const seatGlb = path.join(out, `${name}.seat.glb`);
 const tmp = [];
 /** `[{ mesh, kept, total }]` when the room model's morph targets were pruned. */
 let pruned = null;
 
-// A block only to keep the intermediate file names local. Texture codecs first, meshopt last
-// (see "Order matters" above); the compositor model is the source with meshopt alone.
+/**
+ * One browser model from `from` (the source, pruned when pruning is on): morph normals, lean
+ * textures, an optional texture cap, then the texture codecs and meshopt last (see "Order
+ * matters" above). `tag` keeps each model's intermediate files apart.
+ */
+function browserModel(from, normals, capPx, dst, tag) {
+  let cur = from;
+  const a = path.join(out, `.tmp-${tag}a.glb`);
+  const b = path.join(out, `.tmp-${tag}b.glb`);
+  tmp.push(a, b);
+  if (normals !== 'keep') {
+    const n = path.join(out, `.tmp-${tag}n.glb`);
+    tmp.push(n);
+    const meshes = normals === 'small' ? '"^(?!Head_Mesh$)"' : '".*"';
+    gt(['strip-morph-normals', cur, n, '--meshes', meshes, '--config', `"${CONFIG}"`],
+       `strip   (morph normals: ${normals === 'small' ? 'all but the head' : 'every mesh'})`);
+    cur = n;
+  }
+  if (leanTextures) {
+    LEAN_TEXTURES.forEach(([pattern, px], i) => {
+      const r = path.join(out, `.tmp-${tag}r${i}.glb`);
+      tmp.push(r);
+      gt(['resize', cur, r, '--pattern', `"${pattern}"`, '--width', px, '--height', px],
+         `resize  (${pattern} -> ${px} px)`);
+      cur = r;
+    });
+  }
+  if (capPx > 0) {
+    const c = path.join(out, `.tmp-${tag}c.glb`);
+    tmp.push(c);
+    // `resize` only shrinks: a texture already inside the box is left as it is.
+    gt(['resize', cur, c, '--width', capPx, '--height', capPx], `resize  (every texture -> <= ${capPx} px)`);
+    cur = c;
+  }
+  gt(['uastc', cur, a, '--slots', MODEL_DATA_SLOTS], 'uastc   (normal/ORM/specular)');
+  gt(['etc1s', a, b], 'etc1s   (colour)');
+  gt(['meshopt', b, dst], `meshopt (geometry + morphs${tag === 'seat-' ? ', seat model' : ''})`);
+}
+
+// A block only to keep the intermediate file names local. The compositor model is the source
+// with meshopt alone.
 {
-  const p =path.join(out, '.tmp-p.glb');
-  const a = path.join(out, '.tmp-a.glb');
-  const b = path.join(out, '.tmp-b.glb');
-  tmp.push(p, a, b);
+  const p = path.join(out, '.tmp-p.glb');
+  tmp.push(p);
   let roomSrc = srcGlb;
   if (pruneMorphs) {
     const log = gt(['prune-morphs', srcGlb, p, '--config', `"${CONFIG}"`], 'prune   (morph targets stored as zeros)');
@@ -275,27 +324,9 @@ let pruned = null;
     });
     roomSrc = p;
   }
-  if (morphNormals !== 'keep') {
-    const n = path.join(out, '.tmp-n.glb');
-    tmp.push(n);
-    const meshes = morphNormals === 'small' ? '"^(?!Head_Mesh$)"' : '".*"';
-    gt(['strip-morph-normals', roomSrc, n, '--meshes', meshes, '--config', `"${CONFIG}"`],
-       `strip   (morph normals: ${morphNormals === 'small' ? 'all but the head' : 'every mesh'})`);
-    roomSrc = n;
-  }
-  if (leanTextures) {
-    LEAN_TEXTURES.forEach(([pattern, px], i) => {
-      const r = path.join(out, `.tmp-r${i}.glb`);
-      tmp.push(r);
-      gt(['resize', roomSrc, r, '--pattern', `"${pattern}"`, '--width', px, '--height', px],
-         `resize  (${pattern} -> ${px} px)`);
-      roomSrc = r;
-    });
-  }
-  gt(['uastc', roomSrc, a, '--slots', MODEL_DATA_SLOTS], 'uastc   (normal/ORM/specular)');
-  gt(['etc1s', a, b], 'etc1s   (colour)');
-  gt(['meshopt', b, outGlb], 'meshopt (geometry + morphs)');
+  browserModel(roomSrc, morphNormals, 0, outGlb, '');
   gt(['meshopt', srcGlb, compositorGlb], 'meshopt (compositor model, PNG)');
+  if (seat) browserModel(roomSrc, 'drop', SEAT_TEXTURE_PX, seatGlb, 'seat-');
 }
 for (const t of tmp) fs.rmSync(t, { force: true });
 
@@ -320,10 +351,10 @@ if (pruned) {
 }
 
 const after = structure(outGlb);
-for (const glb of [outGlb, compositorGlb]) {
+for (const glb of seat ? [outGlb, compositorGlb, seatGlb] : [outGlb, compositorGlb]) {
   const got = glb === outGlb ? after : structure(glb);
   for (const k of ['meshes', 'primitives', 'morphTargets', 'materials']) {
-    if (k === 'morphTargets' && glb === outGlb && pruned) continue;
+    if (k === 'morphTargets' && glb !== compositorGlb && pruned) continue;
     if (before[k] !== got[k]) {
       console.error(`\nABORT: ${path.basename(glb)} ${k} changed ${before[k]} -> ${got[k]}. That `
         + 'is not a compression result — geometry or the material set was rewritten, and the '
@@ -334,6 +365,19 @@ for (const glb of [outGlb, compositorGlb]) {
 }
 console.log(`  model ${MB(sizeOf(srcGlb))} MB -> ${MB(sizeOf(outGlb))} MB`);
 console.log(`  compositor model ${MB(sizeOf(compositorGlb))} MB`);
+if (seat) {
+  // The seat model is pruned like the room model and must carry exactly its morph targets: the
+  // lipsync drive and the face writer find them by name.
+  const roomNames = targetNames(outGlb);
+  const seatNames = targetNames(seatGlb);
+  for (const [mesh, names] of Object.entries(roomNames)) {
+    if ((seatNames[mesh] || []).join('\n') !== names.join('\n')) {
+      console.error(`\nABORT: ${path.basename(seatGlb)} ${mesh} morph targets differ from the room model's.`);
+      process.exit(1);
+    }
+  }
+  console.log(`  seat model ${MB(sizeOf(seatGlb))} MB`);
+}
 
 // ---------------------------------------------------------------------------- textures
 const srcTex = path.join(src, 'textures');
@@ -386,8 +430,16 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
   browser_texture_format: 'ktx2',
   // For the publisher: send as the avatar manifest's `variants`. Without `compositor` the
   // compositor falls back to `room` and cannot decode its KTX2 textures.
-  variants: { room: path.basename(outGlb), compositor: path.basename(compositorGlb) },
+  // `seat` (telegamez#4863) is the room model for seat-size slots; absent with --seat off.
+  variants: {
+    room: path.basename(outGlb),
+    compositor: path.basename(compositorGlb),
+    ...(seat ? { seat: path.basename(seatGlb) } : {}),
+  },
   compositor_model: { after_bytes: sizeOf(compositorGlb) },
+  seat_model: seat
+    ? { after_bytes: sizeOf(seatGlb), morph_normals: 'drop', texture_px_max: SEAT_TEXTURE_PX, structure: structure(seatGlb) }
+    : null,
   // Room model only. Null when --prune-morphs off.
   pruned_morph_targets: pruned,
   morph_normals: morphNormals,

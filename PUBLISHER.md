@@ -123,7 +123,7 @@ when ktx2 was meant, and nothing downstream could tell them apart.
 The ktx2 build (telegamez#3662) is lighter for phones: KTX2 textures stay compressed on the GPU,
 and unused blendshapes are dropped. On tg-drake it takes a companion's GPU memory from ~314 MB to
 ~108 MB and one visit's download from 41.6 MB to 24.5 MB. Its geometry is still
-meshopt-compressed inside the file; that is the codec, not a build. It carries **two models**, plus an optional third:
+meshopt-compressed inside the file; that is the codec, not a build. It carries **three models**:
 
 - `<character>.glb` for the browser, with KTX2 textures;
 - `<character>.compositor.glb` for the TV and program output, with PNG textures, because the
@@ -132,8 +132,8 @@ meshopt-compressed inside the file; that is the codec, not a build. It carries *
   model with morph normals dropped and textures capped at 1024 px, on the same sidecar.
 
 It lives in `_compressed_ktx2/<character>/` beside the bakes. **Bake** ends by making it;
-**Publish** sends it, making it first if it is missing, older than the package, or does not name
-the character's two models; **Compress** remakes it on demand. Upload sends both models, the PNGs
+**Publish** sends it, making it first if it is missing, older than the package, does not name
+the character's two models, or has no seat model (a build from before the seat model existed); **Compress** remakes it on demand. Upload sends both models, the PNGs
 with a `.ktx2` beside each, and the `variants` that route the compositor to its own model (the
 platform writes them into the avatar's `manifest.json`). Every environment's web app loads it
 (telegamez#4551; beta since 2.0.0-rc52.3).

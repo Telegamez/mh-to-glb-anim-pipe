@@ -147,8 +147,8 @@ function contentTimeOf(dir, name) {
 /**
  * What is in `_compressed_ktx2/<name>/`, or null. `publishable` needs a ktx2 manifest whose
  * compositor variant exists: without it the compositor falls back to the KTX2 room model and
- * cannot decode it. `current` is what publish wants - that, no older than the package - and
- * anything else is compressed again before upload.
+ * cannot decode it. `current` is what publish wants - that, no older than the package, with the
+ * seat model (telegamez#4863) - and anything else is compressed again before upload.
  */
 function compressedInfo(root, name, contentTime) {
   const build = BUILD;
@@ -167,14 +167,15 @@ function compressedInfo(root, name, contentTime) {
   const stale = fs.statSync(glb).mtimeMs < contentTime;
   const publishable = mode === 'ktx2' && Boolean(variants?.room && variants?.compositor)
     && fs.existsSync(path.join(dir, variants.compositor));
+  const seat = Boolean(variants?.seat) && fs.existsSync(path.join(dir, variants.seat));
   return {
-    dir, build, mode, textureFormat, variants, stale, publishable,
+    dir, build, mode, textureFormat, variants, stale, publishable, seat,
     // Per browser visit, the figure the size column compares against the bake: the room model,
     // the sidecar and the .ktx2 textures. The compositor's model and PNGs sit beside them and
     // are never fetched by a browser, so counting them would make the build look bigger than
     // what a phone downloads.
     mb: Math.round(payloadBytes(dir, name, { browserKtx2: true }) / 1048576),
-    current: mode === build && !stale && publishable,
+    current: mode === build && !stale && publishable && seat,
   };
 }
 

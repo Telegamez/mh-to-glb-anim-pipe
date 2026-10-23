@@ -1,11 +1,14 @@
 {
-  "_comment": "MALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the female set at the owner's direction. Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking is Thinking_AN_Idle_70_Waiting, supplied by the owner 2026-08-21 from the gendered pack and shared between the sets; it replaced TG-Anim_Deep_Breath_Sad, which was never loop-authored and failed the stage-05 loop-seam gate at 3.318 deg (#3269, #3321). The four remaining gestures - Nod, HeadShake, Dismiss, Angry - still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed, and are the slots still awaiting replacements.",
+  "_comment": "MALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the female set at the owner's direction. Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking is Thinking_AN_Idle_70_Waiting, supplied by the owner 2026-08-21 from the gendered pack and shared between the sets; it replaced TG-Anim_Deep_Breath_Sad, which was never loop-authored and failed the stage-05 loop-seam gate at 3.318 deg (#3269, #3321). The four remaining gestures - Nod, HeadShake, Dismiss, Angry - still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed, and are the slots still awaiting replacements. BreathingIdle, Listening2 and Listening3 added 2026-10-23 (telegamez#4908): Kimodo takes, retargeted to MetaHuman by kimodo-bridge and bookended on THIS set's production Idle frame 0 (Kimodo Studio packs companion-loops-male, takes approved by the owner). They are looping state clips: BreathingIdle is the runtime's base loop, Listening2/Listening3 lead the compositor's Idle/Listening chains. Measured on tg-jen / tg-tom: hand rise <= 0.02, closest hand-to-head >= 0.66, seam 0.00 deg; each take was also screened for one-frame snaps (worst body-joint step <= 8 deg at the source; the first picks for female Listening2/Listening3 and male Listening3 snapped 15-24 deg and were replaced). Kimodo does not animate fingers; they hold the retarget pose.",
   "required": {
     "Idle": "/Game/Animations/male_AN_Idle_65",
     "Listening": "/Game/Animations/male_AN_Idle_49_WarmUp",
     "Thinking": "/Game/Animations/Thinking_AN_Idle_70_Waiting",
     "Focused": "/Game/Animations/FocusHeadMale_AN_Idle_65",
-    "Speaking": "/Game/Animations/male_AN_Idle_03"
+    "Speaking": "/Game/Animations/male_AN_Idle_03",
+    "BreathingIdle": "/Game/Kimodo/Retargeted/KM_Breathingidle_0c89",
+    "Listening2": "/Game/Kimodo/Retargeted/KM_Listening2_14b1",
+    "Listening3": "/Game/Kimodo/Retargeted/KM_Listening3_aad4"
   },
   "gestures": {
     "Nod": "/Game/Animations/previousPack/No_Anim_No",

@@ -150,6 +150,24 @@ if ($LASTEXITCODE -ne 0) {
   exit 1
 }
 
+# --- bone-envelope gate (telegamez#4908) -------------------------------------
+# A clip can loop cleanly and keep its hands low and still tear the garment: the first Kimodo
+# loops did, by swinging the clavicles past anything the production loops do. When the animset
+# names an 'envelope' block, every clip under 'check' must stay within the 'reference' clips'
+# range (plus margin) on the bones the polo is skinned to. Hard, and before the publish.
+if ($cfg.PSObject.Properties.Name -contains 'envelope') {
+  $EnvCheck = Join-Path $ToolsDir 'check_bone_envelope.py'
+  $env_ = $cfg.envelope
+  $margin = if ($env_.margin_deg) { $env_.margin_deg } else { 3.0 }
+  Write-Host "[run_animbake] bone-envelope gate (margin $margin deg) on: $($env_.check -join ',')"
+  & python $EnvCheck $OutGlb --reference ($env_.reference -join ',') --check ($env_.check -join ',') --margin-deg $margin
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "[run_animbake] BONE ENVELOPE GATE FAILED - refusing to publish $($cfg.output)."
+    Write-Host "[run_animbake] the build is at $OutGlb for inspection; it was NOT copied."
+    exit 1
+  }
+}
+
 # --- optional publish, hash-verified -----------------------------------------
 if ($PublishTo) {
   New-Item -ItemType Directory -Force -Path $PublishTo | Out-Null

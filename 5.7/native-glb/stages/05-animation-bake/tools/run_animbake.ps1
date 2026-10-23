@@ -138,8 +138,12 @@ if ($LASTEXITCODE -ne 0) { Write-Host "[run_animbake] Blender build failed ($LAS
 # Deliberately hard, and deliberately BEFORE the publish: a failed gate leaves
 # the built GLB in docs/animations for inspection but never copies it onward.
 $SeamCheck = Join-Path $ToolsDir 'check_loop_seams.py'
-Write-Host "[run_animbake] loop-seam gate (max $MaxSeamDeg deg):"
-& python $SeamCheck $OutGlb --max-deg $MaxSeamDeg
+# Gate every clip the animset lists as REQUIRED: those are the looping state clips (gestures play
+# once and hold their last frame). A fixed list would miss loops added later, such as the
+# BreathingIdle/Listening2/Listening3 set (telegamez#4908), and fail sets that lack them.
+$Looping = ($cfg.required.PSObject.Properties | ForEach-Object { $_.Name }) -join ','
+Write-Host "[run_animbake] loop-seam gate (max $MaxSeamDeg deg) on: $Looping"
+& python $SeamCheck $OutGlb --max-deg $MaxSeamDeg --clips $Looping
 if ($LASTEXITCODE -ne 0) {
   Write-Host "[run_animbake] LOOP SEAM GATE FAILED — refusing to publish $($cfg.output)."
   Write-Host "[run_animbake] the build is at $OutGlb for inspection; it was NOT copied."

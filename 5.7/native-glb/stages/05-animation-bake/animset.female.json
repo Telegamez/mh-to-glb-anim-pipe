@@ -1,14 +1,14 @@
 {
-  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking is Thinking_AN_Idle_70_Waiting, supplied by the owner 2026-08-21 from the gendered pack and shared between the sets; it replaced TG-Anim_Deep_Breath_Sad, which was never loop-authored and failed the stage-05 loop-seam gate at 3.318 deg (#3269, #3321). The four remaining gestures - Nod, HeadShake, Dismiss, Angry - still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed, and are the slots still awaiting replacements. BreathingIdle, Listening2 and Listening3 added 2026-10-23 (telegamez#4908): Kimodo takes, retargeted to MetaHuman by kimodo-bridge and bookended on THIS set's production Idle frame 0 (Kimodo Studio packs companion-loops-female, takes approved by the owner). They are looping state clips: BreathingIdle is the runtime's base loop, Listening2/Listening3 lead the compositor's Idle/Listening chains. Measured on tg-jen / tg-tom: hand rise <= 0.02, closest hand-to-head >= 0.66, seam 0.00 deg; each take was also screened for one-frame snaps (worst body-joint step <= 8 deg at the source; the first picks for female Listening2/Listening3 and male Listening3 snapped 15-24 deg and were replaced). Kimodo does not animate fingers; they hold the retarget pose.",
+  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking is Thinking_AN_Idle_70_Waiting, supplied by the owner 2026-08-21 from the gendered pack and shared between the sets; it replaced TG-Anim_Deep_Breath_Sad, which was never loop-authored and failed the stage-05 loop-seam gate at 3.318 deg (#3269, #3321). The four remaining gestures - Nod, HeadShake, Dismiss, Angry - still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed, and are the slots still awaiting replacements. BreathingIdle, Listening2 and Listening3 added 2026-10-23 (telegamez#4908) from the same gendered pack as Idle/Listening/Speaking, retargeted to MetaHuman with the same retargeter (Telly-retarget, Quinn -> MetaHuman). A first set made with Kimodo tore the polo collar on panda (its arm posture drove the clavicles ~19 deg through the post-process rig) and was replaced. Approved by the owner after review on a clothed character. The 'envelope' block gates them against the production loops on the bones the polo is skinned to.",
   "required": {
     "Idle": "/Game/Animations/female_AN_Idle_37_Female",
     "Listening": "/Game/Animations/female_AN_Idle_40_Female",
     "Thinking": "/Game/Animations/Thinking_AN_Idle_70_Waiting",
     "Focused": "/Game/Animations/FocusHandFemale_AN_Idle_42_Female",
     "Speaking": "/Game/Animations/female_AN_Idle_32_Female",
-    "BreathingIdle": "/Game/Kimodo/Retargeted/KM_Breathingidle_d2f5",
-    "Listening2": "/Game/Kimodo/Retargeted/KM_Listening2_e86b",
-    "Listening3": "/Game/Kimodo/Retargeted/KM_Listening3_39fa"
+    "BreathingIdle": "/Game/Animations/female_AN_Idle_36_Female",
+    "Listening2": "/Game/Animations/female_AN_Idle_31_Female",
+    "Listening3": "/Game/Animations/female_AN_Idle_26_Female"
   },
   "gestures": {
     "Nod": "/Game/Animations/previousPack/No_Anim_No",
@@ -17,5 +17,20 @@
     "Dismiss": "/Game/Animations/previousPack/TG-Anim_Go_Away",
     "Angry": "/Game/Animations/previousPack/Dialog-IP_Dialogue_furious_idle_03"
   },
-  "output": "mh-animations-female.glb"
+  "output": "mh-animations-female.glb",
+  "envelope": {
+    "reference": [
+      "Idle",
+      "Listening",
+      "Thinking",
+      "Focused",
+      "Speaking"
+    ],
+    "check": [
+      "BreathingIdle",
+      "Listening2",
+      "Listening3"
+    ],
+    "margin_deg": 3.0
+  }
 }

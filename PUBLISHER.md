@@ -162,6 +162,16 @@ It refuses a name the runtime treats as a calibrated character (`telly`, `tele`,
 file's name where a release carries no tuning id. A folder renamed by hand in Explorer is listed
 in red until Rename (with the folder's own name) brings the model in line.
 
+## Seat loops (telegamez#4863, multi-companion Phase 5)
+
+A phone gives at most two Hold'em opponents a live 3D head; every other seat plays a short loop of
+its character, listening or speaking. **Capture previews** also captures them, right after the
+previews and through the same web app: `<package>/loops/listening.webp` and `speaking.webp` (sprite
+sheets, framed exactly as a seat frames its head) and `loops.json`. They come from the character's
+seat model, so recapture after a rebake. **Publish** ships them inside the version (`loops/`, named
+by the avatar manifest), so they go live and roll back with the model. A package without loops
+publishes as before; the row says "no seat loops" and those seats show the portrait.
+
 ## Previews (telegamez#3662, telegamez#4632)
 
 Previews are captured, **checked**, then published **with the model**:

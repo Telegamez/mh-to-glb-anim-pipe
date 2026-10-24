@@ -74,6 +74,13 @@
   roll back and get deleted together with the model (telegamez#4632 phase 1b). All three must be
   there. Without it the version carries no previews and the avatar keeps whatever it has.
 
+.PARAMETER LoopsFrom
+  Package directory holding `loops/loops.json` and its sprite sheets: the seat loops
+  (telegamez#4863, multi-companion Phase 5) that capture-companion-loops.mjs writes. When given,
+  the sheets ride inside the version under `loops/` and the avatar manifest names them, so they
+  go live and roll back with the model. Without it the version carries no loops and a seat
+  without a live head shows the character's portrait.
+
 .EXAMPLE
   ./publish_to_cdn.ps1 -Char tg-drake -CharacterId drake -Identity '{"id":"drake","name":"Drake","gender":"male","tags":[]}' -ApiBase https://api.panda.telegames.ai -Reason "..."
 #>
@@ -88,7 +95,8 @@ param(
   [string]$BakeHash,
   [string]$Build,
   [string]$Reason,
-  [string]$PreviewsFrom
+  [string]$PreviewsFrom,
+  [string]$LoopsFrom
 )
 
 $ErrorActionPreference = 'Stop'
@@ -131,9 +139,36 @@ if (Test-Path $compressionManifest) {
     # telegamez#4863: the seat-size model, when the build has one. A build without it publishes
     # exactly as before, and the browser loads the room model in its place.
     if ($cm.variants.seat) { $variants.seat = $cm.variants.seat }
-    $avatarManifest = @{ variants = $variants } | ConvertTo-Json -Compress -Depth 4
+    $avatarManifest = @{ variants = $variants }
   }
 }
+
+# telegamez#4863 Phase 5: the seat loops, from the package folder (they are captured, not built).
+# Every sheet loops.json names must be there; the platform refuses a manifest naming a file the
+# version does not carry, but only after the upload.
+$loopParts = @()
+if ($LoopsFrom) {
+  $loopsIndex = Join-Path $LoopsFrom 'loops/loops.json'
+  if (-not (Test-Path $loopsIndex)) { throw "-LoopsFrom $LoopsFrom has no loops/loops.json - capture loops first, or publish without -LoopsFrom" }
+  $li = Get-Content $loopsIndex -Raw | ConvertFrom-Json
+  $loopFiles = [ordered]@{}
+  foreach ($kind in 'listening', 'speaking') {
+    $rel = $li.files.$kind
+    if (-not $rel) { continue }
+    if ($rel -notmatch '^loops/[A-Za-z0-9_.-]+$') { throw "loops.json names '$rel' for $kind; sheets live in loops/" }
+    $item = Get-Item (Join-Path $LoopsFrom $rel) -ErrorAction SilentlyContinue
+    if (-not $item) { throw "loops.json names '$rel', which is not in $LoopsFrom" }
+    $loopFiles[$kind] = $rel
+    $loopParts += [PSCustomObject]@{ FullName = $item.FullName; Relative = $rel; Length = $item.Length; Bytes = $null }
+  }
+  if (-not $loopFiles.listening) { throw "loops.json has no listening loop" }
+  if (-not $avatarManifest) { $avatarManifest = @{} }
+  $avatarManifest.loops = [ordered]@{
+    fps = $li.fps; frames = $li.frames; cols = $li.cols; rows = $li.rows
+    frameWidth = $li.frameWidth; frameHeight = $li.frameHeight; files = $loopFiles
+  }
+}
+if ($avatarManifest) { $avatarManifest = $avatarManifest | ConvertTo-Json -Compress -Depth 5 }
 
 # Every file, with its path RELATIVE to the directory root. Those relative paths are the
 # contract: the sidecar names its textures this way and the runtime resolves them against the
@@ -195,7 +230,7 @@ if ($PreviewsFrom) {
 if ($Char -cmatch '^[a-z0-9][a-z0-9_-]{0,63}$') { $release.tuningId = $Char }
 $releaseBytes = [Text.Encoding]::UTF8.GetBytes((($release | ConvertTo-Json -Depth 4) + "`n"))
 $extras += [PSCustomObject]@{ FullName = $null; Relative = 'character.json'; Length = $releaseBytes.Length; Bytes = $releaseBytes }
-$parts = @($files) + @($extras)
+$parts = @($files) + @($extras) + @($loopParts)
 
 if (-not $BakeHash) {
   # Content-addressed: hash of every relative path and its file hash, so the prefix changes

@@ -311,7 +311,7 @@ function scanRoot(root) {
     if (identity.error) problems.push(identity.error);
 
     characters.push({
-      id: name, dir, mb, sidecar, textures, strayManifest, previews, compressed, modelMismatch,
+      id: name, dir, mb, sidecar, textures, strayManifest, previews, loops: hasLoops(dir), compressed, modelMismatch,
       identity: identity.error ? null : identity,
       // When the previews were captured, for the Previews panel (and to tell a recapture apart).
       previewsAt: previews
@@ -361,7 +361,7 @@ function readBody(req) {
 
 const JOURNAL_DIR = path.join(os.homedir(), '.telegames-publisher', 'publishes');
 
-function recordPublish({ env, apiBase, char, characterId, bakeSuffix, bakeHash, previous, output, code, reason = null, previews = false }) {
+function recordPublish({ env, apiBase, char, characterId, bakeSuffix, bakeHash, previous, output, code, reason = null, previews = false, loops = false }) {
   const grab = (re) => { const m = output.match(re); return m ? m[1] : null; };
   const modelKey = grab(/modelKey:\s*(\S+)/);
   const avatarId = grab(/avatarId:\s*(\S+)/);
@@ -386,6 +386,7 @@ function recordPublish({ env, apiBase, char, characterId, bakeSuffix, bakeHash, 
   const state = grab(/\] version: \S+ state (\w+)/);
   if (state) out.push(`- version \`${state}\``);
   out.push(`- previews ${previews ? 'inside the version (character.json)' : 'none in the version; the avatar keeps its current ones'}`);
+  out.push(`- loops   ${loops ? 'inside the version (loops/, named by manifest.json)' : 'none; seats without a live head show the portrait'}`);
   if (reason) out.push(`- reason  ${reason}`);
   const wasPath = previous?.modelPath ?? null;
   const wasStatus = previous?.status ?? null;
@@ -582,6 +583,8 @@ const guessMonorepo = () => [
 ].filter(Boolean).find((d) => fs.existsSync(path.join(d, 'scripts', 'media', 'capture-companion-previews.mjs')));
 
 const hasPreviews = (dir) => PREVIEW_FILES.every((f) => fs.existsSync(path.join(dir, f)));
+/** telegamez#4863 Phase 5: seat loops captured into the package's loops/ folder. */
+const hasLoops = (dir) => fs.existsSync(path.join(dir, 'loops', 'loops.json'));
 
 async function stackUp(timeoutMs = 2500) {
   try {
@@ -642,6 +645,27 @@ async function ensureStack(res, monorepo) {
   }
   res.write(`\n[console] the local web app did not come up at ${STACK}. Last output:\n${stackTail}\n`);
   return false;
+}
+
+/**
+ * telegamez#4863 Phase 5: the seat loops, captured into `<package>/loops/` from the character's
+ * ktx2 build (its seat model when it has one, which is what a live seat would show), else from
+ * the package's own model.
+ */
+function runLoopCapture(res, monorepo, root, char) {
+  const built = compressedPath(root, char);
+  const from = fs.existsSync(path.join(built, `${char}.glb`)) ? built : path.join(root, char);
+  return new Promise((resolve) => {
+    res.write(`\n=== Capture seat loops — ${char}\n`);
+    const child = spawn('node', [
+      path.join(monorepo, 'scripts', 'media', 'capture-companion-loops.mjs'),
+      '--dir', from, '--out', root, '--base', STACK,
+    ], { cwd: monorepo, windowsHide: true });
+    child.stdout.on('data', (d) => res.write(d));
+    child.stderr.on('data', (d) => res.write(d));
+    child.on('error', (e) => { res.write(`\n[console] could not start the loop capture: ${e.message}\n`); resolve(-1); });
+    child.on('close', (code) => resolve(code));
+  });
 }
 
 function runCapture(res, monorepo, dir) {
@@ -964,6 +988,8 @@ const server = http.createServer(async (req, res) => {
       // removed with the model. No captured previews: the version carries none and the avatar
       // keeps whatever it has (the platform's compatibility rule), which the page reports.
       const previews = hasPreviews(pkgDir);
+      // telegamez#4863 Phase 5: the seat loops ride inside the version too, when captured.
+      const loops = hasLoops(pkgDir);
       return stream(res, PUBLISHER, [
         '-Char', char, '-CharacterId', identity.id, '-Identity', JSON.stringify(identity),
         '-ApiBase', target.apiBase,
@@ -972,9 +998,10 @@ const server = http.createServer(async (req, res) => {
         '-Build', BUILD,
         '-Reason', why,
         ...(previews ? ['-PreviewsFrom', pkgDir] : []),
+        ...(loops ? ['-LoopsFrom', pkgDir] : []),
       ], { TG_ADMIN_TOKEN: session.token }, (output, code) => recordPublish({
         env, apiBase: target.apiBase, char, characterId: identity.id,
-        bakeSuffix: bakeHashSuffix, bakeHash, reason: why, previews,
+        bakeSuffix: bakeHashSuffix, bakeHash, reason: why, previews, loops,
         previous: session.prior[`${env}/${char}`] ?? null,
         output, code,
       }));
@@ -1173,6 +1200,12 @@ const server = http.createServer(async (req, res) => {
       }
       const code = await runCapture(res, monorepo, pkgDir);
       const ok = code === 0 && hasPreviews(pkgDir);
+      // The seat loops come from the same stack, right after. A failed loop capture does not fail
+      // the previews: the version then ships without loops and those seats show the portrait.
+      const loopCode = ok ? await runLoopCapture(res, monorepo, path.dirname(pkgDir), char) : null;
+      if (loopCode !== null && (loopCode !== 0 || !hasLoops(pkgDir))) {
+        res.write(`\n[console] seat loops NOT captured (exit ${loopCode}) - this version would ship without them\n`);
+      }
       res.write(ok ? '\n[console] captured - check them in the Previews panel before publishing\n[console] exit 0\n'
         : `\n[console] capture failed (exit ${code})\n[console] exit 1\n`);
       res.end();

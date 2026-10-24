@@ -335,6 +335,10 @@ function render() {
               ? (c.compressed.stale ? 'stale' : !c.compressed.publishable ? 'unusable'
                 : !c.compressed.seat ? 'has no seat model' : 'has no texture fingerprints') + ', remade'
               : 'made') + ' on publish</span>')
+      // telegamez#4863 Phase 5: the seat loops ride inside the version when captured.
+      + (c.loops
+          ? '<br><span class="ok" style="font-size:11px">seat loops captured</span>'
+          : '<br><span class="warn" style="font-size:11px">no seat loops: Capture previews makes them</span>')
       + '</td>'
       + '<td>' + action + live + '</td>';
     tb.appendChild(tr);

@@ -59,6 +59,64 @@ ktx2.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/
 ktx2.detectSupport(renderer);
 loader.setKTX2Loader(ktx2);
 
+// The export pipeline writes material details and texture paths beside the GLB.
+// Apply those details without relying on the Telegamez application bundle.
+async function applySidecar(root, modelUrl) {
+  const base = modelUrl.slice(0, modelUrl.lastIndexOf('/') + 1);
+  const response = await fetch(base + 'mh_materials.json');
+  if (!response.ok) return;
+  const sidecar = await response.json();
+  const specs = new Map((sidecar.materials || []).map((s) => [s.material_name, s]));
+  const textureCache = new Map();
+  async function texture(relative, color = false) {
+    if (!relative) return null;
+    if (sidecar.browser_texture_format === 'ktx2') relative = relative.replace(/\.png$/i, '.ktx2');
+    const url = new URL(relative, new URL(base, location.href)).href;
+    const key = `${url}|${color}`;
+    if (!textureCache.has(key)) {
+      const promise = (relative.toLowerCase().endsWith('.ktx2') ? ktx2 : new THREE.TextureLoader())
+        .loadAsync(url).then((t) => { t.flipY = false; t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace; return t; });
+      textureCache.set(key, promise);
+    }
+    return textureCache.get(key);
+  }
+  const tasks = [];
+  root.traverse((mesh) => {
+    if (!mesh.isMesh) return;
+    for (const material of (Array.isArray(mesh.material) ? mesh.material : [mesh.material])) {
+      const spec = specs.get(material.name);
+      if (!spec) continue;
+      tasks.push((async () => {
+        const p = spec.params || {}, maps = spec.textures || {};
+        if (spec.kind === 'clothing') {
+          if (Array.isArray(p.base_color)) material.color.setRGB(...p.base_color.slice(0, 3));
+          if (maps.base_color) material.map = await texture(maps.base_color, true);
+          if (maps.normal) material.normalMap = await texture(maps.normal);
+          if (maps.orm) {
+            material.roughnessMap = material.metalnessMap = await texture(maps.orm);
+            material.roughness = material.metalness = 1;
+          }
+        } else if (spec.kind === 'hair' || spec.kind === 'face_accessory') {
+          if (Array.isArray(p.base_color)) material.color.setRGB(...p.base_color.slice(0, 3));
+          const alpha = maps.alpha || (p.alpha_stem && `textures/${p.alpha_stem}.png`);
+          if (alpha) {
+            material.alphaMap = await texture(alpha);
+            material.alphaTest = 0.3;
+            material.side = THREE.DoubleSide;
+            // Three's default alpha map samples green; MetaHuman coverage is red.
+            material.onBeforeCompile = (shader) => {
+              shader.fragmentShader = shader.fragmentShader.replace('diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).g;',
+                                                                    'diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).r;');
+            };
+          }
+        }
+        material.needsUpdate = true;
+      })());
+    }
+  });
+  await Promise.all(tasks);
+}
+
 // ------------------------------------------------------------------ state
 const S = {
   soma: null, characters: [], charId: null, char: null, rt: null, mixer: null,
@@ -79,6 +137,8 @@ async function loadCharacter(id) {
     if (S.char) { scene.remove(S.char); S.mixer?.stopAllAction(); }
     S.char = gltf.scene; S.charId = id; $('character').value = id;
     S.char.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; } });
+    try { await applySidecar(S.char, c.url); }
+    catch (e) { console.error('[studio] sidecar textures', e); toast(`Some textures failed: ${e.message}`, 8000); }
 
     scene.add(S.char);
     S.rt = new Retargeter(S.char, S.soma);

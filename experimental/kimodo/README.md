@@ -6,7 +6,7 @@ An experimental local workflow to generate motion with [NVIDIA Kimodo](https://g
 
 1. Install Kimodo following its official instructions, including its model weights and compatible Python/PyTorch environment. This workflow was developed with `Kimodo-SOMA-RP-v1.1`; model availability and hardware requirements depend on that installation.
 2. In the Kimodo environment install the server dependencies: `python -m pip install fastapi uvicorn`. NumPy, PyTorch, and Kimodo are also required.
-3. Put a compatible GLB under a folder named for the character, for example `C:/characters/ada/ada.glb`. Use assets you have rights to use. Studio uses the GLB's standard materials; it does not reproduce Telegamez's custom hair and material shaders.
+3. Put a compatible GLB under a folder named for the character, for example `C:/characters/ada/ada.glb`. Use assets you have rights to use. Studio loads clothing and hair-card textures from a neighboring `mh_materials.json` when present; it does not reproduce every production hair shader.
 4. On Windows with PowerShell 7, run from the repository root:
 
    ```powershell
@@ -31,6 +31,6 @@ For looping motion, `bridge/tools/make_bookends.py` can make constraints from a 
 
 ## Limitations
 
-Browser retargeting is a preview; it does not run Unreal's MetaHuman post-process rig, reproduce production twist correction, or automatically adapt animation clips between different rest poses. Standard glTF materials can differ from the original MetaHuman viewer, especially hair and clothing. This workflow does not animate fingers from Kimodo. KTX2/Draco/meshopt support uses Three.js decoders fetched from a CDN. Review clothing deformation, foot sliding, seams, and source licenses before shipping.
+Browser retargeting is a preview; it does not run Unreal's MetaHuman post-process rig, reproduce production twist correction, or automatically adapt animation clips between different rest poses. The portable material adapter can differ from the original viewer, especially hair shading. This workflow does not animate fingers from Kimodo. KTX2/Draco/meshopt support uses Three.js decoders fetched from a CDN. Review clothing deformation, foot sliding, seams, and source licenses before shipping.
 
 The standalone integration and Unreal retarget have not yet been verified end to end on a clean machine. Reports with versions, logs, and legally shareable reproductions are welcome.

@@ -1,4 +1,10 @@
-# MetaHuman → GLB
+# MetaHuman → GLB for the web
+
+Bring expressive MetaHuman characters into **Three.js and other web experiences**. This open-source project explores a practical path from Unreal Engine MetaHuman assets to browser-ready characters.
+
+We want to build this with web developers, character artists, technical animators, and everyone working to make digital humans practical in the browser. **Contributions to hair, clothing, and locomotion are especially welcome.** See the [roadmap](ROADMAP.md) for ideas.
+
+> **Project status:** This is an evolving pipeline extracted from a production workflow, not yet a one-click exporter tested on every setup. Your Unreal version, MetaHuman setup, materials, and target device may require adjustments; some tools and documentation retain Telegamez-specific assumptions.
 
 <p align="center">
   <a href="https://smorchj.github.io/metahuman-to-glb/">
@@ -47,14 +53,24 @@ The approach that works: build a transient Level Sequence with `AS_MetaHuman_ARK
    ```
    cp _config/pipeline.example.yaml _config/pipeline.yaml
    ```
-   Required: `.uproject` path, `UnrealEditor-Cmd.exe`, `blender.exe` (5.x).
+   Required: project, Unreal Editor and Blender paths. Fill in both the `ue_by_version."5.7"` fields and the legacy `ue_project_path` / `ue_editor_cmd` fields; the FBX reweight step reads the latter. Python and PowerShell 7 are required. Viewer validation requires Playwright and Chromium (`pip install playwright`, then `playwright install chromium`). Close other Unreal Editor instances before assembly.
+
+   The example config describes UE 5.8.1 on the reference machine and Blender checked against 4.4.1. The `5.7` directory is a pipeline label; a verified compatibility matrix is still needed.
 3. Have your MetaHumanCharacter in the UE project under `/Game/<Name>/`.
 
 `_config/pipeline.yaml` is gitignored.
 
 ## Usage
 
-In Claude Code:
+Bootstrap your character first, choosing the applicable body archetype:
+
+```powershell
+python 5.7/native-glb/tools/bootstrap_character.py --asset /Game/Ada/MHC_Ada --body female
+```
+
+Use `--body male` when appropriate. Bootstrap supports `--id` for a different output ID. The direct steps below are Windows-oriented and have not yet been independently verified as a clean-machine tutorial.
+
+In Claude Code (some examples in RUN.md may lag current bootstrap arguments):
 
 ```
 export /Game/Ada/MHC_Ada
@@ -66,9 +82,11 @@ To run a single stage directly:
 ./5.7/native-glb/stages/00-unreal-assemble/tools/run_assemble.ps1 -Char ada
 ./5.7/native-glb/stages/01-unreal-glb-export/tools/run_export.ps1   -Char ada
 ./5.7/native-glb/stages/02-blender-assemble/tools/run_assemble.ps1  -Char ada
-./5.7/native-glb/stages/03-export-to-glb/tools/run_export.ps1       -Char ada
+./5.7/native-glb/tools/run_fbx_reweight.ps1                         -Char ada
 ./5.7/native-glb/stages/04-webview-build/tools/run_site.ps1         -Char ada
 ```
+
+The FBX reweight step repairs skin weights and runs stage 03 itself; do not skip it. Serve the resulting `5.7/native-glb/docs/` directory over HTTP to inspect the viewer. The [publisher](PUBLISHER.md) targets Telegamez infrastructure and is not required for a standalone viewer.
 
 ## Layout
 
@@ -120,16 +138,16 @@ The 5.6 cinematic pipeline (`5.6/cinematic/`) used a precomputed NPZ to transpla
 
 `5.7/cinematic/` exists but is unfinished.
 
-## Contributing
+## Help build it
 
-MIT license. PRs welcome. File an issue before larger architectural changes.
+You do not need to be an Unreal specialist. Reproductions, documentation, Three.js examples, art and animation work, and tests on different devices are all valuable.
 
-Rules worth keeping:
+- **Hair:** card rendering, coverage, transparency, shading, scalp blending, facial hair, and performance.
+- **Clothing:** material reconstruction, skin weights, clipping, layering, and deformation across outfits.
+- **Locomotion:** retargeting, walk and run cycles, transitions, root motion, foot contact, and browser-friendly controls. [NVIDIA Kimodo](https://github.com/nv-tlabs/kimodo) and [MotionBricks](https://github.com/NVlabs/motionbricks) are promising research directions; neither is currently integrated or assumed to run in a browser.
 
-- `5.7/native-glb/` does not import from `5.6/cinematic/`.
-- A stage agent reads and writes only its own manifest block.
-- Deterministic work goes in scripts. Models call scripts and verify outputs.
+See the [roadmap](ROADMAP.md) for concrete contribution ideas. Small pull requests are welcome. Include OS, Unreal and Blender versions, pipeline stage, logs, and a minimal reproduction or screenshots where possible. Remove private paths and do not upload assets you cannot redistribute. Issues and Discussions may need to be enabled by maintainers; until then, use pull request discussion for proposed changes.
 
-## License
+## License and assets
 
-MIT. See [LICENSE](LICENSE).
+Project software is [MIT licensed](LICENSE). Character, texture, and animation assets may have separate rights or terms; MIT does not automatically relicense third-party content. Check applicable terms before use or redistribution. Epic states that [MetaHumans can be used with other engines and creative software](https://www.metahuman.com/license); review the terms relevant to your use. An asset provenance inventory is a roadmap priority.

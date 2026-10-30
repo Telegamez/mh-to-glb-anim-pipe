@@ -3,12 +3,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Retargeter } from './retarget.js';
-// telegamez's production MetaHuman material layer, bundled from source (tools/build_mh_materials.mjs).
-import {
-  applyMetaHumanMaterials, characterIdOf, createTwistDriver, clipDrivenBones,
-  prepareCompanionClips, filterEndBoneTracks, stabilizeRootMotion,
-  configureCompanionLoader, loadCompanionTexture, browserTextureUrl,
-} from './vendor/mh-materials.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
 const $ = (id) => document.getElementById(id);
 const api = async (path, opts = {}) => {
@@ -51,37 +48,16 @@ function resize() {
 }
 new ResizeObserver(resize).observe(canvas.parentElement);
 
-// The runtime's own decoder wiring (companionGltfLoader.ts): Draco, meshopt and the shared
-// KTX2Loader, whose Basis transcoder the server serves at BASIS_TRANSCODER_PATH (/basis/r176/).
-const loader = configureCompanionLoader(new GLTFLoader());
-
-// Same call the companion harness makes (HarnessClient.tsx:264-298): fetch the mh_materials.json
-// sidecar beside the model and run applyMetaHumanMaterials with the harness's texture loader.
-// KTX2 (#3662): the same two steps attachMetaHumanProfile takes - swap a resolved PNG for its
-// .ktx2 sibling when the sidecar says browser_texture_format "ktx2", and load through
-// loadCompanionTexture, which returns a CompressedTexture for .ktx2.
-async function applyMaterials(scene, url) {
-  const baseDir = url.slice(0, url.lastIndexOf('/'));
-  const characterId = characterIdOf(url);
-  const cache = new Map();
-  let browserFormat;
-  const loadTexture = (resolved) => {
-    const u = browserTextureUrl(resolved, browserFormat);
-    const hit = cache.get(u); if (hit) return hit;
-    const t = loadCompanionTexture(u);
-    t.flipY = false;                   // glTF convention
-    t.colorSpace = THREE.NoColorSpace; // data texture, not colour (the layer sets sRGB where it means it)
-    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-    cache.set(u, t); return t;
-  };
-  const sidecar = await fetch(`${baseDir}/mh_materials.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  browserFormat = sidecar?.browser_texture_format;
-  const r = applyMetaHumanMaterials(scene, sidecar || {}, baseDir, loadTexture, { characterId });
-  r.browserTextureFormat = browserFormat || 'png';
-  r.textureUrls = [...cache.keys()];
-  console.info('[studio] materials', characterId, sidecar ? 'sidecar' : 'no sidecar', r);
-  return r;
-}
+// Standard glTF materials and decoders. No proprietary material overrides are applied.
+const loader = new GLTFLoader();
+const draco = new DRACOLoader();
+draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/libs/draco/');
+loader.setDRACOLoader(draco);
+loader.setMeshoptDecoder(MeshoptDecoder);
+const ktx2 = new KTX2Loader();
+ktx2.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/libs/basis/');
+ktx2.detectSupport(renderer);
+loader.setKTX2Loader(ktx2);
 
 // ------------------------------------------------------------------ state
 const S = {
@@ -103,8 +79,7 @@ async function loadCharacter(id) {
     if (S.char) { scene.remove(S.char); S.mixer?.stopAllAction(); }
     S.char = gltf.scene; S.charId = id; $('character').value = id;
     S.char.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; } });
-    try { S.materials = await applyMaterials(S.char, c.url); }
-    catch (e) { console.error('[studio] material layer failed', e); toast(`Materials failed: ${e.message}`, 6000); }
+
     scene.add(S.char);
     S.rt = new Retargeter(S.char, S.soma);
     if (S.rt.missing.length) console.info('[studio] unmapped SOMA bones:', S.rt.missing.join(', '));
@@ -138,11 +113,7 @@ function startAction(clip, kind, motion, label) {
   a.clampWhenFinished = true;
   a.reset().play();
   a.paused = !S.playing;
-  // Production's twist stand-in, rebuilt per clip so bones a clip really animates (evaluated
-  // production bakes carry twist tracks) are left to the clip - same rule as the runtime.
-  // Kimodo clips bind by uuid and never touch twist bones, so every twist chain is driven.
-  const driver = createTwistDriver(S.char, clipDrivenBones([clip]));
-  S.twist = driver.chainCount > 0 ? driver : null;
+  S.twist = null; // Preview does not reproduce Unreal post-process correctives.
   S.action = a; S.clipKind = kind; S.clipMotion = motion;
   $('clipLabel').textContent = label;
   ghost.visible = $('ghost').checked && kind === 'kimodo';
@@ -303,7 +274,7 @@ function renderLibrary() {
 // which strips the bake body's non-root bone translation. Playing them raw put another body's
 // proportions on the character and pushed skin through cloth that the platform renders cleanly.
 export function prepareLikeRuntime(clips) {
-  return prepareCompanionClips(clips, filterEndBoneTracks, stabilizeRootMotion);
+  return clips; // Preserve tracks; retargeting between different rest poses is not automatic.
 }
 async function loadProduction(p) {
   const gltf = await loader.loadAsync(p.url);

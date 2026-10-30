@@ -20,9 +20,9 @@ We want to build this with web developers, character artists, technical animator
 
 Five-stage pipeline that exports a UE 5.7 MetaHuman to a web-ready GLB with all 51 ARKit blendshapes, then deploys it as a three.js viewer on GitHub Pages.
 
-## Live demo
+## Foundation and live demo
 
-**https://smorchj.github.io/metahuman-to-glb/**
+This project was built on the foundation of [smorchj/metahuman-to-glb](https://github.com/smorchj/metahuman-to-glb). Explore its [live demo](https://smorchj.github.io/metahuman-to-glb/).
 
 ## Pipeline
 
@@ -144,7 +144,7 @@ You do not need to be an Unreal specialist. Reproductions, documentation, Three.
 
 - **Hair:** card rendering, coverage, transparency, shading, scalp blending, facial hair, and performance.
 - **Clothing:** material reconstruction, skin weights, clipping, layering, and deformation across outfits.
-- **Locomotion:** retargeting, walk and run cycles, transitions, root motion, foot contact, and browser-friendly controls. [NVIDIA Kimodo](https://github.com/nv-tlabs/kimodo) and [MotionBricks](https://github.com/NVlabs/motionbricks) are promising research directions; neither is currently integrated or assumed to run in a browser.
+- **Locomotion:** retargeting, walk and run cycles, transitions, root motion, foot contact, and browser-friendly controls. [NVIDIA Kimodo](https://github.com/nv-tlabs/kimodo) and [MotionBricks](https://github.com/NVlabs/motionbricks) are promising research directions; The [experimental Kimodo Studio and bridge](experimental/kimodo/) provide local generation, browser preview, and Unreal retargeting; MotionBricks remains a research direction.
 
 See the [roadmap](ROADMAP.md) for concrete contribution ideas. Small pull requests are welcome. Include OS, Unreal and Blender versions, pipeline stage, logs, and a minimal reproduction or screenshots where possible. Remove private paths and do not upload assets you cannot redistribute. Issues and Discussions may need to be enabled by maintainers; until then, use pull request discussion for proposed changes.
 

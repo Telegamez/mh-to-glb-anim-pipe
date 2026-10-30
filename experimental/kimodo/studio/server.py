@@ -3,7 +3,7 @@
 Keeps Kimodo loaded on the GPU, stores a library of generated takes, serves the three.js studio.
 Run with the Kimodo venv (see start-studio.ps1):
 
-    S:\\Avatars\\metahuman\\kimodo\\.venv\\Scripts\\python server.py   ->  http://localhost:7870
+    python server.py   ->  http://localhost:7870
 
 Library layout (one folder per take):
     library/<id>/meta.json     name, prompt, params, tags, notes, created, bake status
@@ -33,11 +33,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 HERE = Path(__file__).resolve().parent
-LIBRARY = HERE / "library"
+LIBRARY = Path(os.environ.get("KIMODO_STUDIO_LIBRARY", HERE / "library")).resolve()
 STATIC = HERE / "static"
-CHARACTERS = Path(r"S:\Avatars\metahuman\characters\_compressed")
-PRODUCTION = Path(r"S:\Avatars\metahuman\telegamez\packages\web-next\public\models\metahuman-shared")
-BRIDGE = Path(r"S:\Avatars\metahuman\kimodo-bridge\tools\run_kimodo_take.ps1")
+DATA = Path(os.environ.get("KIMODO_STUDIO_DATA", HERE / "data")).resolve()
+CHARACTERS = Path(os.environ.get("KIMODO_CHARACTERS", DATA / "characters")).resolve()
+PRODUCTION = Path(os.environ.get("KIMODO_ANIMATIONS", DATA / "animations")).resolve()
+BRIDGE = HERE.parent / "bridge" / "tools" / "run_kimodo_take.ps1"
+BRIDGE_WORK = HERE.parent / "bridge" / "_work"
+TARGET_MESH = os.environ.get("KIMODO_TARGET_MESH", "")
 MODEL_NAME = os.environ.get("KIMODO_STUDIO_MODEL", "Kimodo-SOMA-RP-v1.1")
 PORT = int(os.environ.get("KIMODO_STUDIO_PORT", "7870"))
 FPS = 30
@@ -45,7 +48,7 @@ FPS = 30
 POSES = LIBRARY / "_poses"
 PACKS = LIBRARY / "_packs"
 for _d in (LIBRARY, POSES, PACKS):
-    _d.mkdir(exist_ok=True)
+    _d.mkdir(parents=True, exist_ok=True)
 
 # The Telegames companion emotion states (owner's list, 2026-10-05). Prompts are starting points:
 # standing, in place, conversational body language, so every clip can share the Idle neutral.
@@ -107,7 +110,8 @@ def _load_model():
         print(f"[studio] model load failed: {e}", flush=True)
 
 
-threading.Thread(target=_load_model, daemon=True).start()
+if os.environ.get("KIMODO_STUDIO_SKIP_MODEL") != "1":
+    threading.Thread(target=_load_model, daemon=True).start()
 
 
 def _soma():
@@ -508,7 +512,9 @@ def _bake_worker_locked(aid, take):
         root = torch.tensor(npz["posed_joints"][:, SOMA.root_idx, :], dtype=torch.float32)
         bvh = d / "motion.bvh"
         save_motion_bvh(str(bvh), local, root, skeleton=SOMA, fps=FPS, standard_tpose=True)
-        cmd = ["pwsh", "-NoProfile", "-File", str(BRIDGE), "-Bvh", str(bvh), "-Take", take]
+        if not TARGET_MESH:
+            raise HTTPException(400, "Set KIMODO_TARGET_MESH to your Unreal SkeletalMesh asset path before baking")
+        cmd = ["pwsh", "-NoProfile", "-File", str(BRIDGE), "-Bvh", str(bvh), "-Take", take, "-TargetMesh", TARGET_MESH]
         with open(log, "w", encoding="utf-8") as f:
             rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT).returncode
         text = log.read_text(encoding="utf-8", errors="replace")
@@ -547,18 +553,12 @@ def soma():
 
 @app.get("/api/characters")
 def characters():
-    # Greenfield roster only (owner, 2026-10-05): S:\Avatars\metahuman\greenfield, the clean
-    # --mode ktx2 builds. The legacy packages (CHARACTERS), the KTX2 test builds and the scratch
-    # preview builds are no longer listed, so nothing in the studio can be mistaken for the
-    # roster. Their mounts stay, so old URLs and smoke-test steps still resolve.
     out = []
-    for root, tag, mount in ((GREENFIELD_BUILDS, "greenfield", "greenfield"),):
-        if root.is_dir():
-            for d in sorted(root.iterdir()):
-                g = d / f"{d.name}.glb"
-                if g.exists():
-                    out.append({"id": f"{d.name} [{tag}]", "url": f"/{mount}/{d.name}/{d.name}.glb",
-                                "mb": round(g.stat().st_size / 2**20, 1)})
+    if CHARACTERS.is_dir():
+        for g in sorted(CHARACTERS.glob("*/*.glb")):
+            if g.stem == g.parent.name:
+                out.append({"id": g.stem, "url": f"/characters/{g.parent.name}/{g.name}",
+                            "mb": round(g.stat().st_size / 2**20, 1)})
     return out
 
 
@@ -567,33 +567,18 @@ def production():
     out = [{"id": p.stem, "url": f"/production/{p.name}"} for p in sorted(PRODUCTION.glob("*.glb"))]
     # Kimodo takes already baked for production (headless UE retarget + stage 05 evaluated bake):
     # the exact clip the platform would play, correctives and twists included.
-    bridge = Path(r"S:\Avatars\metahuman\kimodo-bridge\_work")
-    for p in sorted(bridge.glob("*/built/*.glb")):
+    bridge = BRIDGE_WORK
+    for p in sorted(bridge.glob("*/bake/*.glb")):
         out.append({"id": f"baked: {p.stem}", "url": f"/bridge/{p.relative_to(bridge).as_posix()}"})
     return out
 
 
+# Optional inputs may be absent until the user supplies them.
+for directory in (CHARACTERS, PRODUCTION, BRIDGE_WORK):
+    directory.mkdir(parents=True, exist_ok=True)
 app.mount("/characters", StaticFiles(directory=CHARACTERS), name="characters")
-# KTX2 (#3662): the Basis transcoder exactly as web-next self-hosts it (public/basis/r<REVISION>/,
-# byte-checked against three by companionGltfLoader.test.ts) - the runtime's loader asks for it
-# at BASIS_TRANSCODER_PATH, so the studio serves the same files at the same path.
-BASIS = Path(r"S:\Avatars\metahuman\telegamez\packages\web-next\public\basis")
-if BASIS.is_dir():
-    app.mount("/basis", StaticFiles(directory=BASIS), name="basis")
-KTX2_BUILDS = Path(r"S:\Avatars\metahuman\kimodo-bridge\_work\ktx2")
-KTX2_BUILDS.mkdir(parents=True, exist_ok=True)
-app.mount("/ktx2", StaticFiles(directory=KTX2_BUILDS), name="ktx2")
-PREVIEW_BUILDS = Path(r"S:\Avatars\metahuman\kimodo-bridge\_work\preview")
-PREVIEW_BUILDS.mkdir(parents=True, exist_ok=True)
-app.mount("/preview", StaticFiles(directory=PREVIEW_BUILDS), name="preview")
-GREENFIELD_BUILDS = Path(r"S:\Avatars\metahuman\greenfield\compressed")
-GREENFIELD_BUILDS.mkdir(parents=True, exist_ok=True)
-app.mount("/greenfield", StaticFiles(directory=GREENFIELD_BUILDS), name="greenfield")
-app.mount("/production", StaticFiles(directory=PRODUCTION), name="production")
-# Production-baked takes (bridge stage-05 output) - lets the studio play the EVALUATED clip,
-# correctives and twists included, next to the browser-retargeted preview.
-BRIDGE_WORK = Path(r"S:\Avatars\metahuman\kimodo-bridge\_work")
-app.mount("/bridge", StaticFiles(directory=BRIDGE_WORK), name="bridge")
+app.mount("/production", StaticFiles(directory=PRODUCTION, check_dir=False), name="production")
+app.mount("/bridge", StaticFiles(directory=BRIDGE_WORK, check_dir=False), name="bridge")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 

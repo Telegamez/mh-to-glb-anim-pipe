@@ -1,22 +1,36 @@
-# Kimodo Studio and bridge (experimental source)
+# Kimodo Studio and bridge
 
-These experimental tools explore generating Kimodo motion, previewing it on a MetaHuman in Three.js, and retargeting it in Unreal for the animation-bake pipeline. This is a source snapshot for collaboration, not a working standalone distribution yet.
+An experimental local workflow to generate motion with [NVIDIA Kimodo](https://github.com/nv-tlabs/kimodo), preview it on a MetaHuman GLB in Three.js, and retarget a take in Unreal for the stage 05 animation bake. The model, weights, Unreal, Blender, and character assets are separate dependencies; their own terms apply.
 
-- `studio/`: local Python server, Three.js interface and browser retargeting.
-- `bridge/`: BVH-to-FBX conversion, Unreal retargeting, evaluated animation bake, and inspection utilities.
+## Setup
 
-## Current limitations
+1. Install Kimodo following its official instructions, including its model weights and compatible Python/PyTorch environment. This workflow was developed with `Kimodo-SOMA-RP-v1.1`; model availability and hardware requirements depend on that installation.
+2. In the Kimodo environment install the server dependencies: `python -m pip install fastapi uvicorn`. NumPy, PyTorch, and Kimodo are also required.
+3. Put a compatible GLB under a folder named for the character, for example `C:/characters/ada/ada.glb`. Use assets you have rights to use. Studio uses the GLB's standard materials; it does not reproduce Telegamez's custom hair and material shaders.
+4. On Windows with PowerShell 7, run from the repository root:
 
-The studio's `static/app.js` imports `static/vendor/mh-materials.js`, which is not included: the local generated bundle incorporates code from the Telegamez application and third-party dependencies, and needs a separate provenance and license review and a reusable replacement. The Studio page will not load without it. The server also references machine-specific paths and Telegamez assets; the bridge launcher defaults to a local project and a specific target skeleton. Do not run these scripts without inspecting and configuring them for your environment. The original launcher can stop another process listening on port 7860; review it before running.
+   ```powershell
+   ./experimental/kimodo/studio/start-studio.ps1 -Python C:/path/to/kimodo/.venv/Scripts/python.exe -Characters C:/characters
+   ```
 
-Original tools were used on Windows with a separately installed [NVIDIA Kimodo](https://github.com/nv-tlabs/kimodo), Python environment, GPU, Unreal project, Blender, and locally generated character assets. Kimodo, model weights, generated takes, characters, textures, and Telegamez application code are not included. Their respective licenses and terms apply separately.
+   Open `http://localhost:7870`. Wait for the model status to become ready. Use `-Port` to change the port, `-Animations` to provide a directory of animation-only GLBs, and `-TargetMesh` for the optional Unreal bake. Studio binds to localhost. It does not stop the original Kimodo demo; both processes may exceed available GPU memory.
 
-## Work needed for a public release
+Studio also accepts `KIMODO_STUDIO_MODEL`, `KIMODO_STUDIO_PORT`, `KIMODO_STUDIO_DATA`, `KIMODO_STUDIO_LIBRARY`, `KIMODO_CHARACTERS`, `KIMODO_ANIMATIONS`, and `KIMODO_TARGET_MESH` environment variables. Generated takes are stored in `studio/library/` by default. Model loading and browser decoder downloads may need network access.
 
-1. Replace or extract the material and loader integration with independently reusable source and third-party license notices.
-2. Replace hard-coded paths and target assets with explicit configuration, validate dependencies, and prevent automatic termination of unrelated processes.
-3. Document Kimodo installation, model and hardware requirements, environment setup, character input layout, and how to run both preview and bake.
-4. Test a clean install using a shareable character and evaluate browser preview against the evaluated Unreal bake.
-5. Audit Unreal output destinations and generated files, publish no assets without redistribution rights, and add meaningful automated checks.
+## Unreal retarget and bake
 
-Browser retargeting is a preview and does not run Unreal's MetaHuman post-process rig. Kimodo motion does not include finger animation in this workflow. Retargeting and garment deformation should be reviewed before using output in production.
+Configure the repository's `_config/pipeline.yaml`, including the legacy `ue_project_path`, `ue_editor_cmd`, and `blender_exe` fields. The Unreal project needs a compatible MetaHuman body, `/Game/MetaHumans/Common/Common/IK_metahuman`, and the plugins required by the existing animation bake and IK retargeting tools. Pass your target skeletal mesh asset path explicitly:
+
+```powershell
+./experimental/kimodo/bridge/tools/run_kimodo_take.ps1 -Bvh C:/path/to/take.bvh -Take KM_Test -TargetMesh /Game/MetaHumans/YourCharacter/Body/SKM_YourCharacter_BodyMesh
+```
+
+The bridge imports and writes assets under `/Game/Kimodo`, including a retargeted AnimSequence, and creates per-take output under `bridge/_work/`. It can replace assets with matching names; use a test project and distinct take names. `-RebuildRigs` recreates shared rigs. `-SkipBake` stops after retargeting. The Studio Bake button uses the same bridge and requires `-TargetMesh` at Studio launch. The evaluated bake uses stage 05 and its own Unreal project assumptions; verify the output against your character before production.
+
+For looping motion, `bridge/tools/make_bookends.py` can make constraints from a Kimodo take. `seam_npz.py` and `compare_segments.py` provide diagnostic checks.
+
+## Limitations
+
+Browser retargeting is a preview; it does not run Unreal's MetaHuman post-process rig, reproduce production twist correction, or automatically adapt animation clips between different rest poses. Standard glTF materials can differ from the original MetaHuman viewer, especially hair and clothing. This workflow does not animate fingers from Kimodo. KTX2/Draco/meshopt support uses Three.js decoders fetched from a CDN. Review clothing deformation, foot sliding, seams, and source licenses before shipping.
+
+The standalone integration and Unreal retarget have not yet been verified end to end on a clean machine. Reports with versions, logs, and legally shareable reproductions are welcome.

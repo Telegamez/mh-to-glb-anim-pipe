@@ -17,7 +17,7 @@
 param(
   [Parameter(Mandatory)] [string] $Bvh,
   [Parameter(Mandatory)] [string] $Take,
-  [string] $TargetMesh = '/Game/MetaHumans/Tele/Body/SKM_Tele_BodyMesh',
+  [Parameter(Mandatory)] [string] $TargetMesh,
   [switch] $SkipBake,
   # Rebuild the shared SOMA mesh, IK_SOMA and RTG_SOMA_to_MH from scratch (after changing the
   # retarget setup). Otherwise they are reused across takes.
@@ -30,7 +30,10 @@ $Bridge = Split-Path -Parent $Tools
 $Work   = Join-Path $Bridge "_work\$Take"
 New-Item -ItemType Directory -Force $Work | Out-Null
 
-$Config  = 'S:\Avatars\metahuman\metahuman-to-glb\_config\pipeline.yaml'
+$RepoRoot = (Resolve-Path (Join-Path $Bridge '../../..')).Path
+$Config = Join-Path $RepoRoot '_config/pipeline.yaml'
+if (-not (Test-Path $Config)) { throw "Missing $Config; copy and configure _config/pipeline.example.yaml" }
+if ($Take -notmatch '^[A-Za-z0-9_]{1,64}$') { throw 'Take must contain only letters, digits and underscores (1-64 characters).' }
 function Read-Yaml([string]$key) {
   $line = (Select-String -Path $Config -Pattern "^\s*$($key):" | Select-Object -First 1).Line
   ($line -replace "^\s*$($key):\s*`"?([^`"]+)`"?\s*$", '$1').Trim()
@@ -38,7 +41,7 @@ function Read-Yaml([string]$key) {
 $EditorCmd  = Read-Yaml 'ue_editor_cmd'
 $Project    = Read-Yaml 'ue_project_path'
 $BlenderExe = Read-Yaml 'blender_exe'
-$Stage05    = 'S:\Avatars\metahuman\metahuman-to-glb\5.7\native-glb\stages\05-animation-bake\tools\bake_evaluated_anims.py'
+$Stage05 = Join-Path $RepoRoot '5.7/native-glb/stages/05-animation-bake/tools/bake_evaluated_anims.py'
 
 # --- 1. BVH -> FBX -----------------------------------------------------------
 $Fbx = Join-Path $Work "$Take.fbx"
@@ -68,7 +71,7 @@ $env:MH_ANIMSET = $Set
 $env:MH_GLB_DIR = Join-Path $Work 'bake'
 if (Test-Path $env:MH_GLB_DIR) { Remove-Item $env:MH_GLB_DIR -Recurse -Force }
 New-Item -ItemType Directory -Force $env:MH_GLB_DIR | Out-Null
-& $EditorCmd $Project -run=pythonscript "-script=$Stage05" -AllowCommandletRendering -unattended -nosplash *> (Join-Path $Work 'ue_bake.log')
+& $EditorCmd $Project -run=pythonscript "-script=$Stage05 --mesh=$TargetMesh" -AllowCommandletRendering -unattended -nosplash *> (Join-Path $Work 'ue_bake.log')
 $Glb = Join-Path $env:MH_GLB_DIR "$Take.glb"
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Glb)) { throw "stage 05 bake failed - see $Work\ue_bake.log" }
 Write-Host "[run] baked $Glb ($([int]((Get-Item $Glb).Length/1KB)) KB)"

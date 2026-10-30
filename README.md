@@ -19,8 +19,7 @@ The pipeline exports a MetaHuman to a GLB with 51 ARKit-style blendshapes and bu
 
 ## Foundation and live demo
 
-This project was built on the foundation of [smorchj/metahuman-to-glb](https://github.com/smorchj/metahuman-to-glb). Its [original live demo](https://smorchj.github.io/metahuman-to-glb/) currently returns a GitHub Pages 404 (checked October 2026).
-
+This project was built on the foundation of [smorchj/metahuman-to-glb](https://github.com/smorchj/metahuman-to-glb). However we took it further with ARkit Blendshapes and Kimodo Animation Studio
 ## Pipeline
 
 ```

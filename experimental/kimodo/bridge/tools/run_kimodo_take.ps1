@@ -68,11 +68,12 @@ $Set = Join-Path $Work 'animset.json'
 @{ _comment = "throwaway one-clip set for kimodo take $Take"; required = @{ $Take = $Result.retargeted }; gestures = @{}; output = "$Take.glb" } |
   ConvertTo-Json | Set-Content $Set
 $env:MH_ANIMSET = $Set
+$env:MH_TARGET_MESH = $TargetMesh
 $env:MH_GLB_DIR = Join-Path $Work 'bake'
 if (Test-Path $env:MH_GLB_DIR) { Remove-Item $env:MH_GLB_DIR -Recurse -Force }
 New-Item -ItemType Directory -Force $env:MH_GLB_DIR | Out-Null
 $Stage05Forward = $Stage05 -replace '\\', '/'
-& $EditorCmd $Project -run=pythonscript "-script=`"$Stage05Forward`" --mesh=$TargetMesh" -AllowCommandletRendering -unattended -nosplash *> (Join-Path $Work 'ue_bake.log')
+& $EditorCmd $Project -run=pythonscript "-script=$Stage05Forward" -AllowCommandletRendering -unattended -nosplash *> (Join-Path $Work 'ue_bake.log')
 $Glb = Join-Path $env:MH_GLB_DIR "$Take.glb"
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Glb)) { throw "stage 05 bake failed - see $Work\ue_bake.log" }
 Write-Host "[run] baked $Glb ($([int]((Get-Item $Glb).Length/1KB)) KB)"
@@ -81,4 +82,5 @@ Write-Host "[run] baked $Glb ($([int]((Get-Item $Glb).Length/1KB)) KB)"
 $Renders = Join-Path $Work 'renders'
 & $BlenderExe --factory-startup --background --python-exit-code 1 --python (Join-Path $Tools 'render_check.py') -- --glb $Glb --out $Renders 2>&1 |
   Select-String '\[render_check\]|Traceback' | ForEach-Object { Write-Host $_.Line }
+if ($LASTEXITCODE -ne 0) { throw "render check failed (exit $LASTEXITCODE)" }
 Write-Host "[run] renders in $Renders"

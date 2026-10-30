@@ -226,7 +226,7 @@ def main():
     os.makedirs(GLB_DIR, exist_ok=True)
     cfg, clips = _load_animset()
     only = None
-    explicit_mesh = None
+    explicit_mesh = os.environ.get("MH_TARGET_MESH") or None
     out_dir = GLB_DIR
     for arg in sys.argv:
         if arg.startswith("--only="):

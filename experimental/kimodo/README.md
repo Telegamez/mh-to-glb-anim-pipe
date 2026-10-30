@@ -33,4 +33,4 @@ For looping motion, `bridge/tools/make_bookends.py` can make constraints from a 
 
 Browser retargeting is a preview; it does not run Unreal's MetaHuman post-process rig, reproduce production twist correction, or automatically adapt animation clips between different rest poses. The portable material adapter can differ from the original viewer, especially hair shading. This workflow does not animate fingers from Kimodo. KTX2/Draco/meshopt support uses Three.js decoders fetched from a CDN. Review clothing deformation, foot sliding, seams, and source licenses before shipping.
 
-The standalone integration and Unreal retarget have not yet been verified end to end on a clean machine. Reports with versions, logs, and legally shareable reproductions are welcome.
+An end-to-end test generated a take on an RTX 4090, previewed it in Studio, rebuilt the retarget rigs, and baked a GLB with UE 5.8 and Blender 4.4.1 in an isolated copy of an existing project. A clean installation and other versions remain unverified. Reports with versions, logs, and legally shareable reproductions are welcome.

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kimodo Studio</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='7' r='4' fill='%23e8743b'/><path d='M16 12v10M9 15l7 2 7-2M12 29l4-7 4 7' stroke='%23e8743b' stroke-width='2.5' fill='none' stroke-linecap='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161920; --panel-2: #1c2029; --line: #272c37; --text: #e6e8ee;
+    --muted: #8b93a5; --accent: #e8743b; --accent-2: #f39a6b; --ok: #4cc38a; --warn: #e6b450; --bad: #e5534b;
+    --radius: 10px; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 Inter, system-ui, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .app { display: grid; grid-template-columns: 320px 1fr 340px; grid-template-rows: 52px 1fr 64px; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0 8px 0 0; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  .pill { font: 500 12px var(--mono); padding: 4px 10px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok { color: var(--ok); border-color: #2a4d3b; } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+  .spacer { flex: 1; }
+  label.inline { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  select, input[type=text], input[type=number], textarea {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; outline: none; }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+  button { cursor: pointer; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; }
+  button:hover { border-color: #3a4150; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a0f08; font-weight: 600; }
+  button.primary:hover { background: var(--accent-2); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.icon { padding: 5px 8px; font-size: 13px; }
+
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow: hidden; display: flex; flex-direction: column; }
+  aside.right { border-right: none; border-left: 1px solid var(--line); overflow-y: auto; padding: 14px; gap: 14px; }
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; }
+  .lib-head { padding: 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+  .lib-tabs { display: flex; gap: 6px; }
+  .lib-tabs button { flex: 1; font-size: 12px; padding: 5px; }
+  .lib-tabs button.on { border-color: var(--accent); color: var(--accent); }
+  .badge.ok { color: var(--ok); } .badge.miss { color: var(--muted); border: 1px dashed #3a4150; background: transparent; }
+  .cand { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; }
+  .cand:hover { background: #222733; } .cand.sel { border-color: var(--accent); }
+  .cand .grow { flex: 1; font-size: 12.5px; }
+  .cand button { font-size: 11.5px; padding: 3px 8px; }
+  .cand.approved .grow::before { content: '✓ '; color: var(--ok); }
+  .lib { overflow-y: auto; flex: 1; padding: 6px; }
+  .item { padding: 9px 10px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; margin-bottom: 4px; }
+  .item:hover { background: var(--panel-2); }
+  .item.sel { background: var(--panel-2); border-color: var(--accent); }
+  .item .name { font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .item .name .star { color: var(--warn); }
+  .item .prompt { color: var(--muted); font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badges { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+  .badge { font: 500 10.5px var(--mono); padding: 2px 6px; border-radius: 5px; background: #222733; color: var(--muted); }
+  .badge.loop { color: var(--ok); } .badge.seam-bad { color: var(--warn); } .badge.bake { color: var(--accent-2); } .badge.prod { color: #7aa7ff; }
+
+  main { position: relative; overflow: hidden; }
+  #viewport { width: 100%; height: 100%; display: block; }
+  .overlay { position: absolute; left: 14px; top: 12px; display: flex; gap: 8px; align-items: center; pointer-events: none; }
+  .overlay .pill { pointer-events: auto; }
+  .toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 70%; }
+  .toast.show { opacity: 1; }
+  .loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(15,17,21,.55); font-size: 13px; color: var(--muted); }
+  .loading.show { display: flex; }
+
+  footer { grid-column: 2 / 3; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-top: 1px solid var(--line); background: var(--panel); }
+  footer input[type=range] { flex: 1; accent-color: var(--accent); }
+  .time { font: 500 12px var(--mono); color: var(--muted); min-width: 120px; text-align: right; }
+  .foot-left { grid-column: 1 / 2; border-top: 1px solid var(--line); background: var(--panel); display: flex; align-items: center; padding: 0 12px; color: var(--muted); font-size: 12px; }
+  .foot-right { grid-column: 3 / 4; border-top: 1px solid var(--line); background: var(--panel); display: flex; align-items: center; padding: 0 12px; gap: 8px; }
+
+  .card { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+  textarea { resize: vertical; min-height: 84px; width: 100%; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .field input, .field select { color: var(--text); }
+  .hint { font-size: 12px; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; }
+  .kv div:nth-child(odd) { color: var(--muted); }
+  .kv div:nth-child(even) { font-family: var(--mono); word-break: break-all; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .danger { color: var(--bad); }
+  .examples { display: flex; flex-wrap: wrap; gap: 5px; }
+  .examples button { font-size: 11.5px; padding: 4px 8px; color: var(--muted); }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #1a0f08; border-top-color: transparent; border-radius: 50%; animation: s .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.176.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.1/build/index.module.js"
+} }
+</script>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Kimodo <span>Studio</span></h1>
+    <span id="status" class="pill">connecting…</span>
+    <span id="vram" class="pill"></span>
+    <div class="spacer"></div>
+    <label class="inline">Character <select id="character"></select></label>
+    <label class="inline"><input type="checkbox" id="ghost"> SOMA ghost</label>
+  </header>
+
+  <aside>
+    <div class="lib-head">
+      <input type="text" id="search" placeholder="Search name, prompt, tag…">
+      <div class="lib-tabs">
+        <button data-tab="states">States</button>
+        <button data-tab="kimodo" class="on">Takes</button>
+        <button data-tab="production">Production</button>
+      </div>
+    </div>
+    <div class="lib" id="library"></div>
+  </aside>
+
+  <main>
+    <canvas id="viewport"></canvas>
+    <div class="overlay"><span id="clipLabel" class="pill">no clip</span></div>
+    <div class="loading" id="loading">Loading character…</div>
+    <div class="toast" id="toast"></div>
+  </main>
+
+  <aside class="right">
+    <div class="card" id="packCard" style="display:none">
+      <div class="section-title">Pack · <span id="pkName"></span> <select id="pkPick" title="Switch pack"></select></div>
+      <div class="kv" id="pkKv"></div>
+      <button id="pkGenAll" title="Generate candidates for every state that has none yet">Generate all missing states</button>
+      <button class="primary" id="pkExport" title="Bake every approved take (headless UE + stage 05), then write the animset + manifest">Bake &amp; export approved</button>
+      <div class="hint" id="pkHint"></div>
+    </div>
+
+    <div class="card" id="promptCard">
+      <div class="section-title">Prompt</div>
+      <textarea id="prompt" placeholder="A person stands, listening attentively, nodding slowly…"></textarea>
+      <div class="examples" id="examples"></div>
+      <div class="row">
+        <div class="field">Duration (s)<input type="number" id="duration" value="4" min="1" max="10" step="0.5"></div>
+        <div class="field">Takes<input type="number" id="samples" value="2" min="1" max="4"></div>
+        <div class="field">Seed<input type="number" id="seed" placeholder="random"></div>
+      </div>
+      <div class="row">
+        <div class="field">Loop
+          <select id="loop">
+            <option value="none">None (free)</option>
+            <option value="self" selected>Seamless (self bookend)</option>
+            <option value="pose">Start/end on selected take's pose</option>
+          </select>
+        </div>
+        <div class="field">Steps<input type="number" id="steps" value="100" min="20" max="200" step="10"></div>
+      </div>
+      <div class="row">
+        <div class="field">Text weight<input type="number" id="textw" value="2.0" step="0.25" min="0" max="5"></div>
+        <div class="field">Name (optional)<input type="text" id="name" placeholder="auto"></div>
+      </div>
+      <button class="primary" id="generate">Generate</button>
+      <div class="hint" id="genHint">Fingers are not animated by Kimodo; they stay at the character's rest pose.</div>
+    </div>
+
+    <div class="card" id="stateCard" style="display:none">
+      <div class="section-title">State · <span id="stName"></span></div>
+      <div class="hint" id="stIntent"></div>
+      <div class="field">Prompt<textarea id="stPrompt" style="min-height:70px"></textarea></div>
+      <div class="field">Clip name in the animations GLB<input type="text" id="stClip"></div>
+      <div class="row">
+        <div class="field">Candidates<input type="number" id="stCount" value="3" min="1" max="6"></div>
+        <div class="field">Neutral pose (start/end)<select id="stNeutral"></select></div>
+      </div>
+      <button class="primary" id="stGen">Generate candidates</button>
+      <div class="section-title" style="margin-top:4px">Candidates</div>
+      <div id="stCands" class="lib" style="padding:0;max-height:260px"></div>
+    </div>
+
+    <div class="card" id="details" style="display:none">
+      <div class="section-title">Selected take</div>
+      <input type="text" id="dName">
+      <div class="field">Tags (comma separated)<input type="text" id="dTags"></div>
+      <div class="field">Notes<textarea id="dNotes" style="min-height:54px"></textarea></div>
+      <div class="kv" id="dKv"></div>
+      <div class="actions">
+        <button id="dSave">Save</button>
+        <button id="dFav">☆ Favorite</button>
+        <button id="dDup">Duplicate</button>
+        <button id="dRegen">Re-prompt</button>
+        <button id="dBake" title="Headless UE retarget + stage 05 evaluated bake (several minutes)">Bake for production</button>
+        <button id="dDel" class="danger">Delete</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="foot-left" id="libCount"></div>
+  <footer>
+    <button class="icon" id="play">⏸</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <span class="time" id="time">0.00 / 0.00 s</span>
+  </footer>
+  <div class="foot-right">
+    <label class="inline">Speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>1.5</option><option>2</option></select></label>
+    <label class="inline"><input type="checkbox" id="loopPlay" checked> Loop</label>
+    <button class="icon" id="frame" title="Frame the character">⌖</button>
+    <button class="icon" id="capture" title="Store the character's current pose as a neutral pose (pause on the frame you want first)">Capture neutral</button>
+  </div>
+</div>
+<script type="module" src="/static/app.js?v=packs"></script>
+</body>
+</html>

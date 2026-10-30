@@ -2,27 +2,24 @@
 
 Bring expressive MetaHuman characters into **Three.js and other web experiences**. This open-source project explores a practical path from Unreal Engine MetaHuman assets to browser-ready characters.
 
+**Create in Unreal. Export to GLB. Bring your character to life on the web.**
+
+<table>
+  <tr><td align="center"><strong>Three.js GLB preview</strong></td><td align="center"><strong>Kimodo Studio motion preview</strong></td></tr>
+  <tr><td><img src="assets/readme/glb-preview.jpg" alt="A MetaHuman GLB in a Three.js preview" /></td><td><img src="assets/readme/kimodo-studio.jpg" alt="The same MetaHuman previewing a generated wave in Kimodo Studio" /></td></tr>
+</table>
+
+The same character is shown in a prototype Three.js GLB preview and in Kimodo Studio, paused during a generated wave. The screenshots illustrate a local setup; they are not a promise that every character or material exports identically.
+
 We want to build this with web developers, character artists, technical animators, and everyone working to make digital humans practical in the browser. **Contributions to hair, clothing, and locomotion are especially welcome.** See the [roadmap](ROADMAP.md) for ideas.
 
 > **Project status:** This is an evolving pipeline extracted from a production workflow, not yet a one-click exporter tested on every setup. Your Unreal version, MetaHuman setup, materials, and target device may require adjustments; some tools and documentation retain Telegamez-specific assumptions.
 
-<p align="center">
-  <a href="https://smorchj.github.io/metahuman-to-glb/">
-    <img src="assets/hero.png" alt="Ada, MetaHuman rendered in the three.js gallery" width="80%" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://smorchj.github.io/metahuman-to-glb/">
-    <img src="https://img.shields.io/badge/LIVE%20DEMO-metahuman--to--glb-06B6D4?style=for-the-badge&labelColor=0a0420&logo=github&logoColor=white" alt="live demo" />
-  </a>
-</p>
-
-Five-stage pipeline that exports a UE 5.7 MetaHuman to a web-ready GLB with all 51 ARKit blendshapes, then deploys it as a three.js viewer on GitHub Pages.
+The pipeline exports a MetaHuman to a GLB with 51 ARKit-style blendshapes and builds a Three.js viewer. Kimodo Studio adds experimental motion generation and preview.
 
 ## Foundation and live demo
 
-This project was built on the foundation of [smorchj/metahuman-to-glb](https://github.com/smorchj/metahuman-to-glb). Explore its [live demo](https://smorchj.github.io/metahuman-to-glb/).
+This project was built on the foundation of [smorchj/metahuman-to-glb](https://github.com/smorchj/metahuman-to-glb). Its [original live demo](https://smorchj.github.io/metahuman-to-glb/) currently returns a GitHub Pages 404 (checked October 2026).
 
 ## Pipeline
 
@@ -32,13 +29,13 @@ This project was built on the foundation of [smorchj/metahuman-to-glb](https://g
    00: UE assemble                         (~1-2 min)
    01: UE Sequencer ARKit bake + GLB       (~1-2 min)
    02: Blender: ARKit shape keys + groom   (~60-90 s)
-   03: Blender: Draco-compressed GLB       (~30-60 s)
+   FBX weight repair → 03: Draco-compressed GLB
    04: three.js viewer build               (~5 s)
    |
    docs/characters/<id>/<id>.glb            (~40 MB, 51 ARKit blendshapes)
 ```
 
-Each stage is a Python or PowerShell script run by a Claude sub-agent. The agent reads only that stage's `CONTEXT.md` and the character manifest, runs the script, and updates its own status block. Nothing shares state across stages.
+Each stage is a Python or PowerShell script. The scripts can be run directly; the optional Claude Code workflow uses stage-specific agents and a character manifest.
 
 ## ARKit blendshapes
 

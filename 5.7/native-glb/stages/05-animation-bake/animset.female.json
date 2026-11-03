@@ -1,5 +1,5 @@
 {
-  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking is Thinking_AN_Idle_70_Waiting, supplied by the owner 2026-08-21 from the gendered pack and shared between the sets; it replaced TG-Anim_Deep_Breath_Sad, which was never loop-authored and failed the stage-05 loop-seam gate at 3.318 deg (#3269, #3321). The four remaining gestures - Nod, HeadShake, Dismiss, Angry - still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed, and are the slots still awaiting replacements. BreathingIdle, Listening2 and Listening3 added 2026-10-23 (telegamez#4908) from the same gendered pack as Idle/Listening/Speaking, retargeted to MetaHuman with the same retargeter (Telly-retarget, Quinn -> MetaHuman). A first set made with Kimodo tore the polo collar on panda (its arm posture drove the clavicles ~19 deg through the post-process rig) and was replaced. Approved by the owner after review on a clothed character. The 'envelope' block gates them against the production loops on the bones the polo is skinned to.",
+  "_comment": "FEMALE clip set. Clip name -> UE AnimSequence asset path. Names are the runtime's state-map keys - do not rename them. Idle/Listening/Speaking supplied by the owner 2026-08-20 from the gendered pack; Shrug is AN_Idle_13, shared with the male set at the owner's direction (it ships under a male_ prefix but is used by both). Focused is gendered as of 2026-08-20, replacing Focused_Anim_Salute whose hand collided with the head (#3255). Thinking is Thinking_AN_Idle_70_Waiting, supplied by the owner 2026-08-21 from the gendered pack and shared between the sets; it replaced TG-Anim_Deep_Breath_Sad, which was never loop-authored and failed the stage-05 loop-seam gate at 3.318 deg (#3269, #3321). The four remaining gestures - Nod, HeadShake, Dismiss, Angry - still point at the previous pack, which UE moved to /Game/Animations/previousPack/ when the gendered pack was installed, and are the slots still awaiting replacements. BreathingIdle, Listening2 and Listening3 added 2026-10-23 (telegamez#4908) from the same gendered pack as Idle/Listening/Speaking, retargeted to MetaHuman with the same retargeter (Telly-retarget, Quinn -> MetaHuman). A first set made with Kimodo tore the polo collar on panda (its arm posture drove the clavicles ~19 deg through the post-process rig) and was replaced. Approved by the owner after review on a clothed character. The 'envelope' block gates them against the production loops on the bones the polo is skinned to. 2026-11-03 (fix/anim-library-defects): HeadShake and Angry were byte-identical in both libraries because /Game/Animations/previousPack/Dialog-IP_Dialogue_furious_idle_03 was imported from IP_Dialogue_furious_idle_02.FBX (its import source), so both slots baked the same 35 s hands-on-hips idle. Both now cut a short window out of a longer take with the {asset,start,end} form (seconds, source time): HeadShake is the head-shake section of No_Anim_No (the same asset as Nod, which is itself a head-shake 'no', not a nod); Angry is the exasperated hand-to-face/arms-out gesture in Serious_gesture_03. Windows were chosen by measured self-penetration under the production rebase, not by eye alone.",
   "required": {
     "Idle": "/Game/Animations/female_AN_Idle_37_Female",
     "Listening": "/Game/Animations/female_AN_Idle_40_Female",
@@ -12,10 +12,18 @@
   },
   "gestures": {
     "Nod": "/Game/Animations/previousPack/No_Anim_No",
-    "HeadShake": "/Game/Animations/previousPack/Dialog-IP_Dialogue_furious_idle_02",
+    "HeadShake": {
+      "asset": "/Game/Animations/previousPack/No_Anim_No",
+      "start": 0.25,
+      "end": 2.42
+    },
     "Shrug": "/Game/Animations/male_AN_Idle_13",
     "Dismiss": "/Game/Animations/previousPack/TG-Anim_Go_Away",
-    "Angry": "/Game/Animations/previousPack/Dialog-IP_Dialogue_furious_idle_03"
+    "Angry": {
+      "asset": "/Game/TG-Animations/Dialog-IP_Dialogue_Serious_gesture_03",
+      "start": 61.8,
+      "end": 64.4
+    }
   },
   "output": "mh-animations-female.glb",
   "envelope": {

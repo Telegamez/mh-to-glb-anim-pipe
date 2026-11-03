@@ -74,6 +74,25 @@ panel's *animations url* and compare against the Mixamo baseline.
   `<AssetName>_0`, and the NLA_TRACKS exporter ships every track it finds. Two runs leaked an
   extra clip this way; the keeper's tracks are wiped before the stage's own are added, and the
   clip-set gate compares the finished GLB against animset.json either way.
+- **Every clip ends on a spurious bind-pose key.** The evaluated bake records frames 0..N of a
+  sequence whose animation section spans [0, N); frame N comes out as the mesh's reference pose
+  (measured at <= 0.19 deg from bind on every bone of raw UE exports; the exclusive section end is
+  the inferred cause). Blender's export resample also floors a float end frame, so the build pins a
+  near-integer end (Dismiss: 59.99999 -> 60) rather than lose a real last key. `build_animations_glb.py` drops that key
+  from loops AND gestures, after checking it really is bind-like (`BIND_TAIL_MAX_DEG`); it refuses
+  rather than cut a real frame. Gestures were untrimmed until 2026-11-03 and shipped it as their end
+  pose (Shrug 39 deg off its real last frame). Dismiss looked exempt only because Blender's 24 fps
+  resample of a 2.533 s clip stops one 30 fps key short of it.
+- **Sub-range entries.** An animset value may be `{"asset": ..., "start": s, "end": e}` (seconds, source
+  time) instead of a path: the bake's sequencer section starts and ends inside the source, so a short
+  gesture can be cut from a long dialogue take without creating or editing UE assets. The runtime
+  rebases every clip's upper body from its FIRST frame to BreathingIdle's, so the start of a window
+  decides how far its arms are bent; Serious_gesture_03 measured 3.4 cm of self-penetration from
+  61.8 s and 8.3 cm from 61.4 s. Choose windows by measurement (telegamez
+  `selfPenetration.measure.test.ts`), not by eye.
+- **Check import sources before trusting a name.** `furious_idle_03` was imported from the `_02` FBX and
+  `FocusHeadMale_AN_Idle_65` from the same FBX as male Idle, so two slots each shipped a duplicate
+  (2026-11-03). `AnimSequence.asset_import_data.extract_filenames()` shows it.
 - Clip names in `animset.json` are the names the runtime's state map keys on
   (`AgentAnimationContext` / `stateAnimationMap`). `Idle` specifically is also the
   root-motion pin reference in `stabilizeRootMotion` — do not omit it.

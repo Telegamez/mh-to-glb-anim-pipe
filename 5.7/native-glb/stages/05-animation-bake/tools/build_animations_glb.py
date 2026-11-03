@@ -73,23 +73,64 @@ def _rewrite_action_paths(action):
     return n
 
 
-def _trim_loop_tail(action):
-    """Drop the final keyframe of every f-curve.
+# Largest rotation away from the bind pose, on any bone, that the final key may have and
+# still count as the evaluated bake's spurious bind sample. Measured 2026-11-03 on raw UE
+# exports of nine clips: 0.19 deg at most, against up to 38 deg for the key before it.
+BIND_TAIL_MAX_DEG = 1.0
 
-    UE's glTF exporter samples an AnimSequence's range INCLUSIVELY, so a clip of N
-    frames ships N+1 samples. Measured across both published libraries, every clip
-    has exactly `round(duration * fps) + 1` keyframes.
 
-    For a LOOPING clip that extra sample is a defect, and a loud one. In the male
-    `Idle` the first keyframe and the SECOND-TO-LAST are identical to 0.000 deg -
-    the loop itself is clean - while the last sits 36.5 deg away. That is the
-    largest frame-to-frame step in the clip, worth 181 frames of normal motion, and
-    THREE.LoopRepeat replays it every cycle. It reads as a glitch rather than as
-    motion because it repeats on a fixed period (telegamez#3321).
+def _tail_bind_distance(action):
+    """Largest rotation of the final key away from the bind pose, over every bone.
 
-    Gestures are NOT trimmed. They play LoopOnce and their final frame is the pose
-    they hold: `Dismiss` measures 5.2 deg against its last frame and 13.4 deg
-    against its second-to-last, so dropping its tail would damage it.
+    In pose space the bind pose is the identity quaternion, so this is the angle of each
+    bone's last rotation_quaternion key from (1, 0, 0, 0). Returns (deg, bone).
+    """
+    import math
+    last = {}
+    for fc in action.fcurves:
+        m = re.match(r'pose\.bones\["(.+)"\]\.rotation_quaternion$', fc.data_path)
+        if not m or len(fc.keyframe_points) < 3:
+            continue
+        last.setdefault(m.group(1), [1.0, 0.0, 0.0, 0.0])[fc.array_index] = \
+            fc.keyframe_points[len(fc.keyframe_points) - 1].co[1]
+    worst = (0.0, "")
+    for bone, q in last.items():
+        n = math.sqrt(sum(c * c for c in q)) or 1.0
+        deg = math.degrees(2 * math.acos(min(1.0, abs(q[0]) / n)))
+        if deg > worst[0]:
+            worst = (deg, bone)
+    return worst
+
+
+def _trim_bind_tail(action):
+    """Drop the final keyframe of every f-curve: the evaluated bake's bind-pose sample.
+
+    `bake_evaluated_anims.py` records frames 0..N of a Level Sequence whose skeletal
+    animation section spans [0, N), so every clip ships N+1 samples and the last one
+    is the BIND pose - measured on raw UE exports at <= 0.19 deg from bind on every
+    bone, against up to 38 deg for the key before it. (Inferred cause: frame N lies
+    outside the section's exclusive end, so the mesh falls back to its reference
+    pose. The measurement, not the cause, is what the guard below checks.) It is not
+    authored motion on any clip.
+
+    LOOPING clips (telegamez#3321): THREE.LoopRepeat replays the jump into that
+    sample every cycle. In the male `Idle` the first keyframe and the SECOND-TO-LAST
+    are identical to 0.000 deg while the last sat 36.5 deg away.
+
+    GESTURES play LoopOnce and hold their final frame, so the same sample is the
+    pose they END on: Shrug's last key sat 39.2 deg from its real last frame,
+    HeadShake/Angry 24.7 deg. These were left untrimmed on the belief that the last
+    frame was authored; the evidence for that was `Dismiss`, whose shipped tail
+    looked genuine. It was - but only because Blender's 24 fps export resample of a
+    2.533 s clip stops at 2.500 s, a real 30 fps key, one sample short of the bind
+    key at 2.533 s. Clips whose length is a whole number of 24 fps frames (Shrug,
+    HeadShake) ship the bind key itself; the rest (Nod) blend a fraction of it into
+    their last sample. Trimming the imported bind key before the resample fixes all
+    three cases and leaves Dismiss's samples as they were.
+
+    The trim is guarded: the removed key must be bind-like (BIND_TAIL_MAX_DEG). If
+    the bake ever stops emitting that sample, the guard refuses rather than cutting
+    a real frame. Returns the number of f-curves trimmed.
     """
     trimmed = 0
     for fc in action.fcurves:
@@ -116,8 +157,8 @@ def main():
     with open(args.animset, "r", encoding="utf-8") as f:
         cfg = json.load(f)
     # `required` clips are the conversational STATES; the runtime plays them with
-    # THREE.LoopRepeat. `gestures` play LoopOnce. Only the former are trimmed, so
-    # the split has to survive here rather than being merged away.
+    # THREE.LoopRepeat. `gestures` play LoopOnce. Both lose the bake's bind tail;
+    # the split survives for the log and the seam gate.
     looping = set((cfg.get("required") or {}).keys())
     clip_names = list((cfg.get("required") or {}).keys()) + \
                  list((cfg.get("gestures") or {}).keys())
@@ -176,16 +217,34 @@ def main():
             _log(f"  {clip}: ZERO contract renames — this clip was not authored "
                  f"against the MetaHuman skeleton and will bind nothing. Refusing.")
             sys.exit(1)
-        if clip in looping:
-            before_n = int(action.frame_range[1] - action.frame_range[0]) + 1
-            trimmed = _trim_loop_tail(action)
-            after_n = int(action.frame_range[1] - action.frame_range[0]) + 1
-            _log(f"  {clip}: loop tail trimmed on {trimmed} f-curves "
-                 f"({before_n} -> {after_n} frames)")
-            if after_n >= before_n:
-                _log(f"  {clip}: frame count did not shrink - the exporter may have "
-                     f"stopped emitting the inclusive extra sample. Re-measure before "
-                     f"assuming this is still needed.")
+        # Every clip, looping or not, ends on the bake's bind-pose sample; see
+        # _trim_bind_tail. Prove the key is that sample before removing it.
+        tail_deg, tail_bone = _tail_bind_distance(action)
+        if tail_deg > BIND_TAIL_MAX_DEG:
+            _log(f"  {clip}: final key is {tail_deg:.2f} deg from bind on {tail_bone} - "
+                 f"not the bake's spurious bind sample. Refusing to trim authored motion; "
+                 f"re-measure the bake's tail before changing BIND_TAIL_MAX_DEG.")
+            sys.exit(1)
+        kind = "loop" if clip in looping else "gesture"
+        before_end = action.frame_range[1]
+        trimmed = _trim_bind_tail(action)
+        after_end = action.frame_range[1]
+        # The 30 fps keys land on 24 fps export frames as floats: Dismiss's real last key
+        # (2.500 s) sits at frame 59.99999, and the exporter's sampler floors it to 59 and
+        # drops that authored key. Pin a near-integer end to the integer it means.
+        snapped = round(after_end)
+        if abs(after_end - snapped) < 1e-3 and after_end != snapped:
+            action.use_frame_range = True
+            action.frame_start = round(action.frame_range[0])
+            action.frame_end = snapped
+            _log(f"  {clip}: end frame {after_end:.6f} pinned to {snapped} so its last key is sampled")
+            after_end = action.frame_range[1]
+        _log(f"  {clip}: {kind} bind tail trimmed on {trimmed} f-curves (removed key "
+             f"<= {tail_deg:.3f} deg from bind; end {before_end:.2f} -> {after_end:.2f})")
+        if after_end >= before_end:
+            _log(f"  {clip}: the clip did not get shorter - the bake may have stopped "
+                 f"emitting the bind sample. Re-measure before assuming this is needed.")
+            sys.exit(1)
 
         actions_out.append(action)
 

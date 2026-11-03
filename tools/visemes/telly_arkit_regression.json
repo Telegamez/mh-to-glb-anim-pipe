@@ -1,0 +1,9 @@
+{
+  "poses_before": 51,
+  "poses_after": 51,
+  "eps_cm": 1e-06,
+  "differences": {},
+  "worst_pose": null,
+  "worst_delta_mm": 0.0,
+  "identical": true
+}

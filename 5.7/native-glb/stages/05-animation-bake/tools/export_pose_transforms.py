@@ -30,6 +30,56 @@ end and each cost a cycle to discover:
   * `convert_actors` returns without producing a mesh for a skeletal actor.
   * Alembic is import-only in Unreal's Python; there is no exporter.
 
+## STATUS 2026-08-22: the ABP-evaluation call crashes on the FACE mesh
+
+`evaluate_animation_blueprint_with_input_pose` aborts inside the engine's own C++ when the
+mesh is `SKM_Telly_FaceMesh` and the ABP is `ABP_Face_PostProcess`:
+
+    Script Stack (1 frames):
+    /Script/AnimationBlueprintLibrary.AnimPoseExtensions.EvaluateAnimationBlueprintWithInputPose
+    Assertion failed: (Index >= 0) & (Index < ArrayNum)
+    Array index out of bounds: 737 into an array of size 737
+
+Gate 1 passes first — the ABP is found and logged — and the clip loads. The crash is one frame
+deep in engine code, in compact-pose bookkeeping we do not control.
+
+**Scope, established by control experiment rather than by argument.** The same command was run
+against `AS_TG_Visemes` (17 frames, 45 curves) instead of `AS_TG_Validation` (323 frames, 263
+curves). Identical crash, identical numbers. So it is structural, not data, and not a function
+of sequence size.
+
+**It is FACE-SPECIFIC, not a UE 5.8 regression.** The control was run and passed:
+
+    mesh=/Game/Unpacked/Telly/Body/SKM_Telly_BodyMesh
+    anim=/Game/Animations/male_AN_Idle_13
+    post-process ABP=/MetaHumanCharacter/Body/ABP_Body_PostProcess
+    342 bones, 256 frames
+    GATES PASSED: frames vary, and the ABP moves bones by up to 3.75cm against the raw sequence
+    wrote telly_body_control.npz (4.53 MB)
+
+Same call, same engine, same day. The body ABP evaluates fine; the face ABP aborts. So this
+tool is not broken in general — it is unusable for the FACE path, which is the only path
+Phase 5 needs. **737 matches no bone set on this character** (1185 merged, 841 `FACIAL_*`, 344
+body — and the working body dump carries exactly 342), so it is internal to the face SKM's own
+skeleton or to the ABP.
+
+The first attempt at this control was abandoned after four runs because it used
+`animset.json`, which is the stale pre-gendered clip set — its paths moved to
+`/Game/Animations/previousPack/` when the gendered packs landed. The live sets are
+`animset.male.json` / `animset.female.json`, selected by `MH_ANIMSET`. Filed as #3397.
+
+**Do not debug this to use this tool.** Phase 5 needs the transforms, not this API, and a
+proven mechanism produces the same bytes: `bake_evaluated_anims.py` records an ABP-evaluated
+pose through the Sequencer, which is the mechanism behind every trusted artifact on this
+project — all 51 ARKit shapes on six characters, the stage-05 body bakes, and the viseme bake.
+Bake the sequence with `--anim=`, then read the BAKED sequence here with `--raw-only`, which
+uses `get_anim_pose_at_time` alone and never touches the crashing call. The raw pose of an
+evaluated bake IS the evaluated pose of the original.
+
+Gate 3 then becomes a comparison between two dumps rather than a check inside one process, so
+both carry `run_id` and `source_anim` in `meta` and the comparator refuses a mismatch — a gate
+split across two files is a gate that a re-run of one side can silently defeat.
+
 ## The gates
 
 Three, because the failures above were all silent and each produced a plausible-looking file:

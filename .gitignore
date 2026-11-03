@@ -134,3 +134,6 @@ docs/animations/
 # Stage 05 per-clip GLB scratch. One directory per animation set; regenerated on
 # every bake and only meaningful between the UE half and the Blender half.
 5.7/native-glb/stages/05-animation-bake/_work/
+
+# Generated per-run authoring report (contains absolute local paths)
+5.7/native-glb/stages/01-unreal-glb-export/config/tg_viseme_authoring_report.json

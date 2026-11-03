@@ -1,0 +1,233 @@
+{
+  "$schema_note": "Slice 2.1 authoring surface. See _authoring_brief below before editing.",
+  "asset_path": "/Game/TG_Face/AS_TG_Visemes",
+  "skeleton": "/MetaHumanCharacter/Face/Face_Archetype_Skeleton",
+  "frame_rate": 30,
+  "control_prefix": "ctrl_expressions_",
+
+  "_authoring_brief": [
+    "WHAT THIS IS. One frame per pose on the MetaHuman face board, expressed as raw",
+    "RigLogic control weights rather than as a linear sum of already-baked ARKit shapes.",
+    "That difference IS item F2: RigLogic evaluates these controls with its correctives and",
+    "co-articulation intact, and reaches the tongue, which the ARKit mapping never exposes.",
+    "",
+    "WHY A TABLE AND NOT A HAND-POSED ASSET. The plan says 'posed on the face board'. Posing",
+    "in the GUI and saving the result gives an asset nobody can diff, review, or re-derive for",
+    "the next identity. These weights drive the SAME controls the board writes -- CTRL_expressions.*",
+    "are the rig's 263 raw controls, confirmed against the DNA -- so this is the board, in a form",
+    "that survives review. The operator's job becomes refining numbers while watching, not",
+    "rebuilding sixteen poses from scratch.",
+    "",
+    "AND THE HONEST CAVEAT. These starting values were authored from articulatory phonetics",
+    "and from the three facts the VISEME_RECIPES comment records, NOT from an on-screen session.",
+    "A hand-authored pose encodes its author's assumptions exactly the way a hand-tuned constant",
+    "does. Slice 2.1's [V] screenshot review is what turns them from plausible into judged, and",
+    "it is not optional: it is the ground truth every later slice compares against.",
+    "",
+    "THE THREE FACTS THE OLD RECIPE COMMENT ENCODES, WHICH STILL HOLD:",
+    "  1. At rest the lips are CLOSED and no teeth show. viseme_sil is zero-delta, not a pose.",
+    "  2. mouthFunnel FLARES and parts the lip opening rather than protruding it -- used heavily",
+    "     it exposes teeth. Rounding comes from PURSE, not funnel. (Here: mouthLipsPurse*.)",
+    "  3. jawOpen reveals teeth by about 0.05. Closed-mouth consonants keep it at or near zero.",
+    "",
+    "CONVENTIONS. Weights are 0..1 on the named control. Absent control == 0. Names are the",
+    "raw control minus the 'CTRL_expressions.' prefix; the exporter lowercases them to the",
+    "'ctrl_expressions_<lowername>' curve the AnimSequence carries. Quadrant suffixes are",
+    "U/D (upper/lower lip) x L/R (side): mouthLipsPurseUL = upper lip, left."
+  ],
+
+  "poses": [
+    {
+      "name": "viseme_sil",
+      "phonemes": "silence / rest",
+      "note": "Deliberately zero-delta. Rest already reads as a closed mouth; posing 'neutral' on top of neutral only introduces drift.",
+      "controls": {}
+    },
+    {
+      "name": "viseme_PP",
+      "phonemes": "p, b, m",
+      "note": "Bilabial stop. The seal is the whole signature -- lips together and compressed, jaw shut. MEASURED CORRECTION 2026-08-22: at press 0.34 this baked to 4.03 mm against the composed shape's 8.76 mm, i.e. a WEAKER /p/ than the approximation it replaces. Same cause as mouthClose: mouthLipsTogether contributes almost nothing from a closed rest, so press and the roll-in are carrying the pose and had to come up. Compression is the visible part of a bilabial stop -- the lips are already touching before it starts.",
+      "controls": {
+        "mouthLipsTogetherUL": 0.62, "mouthLipsTogetherUR": 0.62,
+        "mouthLipsTogetherDL": 0.62, "mouthLipsTogetherDR": 0.62,
+        "mouthPressUL": 0.66, "mouthPressUR": 0.66,
+        "mouthPressDL": 0.66, "mouthPressDR": 0.66,
+        "mouthUpperLipRollInL": 0.20, "mouthUpperLipRollInR": 0.20,
+        "mouthLowerLipRollInL": 0.20, "mouthLowerLipRollInR": 0.20,
+        "mouthLipsTightenUL": 0.30, "mouthLipsTightenUR": 0.30,
+        "mouthLipsTightenDL": 0.30, "mouthLipsTightenDR": 0.30
+      }
+    },
+    {
+      "name": "viseme_FF",
+      "phonemes": "f, v",
+      "note": "Labiodental. Lower lip to the UPPER TEETH -- mouthLowerLipTowardsTeeth* is the literal control and the composed recipe had no access to it, approximating with mouthRollLower. Slight upper-lip raise clears the teeth.",
+      "controls": {
+        "mouthLowerLipTowardsTeethL": 0.72, "mouthLowerLipTowardsTeethR": 0.72,
+        "mouthLowerLipRollInL": 0.30, "mouthLowerLipRollInR": 0.30,
+        "mouthUpperLipRaiseL": 0.20, "mouthUpperLipRaiseR": 0.20,
+        "jawOpen": 0.06
+      }
+    },
+    {
+      "name": "viseme_TH",
+      "phonemes": "th (thin, this)",
+      "note": "Interdental -- the tongue tip is VISIBLE between the teeth. This is the pose the composed shape could not make: it had jawOpen + tongueOut and no tip control at all. tongueThin+tongueWide flatten the blade so it reads as a tongue, not a lump.",
+      "controls": {
+        "jawOpen": 0.15,
+        "tongueOut": 0.28,
+        "tongueTipUp": 0.34,
+        "tongueWide": 0.26,
+        "tongueThin": 0.22
+      }
+    },
+    {
+      "name": "viseme_DD",
+      "phonemes": "d, t",
+      "note": "Alveolar stop. Tongue TIP to the ridge behind the upper teeth, jaw barely open so the contact is visible. tonguePress is the contact itself. The composed shape used jawOpen+mouthShrugUpper -- lip cues that merely correlate.",
+      "controls": {
+        "jawOpen": 0.19,
+        "tongueTipUp": 0.74,
+        "tongueUp": 0.34,
+        "tonguePress": 0.30,
+        "tongueIn": 0.14
+      }
+    },
+    {
+      "name": "viseme_kk",
+      "phonemes": "k, g",
+      "note": "Velar. The constriction is at the BACK -- tongue body humped up and retracted, tip DOWN and out of the way. Almost no lip signature, which is why the composed version had nothing to work with.",
+      "controls": {
+        "jawOpen": 0.17,
+        "tongueBendUp": 0.52,
+        "tongueIn": 0.38,
+        "tongueTipDown": 0.30,
+        "tongueThick": 0.24
+      }
+    },
+    {
+      "name": "viseme_CH",
+      "phonemes": "ch, j, sh, zh",
+      "note": "Postalveolar. Lips protruded and rounded, tongue blade raised toward the ridge. Rounding via PURSE per fact 2; a little funnel for the flare, kept low so teeth stay covered.",
+      "controls": {
+        "mouthLipsPurseUL": 0.42, "mouthLipsPurseUR": 0.42,
+        "mouthLipsPurseDL": 0.42, "mouthLipsPurseDR": 0.42,
+        "mouthCornerNarrowL": 0.34, "mouthCornerNarrowR": 0.34,
+        "mouthFunnelUL": 0.20, "mouthFunnelUR": 0.20,
+        "mouthFunnelDL": 0.20, "mouthFunnelDR": 0.20,
+        "jawOpen": 0.10,
+        "tongueTipUp": 0.30, "tongueUp": 0.24
+      }
+    },
+    {
+      "name": "viseme_SS",
+      "phonemes": "s, z",
+      "note": "Sibilant. Teeth nearly together, lips spread, tongue grooved just behind the ridge. jawOpen stays at fact 3's teeth-reveal threshold on purpose -- /s/ shows a sliver of teeth and that reads correct.",
+      "controls": {
+        "mouthCornerWideL": 0.40, "mouthCornerWideR": 0.40,
+        "mouthStretchL": 0.24, "mouthStretchR": 0.24,
+        "jawOpen": 0.05,
+        "tongueTipUp": 0.44,
+        "tongueNarrow": 0.30,
+        "tongueUp": 0.20
+      }
+    },
+    {
+      "name": "viseme_nn",
+      "phonemes": "n, ng, l",
+      "note": "Nasal / lateral. Tongue held ON the ridge -- a sustained version of DD's contact with a smaller aperture. tonguePress higher than DD because the contact is held, not released.",
+      "controls": {
+        "jawOpen": 0.13,
+        "tongueTipUp": 0.64,
+        "tonguePress": 0.46,
+        "tongueUp": 0.30
+      }
+    },
+    {
+      "name": "viseme_RR",
+      "phonemes": "r",
+      "note": "Rhotic. Slight rounding plus a BUNCHED tongue -- body raised and retracted, tip loose. The bunch is what makes /r/ read as /r/ rather than as a weak /w/.",
+      "controls": {
+        "mouthLipsPurseUL": 0.26, "mouthLipsPurseUR": 0.26,
+        "mouthLipsPurseDL": 0.26, "mouthLipsPurseDR": 0.26,
+        "mouthCornerNarrowL": 0.22, "mouthCornerNarrowR": 0.22,
+        "jawOpen": 0.11,
+        "tongueBendUp": 0.34, "tongueIn": 0.24, "tongueTipUp": 0.18
+      }
+    },
+    {
+      "name": "viseme_aa",
+      "phonemes": "a (father)",
+      "note": "Open vowel. Jaw is the whole pose. Tongue low and flat so the mouth reads open rather than merely slack. Kept at 0.64 not 1.0 -- jawOpen 1.0 on this rig is 32.7mm, a yawn.",
+      "controls": {
+        "jawOpen": 0.64,
+        "tongueDown": 0.22,
+        "mouthCornerWideL": 0.08, "mouthCornerWideR": 0.08
+      }
+    },
+    {
+      "name": "viseme_E",
+      "phonemes": "e (bed)",
+      "note": "Mid-front vowel. Moderate opening with the corners drawn slightly wide, tongue mid-high and forward.",
+      "controls": {
+        "jawOpen": 0.30,
+        "mouthCornerWideL": 0.28, "mouthCornerWideR": 0.28,
+        "tongueUp": 0.16
+      }
+    },
+    {
+      "name": "viseme_I",
+      "phonemes": "i (bee)",
+      "note": "Close-front vowel. Nearly closed and strongly spread -- the widest corners of any pose. Tongue high and narrow.",
+      "controls": {
+        "jawOpen": 0.09,
+        "mouthCornerWideL": 0.50, "mouthCornerWideR": 0.50,
+        "mouthStretchL": 0.26, "mouthStretchR": 0.26,
+        "tongueUp": 0.34, "tongueNarrow": 0.16
+      }
+    },
+    {
+      "name": "viseme_O",
+      "phonemes": "o (go)",
+      "note": "Mid-back rounded. Open AND round, which is the combination the old recipe got wrong by leaning on funnel: funnel opened the aperture instead of rounding it. Purse dominant, funnel supporting, tongue retracted.",
+      "controls": {
+        "mouthLipsPurseUL": 0.46, "mouthLipsPurseUR": 0.46,
+        "mouthLipsPurseDL": 0.46, "mouthLipsPurseDR": 0.46,
+        "mouthCornerNarrowL": 0.44, "mouthCornerNarrowR": 0.44,
+        "mouthFunnelUL": 0.34, "mouthFunnelUR": 0.34,
+        "mouthFunnelDL": 0.34, "mouthFunnelDR": 0.34,
+        "jawOpen": 0.26,
+        "tongueIn": 0.20
+      }
+    },
+    {
+      "name": "viseme_U",
+      "phonemes": "u (boot)",
+      "note": "Close-back rounded -- the tightest rounding in the set. Purse near maximum, corners drawn in hard, funnel deliberately low (fact 2) and jaw nearly shut.",
+      "controls": {
+        "mouthLipsPurseUL": 0.80, "mouthLipsPurseUR": 0.80,
+        "mouthLipsPurseDL": 0.80, "mouthLipsPurseDR": 0.80,
+        "mouthCornerNarrowL": 0.64, "mouthCornerNarrowR": 0.64,
+        "mouthFunnelUL": 0.12, "mouthFunnelUR": 0.12,
+        "mouthFunnelDL": 0.12, "mouthFunnelDR": 0.12,
+        "jawOpen": 0.06,
+        "tongueIn": 0.24, "tongueBendUp": 0.18
+      }
+    },
+    {
+      "name": "mouthClose",
+      "phonemes": "(not a viseme -- ARKit-52's missing 52nd shape)",
+      "note": "ARKit mouthClose seals the LIPS INDEPENDENTLY OF THE JAW. MEASURED CORRECTION 2026-08-22: authored first as mouthLipsTogether* alone, it baked to 0.00 mm -- a dead morph. mouthLipsTogether is a no-op at a CLOSED jaw, because it closes the lips against an OPEN one and there is nothing for it to do from rest; a baked morph can only carry a delta from rest, so that pose encoded nothing. The press/roll terms are what give it real deformation from a closed rest, which is also why the old MOUTHCLOSE_RECIPE reached for them. mouthLipsTogether stays, at weight, so the shape still behaves correctly when lipsync fires it against jawOpen.",
+      "controls": {
+        "mouthLipsTogetherUL": 0.85, "mouthLipsTogetherUR": 0.85,
+        "mouthLipsTogetherDL": 0.85, "mouthLipsTogetherDR": 0.85,
+        "mouthPressUL": 0.58, "mouthPressUR": 0.58,
+        "mouthPressDL": 0.58, "mouthPressDR": 0.58,
+        "mouthUpperLipRollInL": 0.24, "mouthUpperLipRollInR": 0.24,
+        "mouthLowerLipRollInL": 0.24, "mouthLowerLipRollInR": 0.24,
+        "mouthLipsTightenUL": 0.22, "mouthLipsTightenUR": 0.22,
+        "mouthLipsTightenDL": 0.22, "mouthLipsTightenDR": 0.22
+      }
+    }
+  ]
+}

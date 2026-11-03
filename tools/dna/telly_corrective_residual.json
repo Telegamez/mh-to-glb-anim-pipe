@@ -1,0 +1,759 @@
+{
+  "dna": "S:/Avatars/metahuman/_dna/Telly_Head.dna",
+  "poses": "../../5.7/native-glb/stages/01-unreal-glb-export/config/tg_viseme_poses.json",
+  "pairs": [
+    {
+      "pair": "viseme_aa + mouthClose",
+      "joint_pct": 19.150766537798734,
+      "blendshape_pct": 29.292159171109155,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_PP + viseme_aa",
+      "joint_pct": 17.495977223229982,
+      "blendshape_pct": 25.632720096107818,
+      "at_t": 0.75,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_O + mouthClose",
+      "joint_pct": 9.208763643960499,
+      "blendshape_pct": 19.659290385658576,
+      "at_t": 0.5,
+      "active_psds": 40
+    },
+    {
+      "pair": "viseme_PP + viseme_O",
+      "joint_pct": 8.585125000898065,
+      "blendshape_pct": 19.111238813586727,
+      "at_t": 0.5,
+      "active_psds": 40
+    },
+    {
+      "pair": "viseme_aa + viseme_U",
+      "joint_pct": 12.90555219786434,
+      "blendshape_pct": 18.282448045390918,
+      "at_t": 0.25,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_E + mouthClose",
+      "joint_pct": 12.138856699778993,
+      "blendshape_pct": 16.261175714797115,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_SS + viseme_O",
+      "joint_pct": 9.798387009686282,
+      "blendshape_pct": 15.426084545718277,
+      "at_t": 0.5,
+      "active_psds": 31
+    },
+    {
+      "pair": "viseme_CH + viseme_aa",
+      "joint_pct": 6.696096681749193,
+      "blendshape_pct": 15.356811222650139,
+      "at_t": 0.75,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_aa + viseme_O",
+      "joint_pct": 4.739860023906524,
+      "blendshape_pct": 15.216701471555336,
+      "at_t": 0.25,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_I + viseme_O",
+      "joint_pct": 8.823048028532149,
+      "blendshape_pct": 15.043256337331462,
+      "at_t": 0.5,
+      "active_psds": 31
+    },
+    {
+      "pair": "viseme_PP + viseme_E",
+      "joint_pct": 10.7135927639129,
+      "blendshape_pct": 13.909438763269927,
+      "at_t": 0.75,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_FF + viseme_O",
+      "joint_pct": 9.275326497513307,
+      "blendshape_pct": 11.57253362424364,
+      "at_t": 0.5,
+      "active_psds": 23
+    },
+    {
+      "pair": "viseme_PP + viseme_CH",
+      "joint_pct": 4.172047784905141,
+      "blendshape_pct": 10.719357398078525,
+      "at_t": 0.5,
+      "active_psds": 40
+    },
+    {
+      "pair": "viseme_CH + mouthClose",
+      "joint_pct": 4.51554403468748,
+      "blendshape_pct": 10.619804920743016,
+      "at_t": 0.5,
+      "active_psds": 40
+    },
+    {
+      "pair": "viseme_TH + viseme_O",
+      "joint_pct": 8.24102319248702,
+      "blendshape_pct": 10.402369872676461,
+      "at_t": 0.25,
+      "active_psds": 18
+    },
+    {
+      "pair": "viseme_E + viseme_U",
+      "joint_pct": 7.593463741192973,
+      "blendshape_pct": 10.205968675618111,
+      "at_t": 0.25,
+      "active_psds": 17
+    },
+    {
+      "pair": "viseme_DD + mouthClose",
+      "joint_pct": 7.9587417065892865,
+      "blendshape_pct": 9.790427855432034,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_PP + viseme_U",
+      "joint_pct": 3.939918966206394,
+      "blendshape_pct": 9.676337034206167,
+      "at_t": 0.5,
+      "active_psds": 40
+    },
+    {
+      "pair": "viseme_I + viseme_U",
+      "joint_pct": 6.4723512278107505,
+      "blendshape_pct": 9.623620377100053,
+      "at_t": 0.5,
+      "active_psds": 32
+    },
+    {
+      "pair": "viseme_nn + viseme_O",
+      "joint_pct": 8.48182649472518,
+      "blendshape_pct": 9.341521464286394,
+      "at_t": 0.25,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_TH + mouthClose",
+      "joint_pct": 7.3343631945643795,
+      "blendshape_pct": 9.065696986484637,
+      "at_t": 0.5,
+      "active_psds": 13
+    },
+    {
+      "pair": "viseme_kk + mouthClose",
+      "joint_pct": 7.945393770908963,
+      "blendshape_pct": 8.990679691169463,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_U + mouthClose",
+      "joint_pct": 4.055466057272137,
+      "blendshape_pct": 8.986774261293997,
+      "at_t": 0.5,
+      "active_psds": 40
+    },
+    {
+      "pair": "viseme_CH + viseme_SS",
+      "joint_pct": 5.61914714188574,
+      "blendshape_pct": 8.938931102877703,
+      "at_t": 0.5,
+      "active_psds": 31
+    },
+    {
+      "pair": "viseme_CH + viseme_I",
+      "joint_pct": 5.05999026835949,
+      "blendshape_pct": 8.564156298145946,
+      "at_t": 0.5,
+      "active_psds": 31
+    },
+    {
+      "pair": "viseme_SS + viseme_U",
+      "joint_pct": 6.334540099784777,
+      "blendshape_pct": 8.514238159362636,
+      "at_t": 0.5,
+      "active_psds": 32
+    },
+    {
+      "pair": "viseme_CH + viseme_E",
+      "joint_pct": 4.241921442867878,
+      "blendshape_pct": 8.392880088877165,
+      "at_t": 0.75,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_PP + viseme_DD",
+      "joint_pct": 7.150708141013487,
+      "blendshape_pct": 8.159327538858568,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_kk + viseme_O",
+      "joint_pct": 7.592215175427991,
+      "blendshape_pct": 8.038814235626248,
+      "at_t": 0.25,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_E + viseme_O",
+      "joint_pct": 5.5245526413230195,
+      "blendshape_pct": 7.818089201526096,
+      "at_t": 0.25,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_RR + mouthClose",
+      "joint_pct": 4.293803052271135,
+      "blendshape_pct": 7.665205717666172,
+      "at_t": 0.5,
+      "active_psds": 20
+    },
+    {
+      "pair": "viseme_PP + viseme_TH",
+      "joint_pct": 6.556283826557287,
+      "blendshape_pct": 7.5611523385582675,
+      "at_t": 0.5,
+      "active_psds": 13
+    },
+    {
+      "pair": "viseme_PP + viseme_kk",
+      "joint_pct": 7.09334851871139,
+      "blendshape_pct": 7.4727116807221465,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_RR + viseme_aa",
+      "joint_pct": 4.428831411623946,
+      "blendshape_pct": 7.32978735344073,
+      "at_t": 0.5,
+      "active_psds": 4
+    },
+    {
+      "pair": "viseme_DD + viseme_O",
+      "joint_pct": 6.905212134727674,
+      "blendshape_pct": 7.292727024404179,
+      "at_t": 0.25,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_PP + viseme_RR",
+      "joint_pct": 3.851654159623779,
+      "blendshape_pct": 7.168996767811864,
+      "at_t": 0.5,
+      "active_psds": 20
+    },
+    {
+      "pair": "viseme_nn + mouthClose",
+      "joint_pct": 6.343421786400376,
+      "blendshape_pct": 7.115537577794899,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_TH + viseme_U",
+      "joint_pct": 5.287246378106658,
+      "blendshape_pct": 6.85314362377254,
+      "at_t": 0.25,
+      "active_psds": 19
+    },
+    {
+      "pair": "viseme_DD + viseme_U",
+      "joint_pct": 5.283662417411454,
+      "blendshape_pct": 6.196546435173654,
+      "at_t": 0.25,
+      "active_psds": 17
+    },
+    {
+      "pair": "viseme_PP + viseme_nn",
+      "joint_pct": 5.627617141502139,
+      "blendshape_pct": 5.887678814045031,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_TH + viseme_CH",
+      "joint_pct": 5.148021796318799,
+      "blendshape_pct": 5.75618036343296,
+      "at_t": 0.25,
+      "active_psds": 18
+    },
+    {
+      "pair": "viseme_kk + viseme_U",
+      "joint_pct": 4.932668693437926,
+      "blendshape_pct": 5.511331425123993,
+      "at_t": 0.25,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_kk + viseme_CH",
+      "joint_pct": 5.213793131240987,
+      "blendshape_pct": 5.470599018195064,
+      "at_t": 0.5,
+      "active_psds": 17
+    },
+    {
+      "pair": "viseme_I + mouthClose",
+      "joint_pct": 3.936813444004529,
+      "blendshape_pct": 5.415170204801367,
+      "at_t": 0.5,
+      "active_psds": 15
+    },
+    {
+      "pair": "viseme_aa + viseme_I",
+      "joint_pct": 2.9952176476145103,
+      "blendshape_pct": 5.271946012012782,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_TH + viseme_kk",
+      "joint_pct": 1.4894795805488792,
+      "blendshape_pct": 5.254091821885052,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_FF + viseme_CH",
+      "joint_pct": 5.148169598393928,
+      "blendshape_pct": 5.075868116709405,
+      "at_t": 0.5,
+      "active_psds": 23
+    },
+    {
+      "pair": "viseme_nn + viseme_U",
+      "joint_pct": 4.980519039426544,
+      "blendshape_pct": 5.041307536920858,
+      "at_t": 0.25,
+      "active_psds": 17
+    },
+    {
+      "pair": "viseme_RR + viseme_I",
+      "joint_pct": 3.0353694920154672,
+      "blendshape_pct": 5.005368454861754,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_FF + viseme_U",
+      "joint_pct": 4.921012070139486,
+      "blendshape_pct": 3.2108528876540614,
+      "at_t": 0.5,
+      "active_psds": 23
+    },
+    {
+      "pair": "viseme_SS + viseme_aa",
+      "joint_pct": 3.134020860869502,
+      "blendshape_pct": 4.890368604560142,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_DD + viseme_CH",
+      "joint_pct": 3.8929629905932113,
+      "blendshape_pct": 4.7647948115812255,
+      "at_t": 0.5,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_SS + viseme_RR",
+      "joint_pct": 2.7275700721831093,
+      "blendshape_pct": 4.730990794387808,
+      "at_t": 0.5,
+      "active_psds": 12
+    },
+    {
+      "pair": "viseme_CH + viseme_nn",
+      "joint_pct": 4.609255972950372,
+      "blendshape_pct": 3.7824942561965607,
+      "at_t": 0.5,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_FF + mouthClose",
+      "joint_pct": 2.79619489672741,
+      "blendshape_pct": 4.60065489141664,
+      "at_t": 0.5,
+      "active_psds": 19
+    },
+    {
+      "pair": "viseme_PP + viseme_I",
+      "joint_pct": 3.529541166064626,
+      "blendshape_pct": 4.585925790321223,
+      "at_t": 0.5,
+      "active_psds": 15
+    },
+    {
+      "pair": "viseme_RR + viseme_O",
+      "joint_pct": 3.905458199322806,
+      "blendshape_pct": 4.483330264012078,
+      "at_t": 0.5,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_PP + viseme_FF",
+      "joint_pct": 2.5208105145990136,
+      "blendshape_pct": 4.419615400696219,
+      "at_t": 0.5,
+      "active_psds": 19
+    },
+    {
+      "pair": "viseme_TH + viseme_I",
+      "joint_pct": 2.312733002329161,
+      "blendshape_pct": 4.373210405157647,
+      "at_t": 0.5,
+      "active_psds": 6
+    },
+    {
+      "pair": "viseme_TH + viseme_SS",
+      "joint_pct": 2.319935232378701,
+      "blendshape_pct": 4.298985162962504,
+      "at_t": 0.5,
+      "active_psds": 6
+    },
+    {
+      "pair": "viseme_O + viseme_U",
+      "joint_pct": 3.7462944675297196,
+      "blendshape_pct": 3.008528556030017,
+      "at_t": 0.5,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_FF + viseme_aa",
+      "joint_pct": 1.0829991294112158,
+      "blendshape_pct": 3.695652307713638,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_kk + viseme_I",
+      "joint_pct": 2.5402147782307742,
+      "blendshape_pct": 3.657475826107743,
+      "at_t": 0.5,
+      "active_psds": 4
+    },
+    {
+      "pair": "viseme_TH + viseme_RR",
+      "joint_pct": 1.777043674688359,
+      "blendshape_pct": 3.5321007795291917,
+      "at_t": 0.5,
+      "active_psds": 7
+    },
+    {
+      "pair": "viseme_RR + viseme_E",
+      "joint_pct": 2.9808070360822896,
+      "blendshape_pct": 3.489918290264699,
+      "at_t": 0.5,
+      "active_psds": 5
+    },
+    {
+      "pair": "viseme_TH + viseme_DD",
+      "joint_pct": 1.0365292367534868,
+      "blendshape_pct": 3.3374700254138245,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_SS + mouthClose",
+      "joint_pct": 2.2992140262595697,
+      "blendshape_pct": 3.1400402195457233,
+      "at_t": 0.5,
+      "active_psds": 15
+    },
+    {
+      "pair": "viseme_TH + viseme_nn",
+      "joint_pct": 1.1047388385621764,
+      "blendshape_pct": 2.7427931014090503,
+      "at_t": 0.5,
+      "active_psds": 2
+    },
+    {
+      "pair": "viseme_kk + viseme_SS",
+      "joint_pct": 2.2977229371670536,
+      "blendshape_pct": 2.7307151457800938,
+      "at_t": 0.5,
+      "active_psds": 4
+    },
+    {
+      "pair": "viseme_E + viseme_I",
+      "joint_pct": 1.8985740166009666,
+      "blendshape_pct": 2.7073382644379897,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_RR + viseme_U",
+      "joint_pct": 2.6974161007147517,
+      "blendshape_pct": 2.326807439251191,
+      "at_t": 0.5,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_PP + viseme_SS",
+      "joint_pct": 2.0566609908222526,
+      "blendshape_pct": 2.6659114083287814,
+      "at_t": 0.5,
+      "active_psds": 15
+    },
+    {
+      "pair": "viseme_SS + viseme_E",
+      "joint_pct": 2.1669910470602343,
+      "blendshape_pct": 2.609615894745493,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_DD + viseme_kk",
+      "joint_pct": 1.2371758268704358,
+      "blendshape_pct": 2.593592222744673,
+      "at_t": 0.5,
+      "active_psds": 1
+    },
+    {
+      "pair": "viseme_FF + viseme_I",
+      "joint_pct": 1.4672006050843056,
+      "blendshape_pct": 2.578987914970896,
+      "at_t": 0.5,
+      "active_psds": 10
+    },
+    {
+      "pair": "viseme_TH + viseme_E",
+      "joint_pct": 0.5387739880479896,
+      "blendshape_pct": 2.5249054408435154,
+      "at_t": 0.5,
+      "active_psds": 2
+    },
+    {
+      "pair": "viseme_kk + viseme_nn",
+      "joint_pct": 1.280396453433658,
+      "blendshape_pct": 2.4238658539838056,
+      "at_t": 0.5,
+      "active_psds": 1
+    },
+    {
+      "pair": "viseme_DD + viseme_RR",
+      "joint_pct": 2.052410276642361,
+      "blendshape_pct": 2.3257994313835577,
+      "at_t": 0.5,
+      "active_psds": 5
+    },
+    {
+      "pair": "viseme_CH + viseme_RR",
+      "joint_pct": 2.1725152847955322,
+      "blendshape_pct": 1.7058837355325194,
+      "at_t": 0.5,
+      "active_psds": 17
+    },
+    {
+      "pair": "viseme_FF + viseme_SS",
+      "joint_pct": 1.2525876943058787,
+      "blendshape_pct": 2.1114962726371695,
+      "at_t": 0.5,
+      "active_psds": 10
+    },
+    {
+      "pair": "viseme_FF + viseme_TH",
+      "joint_pct": 1.0763810393260964,
+      "blendshape_pct": 1.9332709186214794,
+      "at_t": 0.5,
+      "active_psds": 4
+    },
+    {
+      "pair": "viseme_FF + viseme_E",
+      "joint_pct": 0.7859404865067591,
+      "blendshape_pct": 1.8826134945303337,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_CH + viseme_U",
+      "joint_pct": 1.7419836560142072,
+      "blendshape_pct": 1.1797311897117972,
+      "at_t": 0.5,
+      "active_psds": 17
+    },
+    {
+      "pair": "viseme_TH + viseme_aa",
+      "joint_pct": 0.26754662180149275,
+      "blendshape_pct": 1.5782171599159869,
+      "at_t": 0.5,
+      "active_psds": 1
+    },
+    {
+      "pair": "viseme_kk + viseme_E",
+      "joint_pct": 0.5126944938554472,
+      "blendshape_pct": 1.557119272746549,
+      "at_t": 0.5,
+      "active_psds": 1
+    },
+    {
+      "pair": "viseme_DD + viseme_SS",
+      "joint_pct": 1.4015791859767555,
+      "blendshape_pct": 1.5345267933018123,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_DD + viseme_I",
+      "joint_pct": 1.157000513983349,
+      "blendshape_pct": 1.522945947819204,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_nn + viseme_RR",
+      "joint_pct": 1.2209626528758355,
+      "blendshape_pct": 1.5138815477528524,
+      "at_t": 0.5,
+      "active_psds": 5
+    },
+    {
+      "pair": "viseme_SS + viseme_nn",
+      "joint_pct": 1.0784901133303997,
+      "blendshape_pct": 1.239669342769504,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_nn + viseme_I",
+      "joint_pct": 0.866860908452555,
+      "blendshape_pct": 1.1846688911612462,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_FF + viseme_RR",
+      "joint_pct": 0.9939967611649189,
+      "blendshape_pct": 1.121704838917032,
+      "at_t": 0.5,
+      "active_psds": 7
+    },
+    {
+      "pair": "viseme_FF + viseme_DD",
+      "joint_pct": 0.5284564007762008,
+      "blendshape_pct": 1.0747664242837136,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_FF + viseme_kk",
+      "joint_pct": 0.520920288075484,
+      "blendshape_pct": 1.0057471736037755,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_kk + viseme_RR",
+      "joint_pct": 0.9973584496600681,
+      "blendshape_pct": 0.7599376476977473,
+      "at_t": 0.5,
+      "active_psds": 4
+    },
+    {
+      "pair": "viseme_CH + viseme_O",
+      "joint_pct": 0.5472781633358889,
+      "blendshape_pct": 0.8964626597451355,
+      "at_t": 0.5,
+      "active_psds": 16
+    },
+    {
+      "pair": "viseme_FF + viseme_nn",
+      "joint_pct": 0.4164059478636927,
+      "blendshape_pct": 0.8317025286947937,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_SS + viseme_I",
+      "joint_pct": 0.029318600843577836,
+      "blendshape_pct": 0.02185796642670555,
+      "at_t": 0.5,
+      "active_psds": 3
+    },
+    {
+      "pair": "viseme_PP + mouthClose",
+      "joint_pct": 6.22386081826352e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.25,
+      "active_psds": 0
+    },
+    {
+      "pair": "viseme_nn + viseme_E",
+      "joint_pct": 6.122102663566197e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.75,
+      "active_psds": 0
+    },
+    {
+      "pair": "viseme_DD + viseme_aa",
+      "joint_pct": 5.284458372754582e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.25,
+      "active_psds": 0
+    },
+    {
+      "pair": "viseme_DD + viseme_nn",
+      "joint_pct": 4.7181205218209e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.25,
+      "active_psds": 0
+    },
+    {
+      "pair": "viseme_aa + viseme_E",
+      "joint_pct": 4.5189743513339005e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.75,
+      "active_psds": 0
+    },
+    {
+      "pair": "viseme_DD + viseme_E",
+      "joint_pct": 3.766483629934762e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.25,
+      "active_psds": 0
+    },
+    {
+      "pair": "viseme_nn + viseme_aa",
+      "joint_pct": 3.71443861380608e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.75,
+      "active_psds": 0
+    },
+    {
+      "pair": "viseme_kk + viseme_aa",
+      "joint_pct": 3.6297204548460864e-06,
+      "blendshape_pct": 0.0,
+      "at_t": 0.75,
+      "active_psds": 0
+    }
+  ],
+  "joint_summary": {
+    "mean": 4.03,
+    "median": 3.13,
+    "p90": 8.39,
+    "max": 19.15,
+    "over_10pct": 5,
+    "over_25pct": 0,
+    "n": 105
+  },
+  "blendshape_summary": {
+    "mean": 5.94,
+    "median": 4.6,
+    "p90": 12.97,
+    "max": 29.29,
+    "over_10pct": 16,
+    "over_25pct": 2,
+    "n": 105
+  }
+}

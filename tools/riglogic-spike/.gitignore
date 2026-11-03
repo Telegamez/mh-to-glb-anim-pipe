@@ -1,0 +1,9 @@
+# CMake build trees and their artifacts. The wasm output is reproducible from source; a
+# committed .wasm would be a binary nobody can diff.
+build-native/
+build-wasm/
+bt/
+bt1/
+bt2/
+bt3/
+bt4/

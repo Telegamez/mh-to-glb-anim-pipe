@@ -1,0 +1,110 @@
+{
+ "_note": "Recorded baseline for slice 2.3. Regenerate with tools/visemes/compare_baked_vs_composed.py; see the README for how to read the tongue column and what it does NOT establish.",
+ "character": "telee",
+ "measured_on": "2026-08-22",
+ "units": "mm",
+ "arkit_poses": 51,
+ "verts": 34657,
+ "tongue_verts": 470,
+ "tongue_probe": "tongueOut >1mm",
+ "jawOpen_max_mm": 29.35,
+ "baked_poses": 16,
+ "shapes": {
+  "viseme_sil": {
+   "baked_max_mm": 0.0,
+   "baked_tongue_mm": 0.0,
+   "composed_max_mm": 0.0,
+   "composed_tongue_mm": 0.0
+  },
+  "viseme_PP": {
+   "baked_max_mm": 6.94,
+   "baked_tongue_mm": 0.0,
+   "composed_max_mm": 7.2,
+   "composed_tongue_mm": 0.0
+  },
+  "viseme_FF": {
+   "baked_max_mm": 5.23,
+   "baked_tongue_mm": 1.76,
+   "composed_max_mm": 4.24,
+   "composed_tongue_mm": 1.4
+  },
+  "viseme_TH": {
+   "baked_max_mm": 11.9,
+   "baked_tongue_mm": 11.9,
+   "composed_max_mm": 8.91,
+   "composed_tongue_mm": 8.91
+  },
+  "viseme_DD": {
+   "baked_max_mm": 15.2,
+   "baked_tongue_mm": 15.2,
+   "composed_max_mm": 5.87,
+   "composed_tongue_mm": 5.6
+  },
+  "viseme_kk": {
+   "baked_max_mm": 6.93,
+   "baked_tongue_mm": 6.93,
+   "composed_max_mm": 5.28,
+   "composed_tongue_mm": 5.04
+  },
+  "viseme_CH": {
+   "baked_max_mm": 6.61,
+   "baked_tongue_mm": 6.51,
+   "composed_max_mm": 7.6,
+   "composed_tongue_mm": 2.8
+  },
+  "viseme_SS": {
+   "baked_max_mm": 8.36,
+   "baked_tongue_mm": 8.36,
+   "composed_max_mm": 5.31,
+   "composed_tongue_mm": 1.4
+  },
+  "viseme_nn": {
+   "baked_max_mm": 18.23,
+   "baked_tongue_mm": 18.23,
+   "composed_max_mm": 4.68,
+   "composed_tongue_mm": 4.68
+  },
+  "viseme_RR": {
+   "baked_max_mm": 6.71,
+   "baked_tongue_mm": 6.71,
+   "composed_max_mm": 5.84,
+   "composed_tongue_mm": 2.8
+  },
+  "viseme_aa": {
+   "baked_max_mm": 19.42,
+   "baked_tongue_mm": 19.42,
+   "composed_max_mm": 20.54,
+   "composed_tongue_mm": 19.59
+  },
+  "viseme_E": {
+   "baked_max_mm": 9.12,
+   "baked_tongue_mm": 6.02,
+   "composed_max_mm": 10.58,
+   "composed_tongue_mm": 8.96
+  },
+  "viseme_I": {
+   "baked_max_mm": 6.32,
+   "baked_tongue_mm": 6.32,
+   "composed_max_mm": 6.69,
+   "composed_tongue_mm": 2.8
+  },
+  "viseme_O": {
+   "baked_max_mm": 9.6,
+   "baked_tongue_mm": 9.6,
+   "composed_max_mm": 13.8,
+   "composed_tongue_mm": 7.84
+  },
+  "viseme_U": {
+   "baked_max_mm": 11.08,
+   "baked_tongue_mm": 2.99,
+   "composed_max_mm": 11.57,
+   "composed_tongue_mm": 0.0
+  },
+  "mouthClose": {
+   "baked_max_mm": 6.32,
+   "baked_tongue_mm": 0.0,
+   "composed_max_mm": 4.78,
+   "composed_tongue_mm": 0.0
+  }
+ }
+}

@@ -15,21 +15,21 @@
     "01_unreal_glb_export": {
       "status": "done",
       "started_at": "2026-08-16T18:44:05Z",
-      "completed_at": "2026-08-17T16:17:32Z",
+      "completed_at": "2026-08-23T01:01:58Z",
       "output_dir": "01-glb/",
       "errors": []
     },
     "02_blender_assemble": {
       "status": "done",
-      "started_at": "2026-08-18T02:53:47Z",
-      "completed_at": "2026-08-18T02:53:47Z",
+      "started_at": "2026-08-23T01:03:10Z",
+      "completed_at": "2026-08-23T01:03:10Z",
       "output_dir": "02-blend/",
       "errors": []
     },
     "03_glb_export": {
       "status": "done",
       "started_at": "2026-08-16T18:58:38Z",
-      "completed_at": "2026-08-19T15:33:57Z",
+      "completed_at": "2026-08-23T01:05:02Z",
       "output_dir": "03-glb/",
       "errors": []
     },

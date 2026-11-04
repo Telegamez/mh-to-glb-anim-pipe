@@ -125,7 +125,20 @@ def _find_body_mesh(anim, explicit=None):
     return fallback
 
 
-def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
+def _clip_spec(value):
+    """An animset entry is an asset path, or {"asset", "start", "end"} for a sub-range.
+
+    The sub-range form cuts a short gesture out of a long take (the previous pack's
+    dialogue clips run 20-90 s) without creating or editing any UE asset: the
+    sequencer section simply starts and ends inside the source. Seconds, source time.
+    """
+    if isinstance(value, str):
+        return value, None, None
+    return value["asset"], value.get("start"), value.get("end")
+
+
+def _bake_one(clip_name, spec, world, explicit_mesh=None):
+    asset_path, start_s, end_s = _clip_spec(spec)
     if not unreal.EditorAssetLibrary.does_asset_exist(asset_path):
         _log(f"  {clip_name}: ASSET NOT FOUND {asset_path}")
         return None
@@ -139,7 +152,13 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
         _log(f"  {clip_name}: no SkeletalMesh found for its skeleton")
         return None
 
-    length = float(anim.get_editor_property("sequence_length"))
+    source_length = float(anim.get_editor_property("sequence_length"))
+    start_s = 0.0 if start_s is None else float(start_s)
+    end_s = source_length if end_s is None else float(end_s)
+    if not (0.0 <= start_s < end_s <= source_length + 1e-4):
+        _log(f"  {clip_name}: bad sub-range {start_s}-{end_s} for a {source_length:.2f}s source")
+        return None
+    length = end_s - start_s
     frames = max(2, int(round(length * BAKE_FPS)))
 
     actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
@@ -163,6 +182,15 @@ def _bake_one(clip_name, asset_path, world, explicit_mesh=None):
     section.set_range(0, frames)
     params = section.get_editor_property("params")
     _set(params, "animation", anim)
+    if start_s > 0.0 or end_s < source_length - 1e-4:
+        # Offsets are in the sequence's TICK resolution, not its display rate.
+        tick = sequence.get_tick_resolution()
+        per_s = float(tick.numerator) / float(tick.denominator)
+        _set(params, "start_frame_offset", unreal.FrameNumber(int(round(start_s * per_s))))
+        _set(params, "end_frame_offset",
+             unreal.FrameNumber(int(round((source_length - end_s) * per_s))))
+        _log(f"  {clip_name}: sub-range {start_s:.3f}-{end_s:.3f}s of {source_length:.2f}s "
+             f"(tick {per_s:.0f}/s)")
     _set(section, "params", params)
 
     # The factory needs its target skeleton BEFORE the asset is created: an AnimSequence built
@@ -265,9 +293,9 @@ def main():
 
     opts = _make_gltf_options()
     failed = []
-    for clip_name, asset_path in clips.items():
-        _log(f"{clip_name} <- {asset_path}")
-        baked = _bake_one(clip_name, asset_path, world, explicit_mesh)
+    for clip_name, spec in clips.items():
+        _log(f"{clip_name} <- {spec}")
+        baked = _bake_one(clip_name, spec, world, explicit_mesh)
         if baked is None or not _export_glb(clip_name, baked, opts):
             failed.append(clip_name)
 

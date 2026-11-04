@@ -147,29 +147,35 @@ def _trim_bind_tail(action):
 
 
 FINGER_BONE = re.compile(r'pose\.bones\["((?:thumb|index|middle|ring|pinky)_[^"]*)"\]\.(\w+)$')
+WRIST_CORRECTIVE = re.compile(r'pose\.bones\["(wrist_(?:inner|outer)_[lr])"\]\.(\w+)$')
+# An animset entry's hold options: key -> the bones it holds at Idle's first frame.
+HOLDS = {"fingers": FINGER_BONE, "wrist": WRIST_CORRECTIVE}
 
 
-def _finger_values(action):
-    """{(data_path, index): value at the first key} for every finger f-curve of `action`."""
-    out = {}
-    for fc in action.fcurves:
-        if FINGER_BONE.match(fc.data_path) and len(fc.keyframe_points):
-            out[(fc.data_path, fc.array_index)] = fc.keyframe_points[0].co[1]
-    return out
+def _first_values(action):
+    """{(data_path, index): value at the first key} for every f-curve of `action`."""
+    return {(fc.data_path, fc.array_index): fc.keyframe_points[0].co[1]
+            for fc in action.fcurves if len(fc.keyframe_points)}
 
 
-def _hold_fingers(action, held):
-    """Replace every finger f-curve of `action` with a constant from `held` (Idle's first frame).
+def _hold_fingers(action, held, pattern=FINGER_BONE):
+    """Replace every f-curve of `action` whose bone matches `pattern` with a constant from `held` (Idle's first frame).
 
-    Retargeted clips (the Avaturn dances) carry their source rig's finger animation, which reads as
+    `fingers`: retargeted clips (the Avaturn dances) carry their source rig's finger animation, which reads as
     half-curled claws on a MetaHuman hand. The runtime's hand-pose layer owns intentional finger
     shapes, so these clips keep the hand relaxed instead: Idle's pose, which every clip crossfades
-    from and back to. A finger channel Idle does not have is dropped. Returns (held, dropped).
+    from and back to.
+
+    `wrist`: the wrist correctives. Wave (TG-Anim_Wave_3) drives wrist_inner_r 61 deg and slides wrist_outer_r
+    3.3 cm, against 7 deg and under 1 cm in every other gesture, and the skin dents at the wrist
+    (panda UAT, 2026-11-04). Held at Idle, the wrist deforms as plain skinning, as it does in Dance.
+
+    A channel Idle does not have is dropped. Returns (held, dropped).
     """
     f0, f1 = action.frame_range
     kept = dropped = 0
     for fc in list(action.fcurves):
-        if not FINGER_BONE.match(fc.data_path):
+        if not pattern.match(fc.data_path):
             continue
         v = held.get((fc.data_path, fc.array_index))
         if v is None:
@@ -289,14 +295,19 @@ def main():
             sys.exit(1)
 
         if clip == "Idle":
-            idle_fingers = _finger_values(action)
-        if isinstance(specs.get(clip), dict) and specs[clip].get("fingers") == "idle":
+            idle_fingers = _first_values(action)
+        for key, pattern in HOLDS.items():
+            if not (isinstance(specs.get(clip), dict) and specs[clip].get(key) == "idle"):
+                continue
             if not idle_fingers:
-                _log(f"  {clip}: fingers 'idle' asked for, but Idle has not been read (or has no "
-                     f"finger curves). Idle must be in 'required'. Refusing.")
+                _log(f"  {clip}: {key} 'idle' asked for, but Idle has not been read. "
+                     f"Idle must be in 'required'. Refusing.")
                 sys.exit(1)
-            held, dropped = _hold_fingers(action, idle_fingers)
-            _log(f"  {clip}: fingers held at Idle's first frame on {held} f-curves, {dropped} dropped")
+            held, dropped = _hold_fingers(action, idle_fingers, pattern)
+            if not held:
+                _log(f"  {clip}: {key} 'idle' matched no f-curves. Refusing rather than ship a no-op.")
+                sys.exit(1)
+            _log(f"  {clip}: {key} held at Idle's first frame on {held} f-curves, {dropped} dropped")
 
         actions_out.append(action)
 

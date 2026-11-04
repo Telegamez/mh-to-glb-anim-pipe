@@ -1,14 +1,16 @@
 """Blender: one GLB = Avaturn library armature + its Dance2/Dance3/KnockOut actions + NY mesh skinned to it.
 
-blender -b --factory-startup -P make_avaturn_src.py -- <animations.glb> <NY.glb> <out.glb>
+blender -b --factory-startup -P make_avaturn_src.py -- <animations.glb> <NY.glb> <out.glb> [Clip,Clip,...]
 The NY mesh is only an IK-rig preview mesh: it is re-pointed at the animation armature (same bone
-names), so UE imports the animation armature's rest pose as the skeleton.
+names), so UE imports the animation armature's rest pose as the skeleton. The optional clip list
+picks the Avaturn actions to carry (default Dance2,Dance3, the first batch).
 """
 import sys
 import bpy
 
-anims, ny, out = sys.argv[sys.argv.index('--') + 1:][:3]
-KEEP = ['Dance2', 'Dance3']
+argv = sys.argv[sys.argv.index('--') + 1:]
+anims, ny, out = argv[:3]
+KEEP = argv[3].split(',') if len(argv) > 3 else ['Dance2', 'Dance3']
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=anims)
 arm = next(o for o in bpy.context.scene.objects if o.type == 'ARMATURE')

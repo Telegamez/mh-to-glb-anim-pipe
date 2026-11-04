@@ -146,6 +146,46 @@ def _trim_bind_tail(action):
 
 
 
+FINGER_BONE = re.compile(r'pose\.bones\["((?:thumb|index|middle|ring|pinky)_[^"]*)"\]\.(\w+)$')
+
+
+def _finger_values(action):
+    """{(data_path, index): value at the first key} for every finger f-curve of `action`."""
+    out = {}
+    for fc in action.fcurves:
+        if FINGER_BONE.match(fc.data_path) and len(fc.keyframe_points):
+            out[(fc.data_path, fc.array_index)] = fc.keyframe_points[0].co[1]
+    return out
+
+
+def _hold_fingers(action, held):
+    """Replace every finger f-curve of `action` with a constant from `held` (Idle's first frame).
+
+    Retargeted clips (the Avaturn dances) carry their source rig's finger animation, which reads as
+    half-curled claws on a MetaHuman hand. The runtime's hand-pose layer owns intentional finger
+    shapes, so these clips keep the hand relaxed instead: Idle's pose, which every clip crossfades
+    from and back to. A finger channel Idle does not have is dropped. Returns (held, dropped).
+    """
+    f0, f1 = action.frame_range
+    kept = dropped = 0
+    for fc in list(action.fcurves):
+        if not FINGER_BONE.match(fc.data_path):
+            continue
+        v = held.get((fc.data_path, fc.array_index))
+        if v is None:
+            action.fcurves.remove(fc)
+            dropped += 1
+            continue
+        kps = fc.keyframe_points
+        while len(kps):
+            kps.remove(kps[0])
+        kps.insert(f0, v)
+        kps.insert(f1, v)
+        fc.update()
+        kept += 1
+    return kept, dropped
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
@@ -162,6 +202,8 @@ def main():
     looping = set((cfg.get("required") or {}).keys())
     clip_names = list((cfg.get("required") or {}).keys()) + \
                  list((cfg.get("gestures") or {}).keys())
+    specs = {**(cfg.get("required") or {}), **(cfg.get("gestures") or {})}
+    idle_fingers = None
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -245,6 +287,16 @@ def main():
             _log(f"  {clip}: the clip did not get shorter - the bake may have stopped "
                  f"emitting the bind sample. Re-measure before assuming this is needed.")
             sys.exit(1)
+
+        if clip == "Idle":
+            idle_fingers = _finger_values(action)
+        if isinstance(specs.get(clip), dict) and specs[clip].get("fingers") == "idle":
+            if not idle_fingers:
+                _log(f"  {clip}: fingers 'idle' asked for, but Idle has not been read (or has no "
+                     f"finger curves). Idle must be in 'required'. Refusing.")
+                sys.exit(1)
+            held, dropped = _hold_fingers(action, idle_fingers)
+            _log(f"  {clip}: fingers held at Idle's first frame on {held} f-curves, {dropped} dropped")
 
         actions_out.append(action)
 

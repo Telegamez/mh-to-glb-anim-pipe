@@ -40,9 +40,9 @@
       "start": 31.2,
       "end": 34.1
     },
-    "Dance": {"asset": "/Game/LibFix/Avaturn/Retargeted/LF_AV_AvaturnSrcDance4", "start": 0.3, "end": 5.5, "fingers": "idle"},
-    "Dance2": {"asset": "/Game/LibFix/Avaturn/Retargeted/LF_AV_AvaturnSrcDance4", "start": 12.0, "end": 16.0, "fingers": "idle"},
-    "Dance3": {"asset": "/Game/LibFix/Avaturn/Retargeted/LF_AV_AvaturnSrcDance", "start": 0.0, "end": 6.0, "fingers": "idle"}
+    "Dance": {"asset": "/Game/LibFix/Avaturn/Retargeted/LF_AV_AvaturnSrcDance4", "start": 0.3, "end": 5.5, "fingers": "idle", "neck": {"max_deg": 40, "scale": 0.75}},
+    "Dance2": {"asset": "/Game/LibFix/Avaturn/Retargeted/LF_AV_AvaturnSrcDance4", "start": 12.0, "end": 16.0, "fingers": "idle", "neck": {"max_deg": 40, "scale": 0.75}},
+    "Dance3": {"asset": "/Game/LibFix/Avaturn/Retargeted/LF_AV_AvaturnSrcDance", "start": 0.0, "end": 6.0, "fingers": "idle", "neck": {"max_deg": 40, "scale": 0.75}}
   },
   "output": "mh-animations-male.glb",
   "envelope": {

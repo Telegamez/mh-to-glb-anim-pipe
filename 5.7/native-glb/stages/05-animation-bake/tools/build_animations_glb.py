@@ -192,6 +192,103 @@ def _hold_fingers(action, held, pattern=FINGER_BONE):
     return kept, dropped
 
 
+# The head chain below the chest, by contract name (paths are rewritten before the limit runs).
+NECK_CHAIN = ("Neck", "neck_02", "Head")
+
+
+def _neck_quats(action, frame, fallback):
+    """{bone: Quaternion} for NECK_CHAIN at `frame`; a channel the clip lacks takes `fallback`."""
+    from mathutils import Quaternion  # type: ignore
+    out = {}
+    for bone in NECK_CHAIN:
+        comps = []
+        for i in range(4):
+            path = f'pose.bones["{bone}"].rotation_quaternion'
+            fc = action.fcurves.find(path, index=i)
+            comps.append(fc.evaluate(frame) if fc else fallback[(path, i)])
+        q = Quaternion(comps)
+        q.normalize()
+        out[bone] = q
+    return out
+
+
+def _limit_neck(action, idle_first, max_deg, scale):
+    """Soft-limit how far the head turns from Idle's neutral, measured over the whole neck chain.
+
+    The Avaturn dances (Dance = source Dance4 0.3-5.5, Dance2 = Dance4 12-16, Dance3 = source
+    Dance) whip the head 53-78 deg against the chest, measured head-vs-Spine2 on the published
+    2026-11-05 library; every MetaHuman gesture stays under 46 (Furious) and the loops under 36.
+    On Avaturn's stylized short-necked avatars that read as dancing; on a MetaHuman's long neck it
+    reads as the head wrenched over the shoulder (owner screenshot, Dance3 ~5.25 s, -75 deg yaw).
+    The retarget is faithful - the source has the same turns - so the fix belongs here.
+
+    Per frame: theta = angle of the chain's combined rotation from Idle's first frame; the chain is
+    slerped back toward Idle by theta'/theta with theta' = max_deg * tanh(scale * theta / max_deg).
+    Small motion keeps ~`scale` of its size, large turns approach `max_deg` without a hard stop,
+    and the per-bone split of the turn is kept. Returns (frames, worst theta in, worst theta out).
+    """
+    import math
+    # Idle's first frame, not this clip's: the reference is the neutral the clip crossfades from.
+    ref = _neck_quats_from_values(idle_first)
+    ref_c = ref["Neck"] @ ref["neck_02"] @ ref["Head"]
+    frames = sorted({round(kp.co[0], 4) for b in NECK_CHAIN for i in range(4)
+                     for fc in [action.fcurves.find(f'pose.bones["{b}"].rotation_quaternion', index=i)]
+                     if fc for kp in fc.keyframe_points})
+    if len(frames) < 3:
+        return 0, 0.0, 0.0
+    fallback = {}
+    for b in NECK_CHAIN:
+        path = f'pose.bones["{b}"].rotation_quaternion'
+        for i in range(4):
+            fc = action.fcurves.find(path, index=i)
+            fallback[(path, i)] = fc.keyframe_points[0].co[1] if fc and len(fc.keyframe_points) \
+                else idle_first[(path, i)]
+    new = {b: [] for b in NECK_CHAIN}
+    worst_in = worst_out = 0.0
+    for fr in frames:
+        qs = _neck_quats(action, fr, fallback)
+        c = qs["Neck"] @ qs["neck_02"] @ qs["Head"]
+        d = (ref_c.inverted() @ c)
+        theta = math.degrees(2 * math.acos(min(1.0, abs(d.w))))
+        out = max_deg * math.tanh(scale * theta / max_deg)
+        f = out / theta if theta > 1e-4 else scale
+        worst_in, worst_out = max(worst_in, theta), max(worst_out, out)
+        for b in NECK_CHAIN:
+            q = qs[b].copy()
+            if ref[b].dot(q) < 0:
+                q.negate()
+            new[b].append(ref[b].slerp(q, f))
+    for b in NECK_CHAIN:
+        path = f'pose.bones["{b}"].rotation_quaternion'
+        for i in range(4):
+            fc = action.fcurves.find(path, index=i)
+            interp = fc.keyframe_points[0].interpolation if fc and len(fc.keyframe_points) else "LINEAR"
+            if fc is None:
+                fc = action.fcurves.new(path, index=i, action_group=b)
+            kps = fc.keyframe_points
+            while len(kps):
+                kps.remove(kps[0])
+            kps.add(len(frames))
+            for k, fr in enumerate(frames):
+                kps[k].co = (fr, new[b][k][i])
+                kps[k].interpolation = interp
+            fc.update()
+    return len(frames), worst_in, worst_out
+
+
+def _neck_quats_from_values(values):
+    from mathutils import Quaternion  # type: ignore
+    out = {}
+    for b in NECK_CHAIN:
+        path = f'pose.bones["{b}"].rotation_quaternion'
+        if any((path, i) not in values for i in range(4)):
+            raise KeyError(f"Idle has no rotation channel for {b}")
+        q = Quaternion([values[(path, i)] for i in range(4)])
+        q.normalize()
+        out[b] = q
+    return out
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
@@ -308,6 +405,20 @@ def main():
                 _log(f"  {clip}: {key} 'idle' matched no f-curves. Refusing rather than ship a no-op.")
                 sys.exit(1)
             _log(f"  {clip}: {key} held at Idle's first frame on {held} f-curves, {dropped} dropped")
+
+        spec = specs.get(clip)
+        neck = spec.get("neck") if isinstance(spec, dict) else None
+        if neck:
+            if not idle_fingers:
+                _log(f"  {clip}: neck limit asked for, but Idle has not been read. Refusing.")
+                sys.exit(1)
+            n, worst_in, worst_out = _limit_neck(action, idle_fingers,
+                                                 float(neck["max_deg"]), float(neck.get("scale", 1.0)))
+            if not n:
+                _log(f"  {clip}: neck limit matched no keyed frames. Refusing rather than ship a no-op.")
+                sys.exit(1)
+            _log(f"  {clip}: neck chain limited on {n} frames, worst turn from Idle "
+                 f"{worst_in:.1f} -> {worst_out:.1f} deg (max_deg {neck['max_deg']}, scale {neck.get('scale', 1.0)})")
 
         actions_out.append(action)
 

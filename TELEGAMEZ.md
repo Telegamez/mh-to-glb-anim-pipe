@@ -161,6 +161,27 @@ The publisher bundle (`tools/deploy/`, `PUBLISHER.md`) is changed separately.
 | `Start-Console.ps1 -MeshoptConfirmed` is an ignored no-op | Old shortcuts keep starting the console. |
 | Console page: no "compressed" checkbox; the size column says "compresses on publish" / "STALE - remade on publish"; the publisher bundle's page loses its mode select and checkbox | The UI states the policy instead of offering a choice that no longer exists. |
 
+## A light model beside the others (telegamez#5216, 2026-11-09)
+
+`compress_companion.mjs --light on` (`-Light` on both wrappers) makes `<id>.light.glb` for a
+figure seen across a room among several others. It is an **additional, derived output** (owner,
+2026-11-09): the room, compositor and seat models, the sidecar and the textures are byte for byte
+what they are without the flag, and nothing in this change touches how they are made. Off by
+default. Full reasoning and the measurements are in `stages/06-web-compress/CONTEXT.md`, "The
+light model".
+
+| Part | Category | Why |
+|---|---|---|
+| `collapse-joints` in `tools/gltf-transform.config.mjs` | A, general | Folds joints matching a pattern into their nearest kept ancestor. Any MetaHuman whose face is driven by morph targets carries 841 facial joints that are never posed, and a web renderer pays for every one each frame. |
+| The light model's channel list, texture cap and the `variants.light` record | B, platform | The 20 channels are what `@telegamez/lipsync` writes plus a blink, a brow, a smile and the jaw. |
+
+Two things that will bite:
+
+- **The fold pattern is `^FACIAL_` and must stay that narrow.** Folding the corrective and twist
+  joints as well looked fine in a screenshot and moved clothing by up to 101 mm when measured.
+- **Nothing loads a light model yet.** `publish_to_cdn.ps1` routes room, compositor and seat. A
+  light file in a published folder is uploaded and never fetched.
+
 ## Running on UE 5.8 and Blender 4.4
 
 Upstream targets UE 5.7 and states Blender 5.x. This fork is verified on **UE 5.8.1** and

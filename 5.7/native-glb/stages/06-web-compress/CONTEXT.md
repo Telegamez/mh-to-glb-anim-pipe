@@ -197,6 +197,7 @@ and no clothing textures — which reads as a bad bake, not as a compression bug
 | Room model (KTX2 textures, meshopt) | `characters/<id>/06-web/<id>.glb` |
 | Compositor model (PNG textures, meshopt) | `characters/<id>/06-web/<id>.compositor.glb` |
 | Seat model (KTX2, morph normals dropped, textures <= 1024 px) | `characters/<id>/06-web/<id>.seat.glb` |
+| Light model, only with `-Light` (20 channels, textures <= 256 px, facial joints folded) | `characters/<id>/06-web/<id>.light.glb` |
 | Sidecar textures, PNG + `.ktx2` sibling each | `characters/<id>/06-web/textures/` |
 | Sidecar (`browser_texture_format: "ktx2"`) | `characters/<id>/06-web/mh_materials.json` |
 | Manifest (records `variants`) | `characters/<id>/06-web/compression_manifest.json` |
@@ -419,6 +420,69 @@ one that attaches first casts face and hair shadows: `attachShadowKey` returns e
 scene has a key, so the second model's head and hair never get `castShadow`. KTX2 transcoding
 makes the KTX2 build attach second every time, which looked exactly like "KTX2 loses the braid
 shadows". Compare each build loaded into BOTH slots, one run per build.
+
+## The light model: `-Light` (telegamez#5216)
+
+An **additional** output for a figure seen across a room among several others (the Gen-X-GenPlay
+pilot stands up to eight in a walked place). It is off by default, and asking for it changes
+nothing else: the room, compositor and seat models come out byte for byte as without it (checked
+on tg-drake, 2026-11-09). Nothing folds joints or cuts channels on an existing model.
+
+```powershell
+./tools/run_compress.ps1 -Char tg-drake -Light
+```
+
+What the light model is, against the seat model:
+
+| | Seat | Light |
+|---|---|---|
+| Morph channels on the head | 49 | 19 (the visemes, both blinks, `browInnerUp`, `mouthSmile`, `jawOpen`) |
+| Morph normals | dropped | dropped |
+| Embedded textures | <= 512 px | <= 256 px |
+| Joints in each skin | 1,185 | 345: the facial joints folded into the head |
+| File (tg-drake) | 5.9 MB | 3.6 MB |
+
+**Why joints.** Measured in telegamez `/dev/halloway` (RTX 4090 desktop, one run a case): eight
+copies of one MetaHuman cost 18.7 ms a frame, and eight 54-joint Avaturn bodies cost nothing
+measurable. Removing things one at a time showed it is neither triangles, draw calls, hair, morph
+targets nor the clip: with the joints gone the cost is gone. three.js recomputes every scene node
+and every skeleton each frame on the processor, and a bake has 1,185 joints in each of nine skins.
+Folding the 841 facial joints takes eight figures to 8.3 ms. The face of these bakes moves by morph
+targets, so those joints are never posed.
+
+**Why only the facial joints.** `collapse-joints` moves a folded joint's skin weights to its
+nearest kept ancestor, which is exact only if the joint never moves relative to it. Posing the
+full skeleton twelve times a second through all ten clips of `mh-animations-male.glb` (1,507
+poses) and comparing every vertex: folding the facial joints moves nothing. Folding the corrective
+and twist joints too (109 joints left, 4.9 ms) moved the shirt 101 mm at the upper arm and the
+trousers 69 mm at the thigh, **and looked the same in a screenshot at room distance**. Do not
+widen the fold pattern on the strength of a screenshot. Below roughly 200 joints the weights have
+to be re-solved against poses, as `solve_skin.py` does for garments; that has not been tried.
+
+**Why these channels.** Video memory, measured: morph targets are most of what a MetaHuman holds
+on the GPU, and three to six times what the three.js estimate in the table above says (60, 24 and
+10 MB estimated for room, seat and light; 200, 142 and 59 MB reported by Windows on Direct3D).
+Channel count is the lever, so the light model keeps what lip sync writes and a face needs to read
+at a distance, and nothing else. A runtime write to a channel it lacks is a no-op.
+
+**Before anything loads it:**
+
+- `publish_to_cdn.ps1` sends `room`, `compositor` and `seat` only. `compression_manifest.json`
+  records `variants.light`, but nothing routes it; a light file beside a published model is
+  uploaded and never fetched.
+- Anything a runtime drives by **joint** must not be a `FACIAL_*` joint. `LeftEye` and `RightEye`
+  are renamed in stage 02 and are kept. A surface that poses a facial joint breaks on this model
+  with no error.
+- The sidecar textures are shared with the room model at full size. For a light figure they are
+  most of the texture memory (two 4096 px hair atlases); `-TexturePx 512` shrinks them for the
+  whole build, which changes what the room model fetches, so a light-only texture set is still to
+  do.
+- Not checked: a walk cycle (none exists for MetaHumans), a second character, deformation by eye
+  up close, and a phone.
+
+The evidence, the harness and the comparison script are in the telegamez repo under
+`_docs/Q4/Gen-X-GenPlay/evidence/2026-11-09-figure-memory/` and
+`_docs/Q4/Gen-X-GenPlay/tools/halloway-measure/`.
 
 ## WebP sidecar textures (telegamez#3701) — removed 2026-10-08
 

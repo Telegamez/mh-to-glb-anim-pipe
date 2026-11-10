@@ -26,6 +26,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Char,
     [ValidateSet('ktx2')][string]$Mode = 'ktx2',
     [int]$TexturePx = 0,
+    [switch]$Light,
     [string]$KtxBin = ''
 )
 
@@ -48,6 +49,8 @@ $out = Join-Path $pipelineRoot "characters/$Char/06-web"
 $toolArgs = @($core, '--src', $src, '--out', $out, '--name', $Char, '--mode', $Mode)
 if ($TexturePx -gt 0) { $toolArgs += @('--texture-px', $TexturePx) }
 if ($KtxBin) { $toolArgs += @('--ktx-bin', $KtxBin) }
+# telegamez#5216: see ../CONTEXT.md, "The light model".
+if ($Light) { $toolArgs += @('--light', 'on') }
 
 Write-Host "character : $Char"
 Write-Host "source    : $src"

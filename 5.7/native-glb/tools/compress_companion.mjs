@@ -8,6 +8,7 @@
  *
  *   node compress_companion.mjs --src <charDir> --out <outDir> [--mode ktx2]
  *                               [--texture-px N] [--ktx-bin <dir>] [--seat off]
+ *                               [--light on]
  *
  * ## One build: ktx2
  *
@@ -55,7 +56,10 @@
  *     `browser_texture_format: "ktx2"`, which tells the browser to fetch the siblings, and
  *     `texture_sha256` (telegamez#4863), a fingerprint per .ktx2 so identical maps share one
  *     GPU copy across characters.
- * `compression_manifest.json` records `variants: { room, compositor, seat }`. The publisher sends that
+ *   - `<name>.light.glb` (telegamez#5216, `--light on` only): a model for a figure seen across a
+ *     room among several others. 20 morph channels, morph normals dropped, embedded textures capped
+ *     at 256 px, and the facial joints folded into the head. See LIGHT below.
+ * `compression_manifest.json` records `variants: { room, compositor, seat }`, plus `light` when made. The publisher sends that
  * as the avatar manifest's `variants`, which is how the compositor is routed to its own file.
  * Without that routing the compositor falls back to the room model and cannot decode it.
  *
@@ -151,6 +155,29 @@ const SEAT_MORPHS = [
   'viseme_sil', 'eyesLookDown', 'eyeLookDownLeft', 'eyeLookDownRight',
   'cheekSquintLeft', 'cheekSquintRight', 'mouthClose',
 ];
+// telegamez#5216: `<name>.light.glb`, for a figure standing in a walked place with up to seven
+// others (the Gen-X-GenPlay pilot). Measured in telegamez `/dev/halloway`: what a MetaHuman costs a
+// frame is its 1,185 joints, on the processor, and what it costs in video memory is mostly morph
+// targets. So the light model takes the seat model's cuts further (fewer channels, smaller embedded
+// textures) and folds the facial joints, which no clip moves because the face is driven by morph
+// targets. OFF by default: nothing routes a `light` variant yet (publish_to_cdn.ps1 sends only
+// room, compositor and seat), and a light model beside a published one is 4 MB nobody fetches.
+const light = flag('light', 'off') === 'on';
+const LIGHT_TEXTURE_PX = 256;
+// What lip sync and a readable face need at room distance: every viseme the lipsync drive writes,
+// both blinks, one brow, a smile and the jaw. A runtime write to any other channel is a no-op.
+const LIGHT_MORPHS = [
+  'viseme_PP', 'viseme_FF', 'viseme_TH', 'viseme_DD', 'viseme_kk', 'viseme_CH', 'viseme_SS',
+  'viseme_nn', 'viseme_RR', 'viseme_aa', 'viseme_E', 'viseme_I', 'viseme_O', 'viseme_U', 'viseme_sil',
+  'eyeBlinkLeft', 'eyeBlinkRight', 'browInnerUp', 'mouthSmile', 'jawOpen',
+];
+// The joints `collapse-joints` folds. Facial only: folding the corrective and twist joints too
+// was measured to move clothing by up to 101 mm (see collapse-joints in gltf-transform.config.mjs).
+const FOLD_FACIAL_JOINTS = '^FACIAL_';
+// The light model is an ADDITIONAL output (owner, 2026-11-09): the room, compositor and seat
+// models are made exactly as before whether or not it is asked for, byte for byte. Nothing here
+// folds joints on an existing model; if a folded seat-size model is ever wanted it is a new
+// variant with its own name, not a change to `seat`.
 const LEAN_TEXTURES = [
   ['MI_Teeth_*', 512],
   ['MI_Eye*', 512],
@@ -290,6 +317,9 @@ const outGlb = path.join(out, `${name}.glb`);
 // The compositor's own model, routed to it through the avatar manifest's variants.
 const compositorGlb = path.join(out, `${name}.compositor.glb`);
 const seatGlb = path.join(out, `${name}.seat.glb`);
+const lightGlb = path.join(out, `${name}.light.glb`);
+/** Joint counts before and after folding, per model that was folded. */
+const folded = {};
 const tmp = [];
 /** `[{ mesh, kept, total }]` when the room model's morph targets were pruned. */
 let pruned = null;
@@ -297,15 +327,27 @@ let pruned = null;
 /**
  * One browser model from `from` (the source, pruned when pruning is on): morph normals, lean
  * textures, an optional texture cap, then the texture codecs and meshopt last (see "Order
- * matters" above). `tag` keeps each model's intermediate files apart.
+ * matters" above). `tag` keeps each model's intermediate files apart. `foldJoints`, when given,
+ * is the pattern of joints to fold first (see collapse-joints).
  */
-function browserModel(from, normals, capPx, dst, tag, keepNames = null) {
+function browserModel(from, normals, capPx, dst, tag, keepNames = null, foldJoints = null) {
   let cur = from;
+  if (foldJoints) {
+    const j = path.join(out, `.tmp-${tag}j.glb`);
+    tmp.push(j);
+    const log = gt(['collapse-joints', cur, j, '--fold', `"${foldJoints}"`, '--config', `"${CONFIG}"`],
+       'fold    (facial joints into the head)');
+    const line = log.split(/\r?\n/).find((l) => l.startsWith('COLLAPSE '));
+    if (!line) { console.error('\nABORT: collapse-joints reported nothing.'); process.exit(1); }
+    const [before, after, nodesRemoved] = line.slice(9).split('\t').map(Number);
+    folded[tag || 'room'] = { joints_before: before, joints_after: after, nodes_removed: nodesRemoved };
+    cur = j;
+  }
   if (keepNames) {
     const k = path.join(out, `.tmp-${tag}k.glb`);
     tmp.push(k);
     gt(['keep-morphs', cur, k, '--names', keepNames.join(','), '--config', `"${CONFIG}"`],
-       `keep    (${keepNames.length} morph channels the seat drives)`);
+       `keep    (${keepNames.length} morph channels)`);
     cur = k;
   }
   const a = path.join(out, `.tmp-${tag}a.glb`);
@@ -357,6 +399,7 @@ function browserModel(from, normals, capPx, dst, tag, keepNames = null) {
   browserModel(roomSrc, morphNormals, 0, outGlb, '');
   gt(['meshopt', srcGlb, compositorGlb], 'meshopt (compositor model, PNG)');
   if (seat) browserModel(roomSrc, 'drop', SEAT_TEXTURE_PX, seatGlb, 'seat-', SEAT_MORPHS);
+  if (light) browserModel(roomSrc, 'drop', LIGHT_TEXTURE_PX, lightGlb, 'light-', LIGHT_MORPHS, FOLD_FACIAL_JOINTS);
 }
 for (const t of tmp) fs.rmSync(t, { force: true });
 
@@ -381,7 +424,7 @@ if (pruned) {
 }
 
 const after = structure(outGlb);
-for (const glb of seat ? [outGlb, compositorGlb, seatGlb] : [outGlb, compositorGlb]) {
+for (const glb of [outGlb, compositorGlb, ...(seat ? [seatGlb] : []), ...(light ? [lightGlb] : [])]) {
   const got = glb === outGlb ? after : structure(glb);
   for (const k of ['meshes', 'primitives', 'morphTargets', 'materials']) {
     if (k === 'morphTargets' && glb !== compositorGlb && pruned) continue;
@@ -410,6 +453,26 @@ if (seat) {
     }
   }
   console.log(`  seat model ${MB(sizeOf(seatGlb))} MB`);
+}
+if (light) {
+  // Same promise as the seat model, against the light list.
+  const roomNames = targetNames(outGlb);
+  const lightNames = targetNames(lightGlb);
+  const lightSet = new Set(LIGHT_MORPHS);
+  for (const [mesh, names] of Object.entries(roomNames)) {
+    const expected = names.filter((n) => lightSet.has(n));
+    if ((lightNames[mesh] || []).join('\n') !== expected.join('\n')) {
+      console.error(`\nABORT: ${path.basename(lightGlb)} ${mesh} morph targets are not the room model's cut to the light channels.`);
+      process.exit(1);
+    }
+  }
+  const f = folded['light-'];
+  if (!f || !(f.joints_after < f.joints_before)) {
+    console.error(`\nABORT: ${path.basename(lightGlb)} folded no joints. Either the bake has no ${FOLD_FACIAL_JOINTS} joints `
+      + '(then it is not the bake this was measured on) or the fold did not run.');
+    process.exit(1);
+  }
+  console.log(`  light model ${MB(sizeOf(lightGlb))} MB (joints ${f.joints_before} -> ${f.joints_after})`);
 }
 
 // ---------------------------------------------------------------------------- textures
@@ -480,7 +543,12 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
     room: path.basename(outGlb),
     compositor: path.basename(compositorGlb),
     ...(seat ? { seat: path.basename(seatGlb) } : {}),
+    // telegamez#5216. Recorded, but publish_to_cdn.ps1 does not send it yet: nothing loads it.
+    ...(light ? { light: path.basename(lightGlb) } : {}),
   },
+  light_model: light
+    ? { after_bytes: sizeOf(lightGlb), morph_normals: 'drop', texture_px_max: LIGHT_TEXTURE_PX, morph_channels: LIGHT_MORPHS.length, folded_joints: FOLD_FACIAL_JOINTS, ...folded['light-'], structure: structure(lightGlb) }
+    : null,
   compositor_model: { after_bytes: sizeOf(compositorGlb) },
   seat_model: seat
     ? { after_bytes: sizeOf(seatGlb), morph_normals: 'drop', texture_px_max: SEAT_TEXTURE_PX, morph_channels: SEAT_MORPHS.length, structure: structure(seatGlb) }

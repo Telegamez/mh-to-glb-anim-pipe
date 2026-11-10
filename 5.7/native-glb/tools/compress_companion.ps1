@@ -54,7 +54,7 @@
   Also make <char>.light.glb (telegamez#5216): 20 morph channels, morph normals dropped, embedded
   textures capped at 256 px, and the facial joints folded into the head. For a figure seen across
   a room among several others. An additional output: the room, compositor and seat models are
-  made exactly as without it. Off by default; nothing routes a light variant yet.
+  made exactly as without it. Off by default. publish_to_cdn.ps1 sends it as variants.light when the build has one.
 
 .PARAMETER TexturePx
   Resample the KTX2 textures to this square size. 0 leaves them alone.

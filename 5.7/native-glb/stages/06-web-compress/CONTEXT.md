@@ -467,9 +467,10 @@ at a distance, and nothing else. A runtime write to a channel it lacks is a no-o
 
 **Before anything loads it:**
 
-- `publish_to_cdn.ps1` sends `room`, `compositor` and `seat` only. `compression_manifest.json`
-  records `variants.light`, but nothing routes it; a light file beside a published model is
-  uploaded and never fetched.
+- `publish_to_cdn.ps1` sends `variants.light` when `compression_manifest.json` records one, and
+  the platform's `resolveVariantPath(manifest, 'light')` resolves it (light, then seat, then
+  room). No production surface asks for the light level yet, only the telegamez `/dev/halloway`
+  harness draws light models, so a published light file is uploaded and not yet fetched.
 - Anything a runtime drives by **joint** must not be a `FACIAL_*` joint. `LeftEye` and `RightEye`
   are renamed in stage 02 and are kept. A surface that poses a facial joint breaks on this model
   with no error.

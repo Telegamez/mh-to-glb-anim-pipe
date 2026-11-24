@@ -848,7 +848,35 @@ def _emit_material_spec(out_root, mh_manifest, extra=None):
             if slot.material:
                 live_mats.add(re.sub(r"\.\d{3}$", "", slot.material.name))
 
-    for mi_name, rec in sorted(cloth_mis.items()):
+    # A garment whose material carries per-character parameters is assembled with a private
+    # copy that lives inside the mesh package and is named `<Material>_<MeshAsset>`
+    # (Betty3's crop top, 2026-11-24: `M_CropTop_Betty3_Outfits_3`). It is not an asset, so
+    # stage 01 traces it to its parent and declares `M_CropTop`, which is on no mesh: the
+    # record was skipped below and the garment reached the runtime with no sidecar entry.
+    # Declare such a record under the name the mesh actually uses. The suffix must be the
+    # name of a mesh that carries that material, so a material that merely shares a prefix
+    # (`MI_Jeans` / `MI_Jeans_Dark`) is never mistaken for a copy.
+    mesh_mats = {}
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or obj.hide_render:
+            continue
+        mesh_name = re.sub(r"\.\d{3}$", "", obj.name)
+        for slot in obj.material_slots:
+            if slot.material:
+                mesh_mats.setdefault(mesh_name, set()).add(re.sub(r"\.\d{3}$", "", slot.material.name))
+    resolved = {}
+    for mi_name, rec in cloth_mis.items():
+        copies = sorted(f"{mi_name}_{mesh_name}" for mesh_name, mats in mesh_mats.items()
+                        if f"{mi_name}_{mesh_name}" in mats)
+        if mi_name in live_mats or not copies:
+            resolved[mi_name] = rec
+        for copy in copies:
+            if copy not in cloth_mis:
+                resolved[copy] = rec
+                _log(f"  clothing: {mi_name} is on the mesh as its per-mesh copy {copy} - "
+                     f"declared under that name")
+
+    for mi_name, rec in sorted(resolved.items()):
         vectors = rec.get("vectors") or {}
         col = vectors.get("Color1")
         if live_mats and mi_name not in live_mats:

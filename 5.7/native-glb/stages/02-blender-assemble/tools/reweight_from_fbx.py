@@ -113,6 +113,53 @@ def _auto_map(data):
     return mapping
 
 
+def _match_by_position(ours, fpos, offsets, indices, weights, blend_name):
+    """Re-index the FBX dump onto the blend's vertices by position, for a mesh whose two exports
+    disagree on the vertex COUNT.
+
+    Found on Betty3's cargo shorts (2026-11-24): cloth and buttons are two material sections.
+    The glTF export writes each section's vertices separately, so the blend has 24,463; the FBX
+    dump has 24,460. The roster outfit never hit this: its three sections come out the same in
+    both exports.
+
+    Not a relaxation of the gate. It raises unless EVERY blend vertex has an FBX vertex within
+    POSITION_GATE and EVERY FBX vertex is claimed by at least one blend vertex, so a different
+    mesh, or one edited after assembly, still refuses. Coincident FBX vertices carry identical
+    weights (measured: 0.000 disagreement on every twin pair, see the module docstring), so
+    which twin a blend vertex lands on does not matter.
+
+    Returns (positions, offsets, indices, weights) in the blend's vertex order.
+    """
+    from mathutils.kdtree import KDTree
+    kd = KDTree(len(fpos))
+    for i, p in enumerate(fpos):
+        kd.insert(p, i)
+    kd.balance()
+    src = np.empty(len(ours), np.int64)
+    worst = 0.0
+    for v, p in enumerate(ours):
+        _, i, dist = kd.find(p)
+        src[v] = i
+        worst = max(worst, float(dist))
+    if worst > POSITION_GATE:
+        raise RuntimeError(
+            f"{blend_name}: blend has {len(ours)} verts, FBX dump has {len(fpos)}, and a blend "
+            f"vertex sits {worst * 1000:.2f}mm from the nearest FBX vertex — not the same mesh")
+    unclaimed = len(fpos) - len(np.unique(src))
+    if unclaimed:
+        raise RuntimeError(
+            f"{blend_name}: blend has {len(ours)} verts, FBX dump has {len(fpos)}, and "
+            f"{unclaimed} FBX vertex/vertices match no blend vertex — not the same mesh")
+    counts = (offsets[src + 1] - offsets[src]).astype(np.int64)
+    new_offsets = np.zeros(len(ours) + 1, np.int64)
+    np.cumsum(counts, out=new_offsets[1:])
+    take = np.concatenate([np.arange(offsets[i], offsets[i + 1]) for i in src])
+    _log(f"{blend_name}: MATCHED BY POSITION — blend has {len(ours)} verts, FBX dump has "
+         f"{len(fpos)} ({len(ours) - len(fpos):+d}); every vertex on both sides accounted for, "
+         f"farthest {worst * 1000:.4f}mm")
+    return fpos[src], new_offsets, indices[take], weights[take]
+
+
 def _repair_unweighted(obj, fpos, offsets, indices, weights, target, groups, blend_name):
     """Copy the nearest weighted vertex's influences onto every vertex that has none."""
     from mathutils.kdtree import KDTree
@@ -185,24 +232,25 @@ def main():
             raise RuntimeError(f"{fbx_key}: not in {npz_path} (has {sorted({k.split('::')[0] for k in data})})")
 
         fpos = data[pos_key]
+        offsets = data[f"{fbx_key}::offsets"]
+        indices = data[f"{fbx_key}::indices"]
+        weights = data[f"{fbx_key}::weights"]
         mesh = obj.data
-        if len(fpos) != len(mesh.vertices):
-            raise RuntimeError(
-                f"{blend_name}: blend has {len(mesh.vertices)} verts, FBX dump has {len(fpos)} — "
-                f"not the same mesh")
         ours = np.empty((len(mesh.vertices), 3))
         mesh.vertices.foreach_get("co", ours.ravel())
         mw = np.array(obj.matrix_world)
         ours = ours @ mw[:3, :3].T + mw[:3, 3]
+        if len(fpos) != len(mesh.vertices):
+            # Same surface, different duplication (see _match_by_position). Still a hard gate:
+            # it raises unless every vertex on both sides is accounted for within POSITION_GATE.
+            fpos, offsets, indices, weights = _match_by_position(
+                ours, fpos, offsets, indices, weights, blend_name)
         delta = np.abs(ours - fpos).max()
         if delta > POSITION_GATE:
             raise RuntimeError(
                 f"GATE FAILED: {blend_name} positions differ from the FBX dump by up to "
                 f"{delta * 1000:.2f}mm — vertex order does not correspond, refusing to reweight")
 
-        offsets = data[f"{fbx_key}::offsets"]
-        indices = data[f"{fbx_key}::indices"]
-        weights = data[f"{fbx_key}::weights"]
         fbx_bones = [str(b) for b in data[f"{fbx_key}::bones"]]
         target = [UE_TO_CONTRACT.get(b, b) for b in fbx_bones]
         absent = sorted({t for t in target if t not in armature_bones})

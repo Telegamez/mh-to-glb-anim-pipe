@@ -513,11 +513,28 @@ function applyClothing(mat, p, t, loadTex) {
   if (Array.isArray(p.base_color) && p.base_color.length >= 3) {
     mat.color.setRGB(Number(p.base_color[0]), Number(p.base_color[1]), Number(p.base_color[2]));
   }
-  const bc = loadTex(t.base_color, { srgb: true });
+  // A garment's UV tiling (a Fab outfit's offset and scale parameters) reaches the GLB as
+  // KHR_texture_transform on the textures the exporter kept, which three.js reads onto those
+  // textures' offset/repeat. The sidecar's textures replace them and carry no transform, so they
+  // must inherit it, or they land misaligned (Betty3's crop top: the normal map's bust detail sat
+  // about 25% off and shaded the chest dark). Taken BEFORE `mat.map` is replaced. An identity
+  // transform (every roster outfit) is left alone. Same rule as the room renderer.
+  const uvFrom = [mat.map, mat.roughnessMap, mat.metalnessMap].find((m) => m
+    && (m.offset.x !== 0 || m.offset.y !== 0 || m.repeat.x !== 1 || m.repeat.y !== 1 || m.rotation !== 0)) || null;
+  const carryUv = (tex) => {
+    if (tex && uvFrom) {
+      tex.offset.copy(uvFrom.offset);
+      tex.repeat.copy(uvFrom.repeat);
+      tex.rotation = uvFrom.rotation;
+      tex.center.copy(uvFrom.center);
+    }
+    return tex;
+  };
+  const bc = carryUv(loadTex(t.base_color, { srgb: true }));
   if (bc) mat.map = bc;
-  const nm = loadTex(t.normal, { srgb: false });
+  const nm = carryUv(loadTex(t.normal, { srgb: false }));
   if (nm) mat.normalMap = nm;
-  const orm = loadTex(t.orm, { srgb: false });
+  const orm = carryUv(loadTex(t.orm, { srgb: false }));
   if (orm) {
     // roughnessMap reads G and metalnessMap B, so one packed ORM serves both. aoMap is left
     // unbound on purpose: three reads it from a second UV set these meshes do not carry. The

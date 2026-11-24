@@ -115,15 +115,16 @@ def _auto_map(data):
 
 def _match_by_position(ours, fpos, offsets, indices, weights, blend_name):
     """Re-index the FBX dump onto the blend's vertices by position, for a mesh whose two exports
-    disagree on the vertex COUNT.
+    disagree on the vertex COUNT or on the vertex ORDER (Betty3's sneakers: 4,392 in both, in a
+    different order, so the per-index comparison read 17.87mm apart).
 
-    Found on Betty3's cargo shorts (2026-11-24): cloth and buttons are two material sections.
-    The glTF export writes each section's vertices separately, so the blend has 24,463; the FBX
-    dump has 24,460. The roster outfit never hit this: its three sections come out the same in
-    both exports.
+    Found on Betty3's cargo shorts (2026-11-24), a mesh with two material sections (cloth and
+    buttons): the blend has 24,463 vertices and the FBX dump 24,460. The two exporters split
+    the same surface along seams differently. The roster outfit never hit this: its sections
+    come out with the same count in both exports.
 
     Not a relaxation of the gate. It raises unless EVERY blend vertex has an FBX vertex within
-    POSITION_GATE and EVERY FBX vertex is claimed by at least one blend vertex, so a different
+    POSITION_GATE and EVERY FBX vertex has a blend vertex within POSITION_GATE, so a different
     mesh, or one edited after assembly, still refuses. Coincident FBX vertices carry identical
     weights (measured: 0.000 disagreement on every twin pair, see the module docstring), so
     which twin a blend vertex lands on does not matter.
@@ -145,11 +146,26 @@ def _match_by_position(ours, fpos, offsets, indices, weights, blend_name):
         raise RuntimeError(
             f"{blend_name}: blend has {len(ours)} verts, FBX dump has {len(fpos)}, and a blend "
             f"vertex sits {worst * 1000:.2f}mm from the nearest FBX vertex — not the same mesh")
-    unclaimed = len(fpos) - len(np.unique(src))
-    if unclaimed:
+    # The reverse direction, by position and not by which index was picked above: the FBX dump
+    # carries coincident twins (the same point duplicated along a UV or material seam), and a
+    # blend vertex can only pick one of them, so "was this FBX index chosen" fails thousands of
+    # legitimate twins. What must hold is that every FBX vertex has a blend vertex at its position.
+    back = KDTree(len(ours))
+    for i, p in enumerate(ours):
+        back.insert(p, i)
+    back.balance()
+    back_worst, orphans = 0.0, 0
+    for p in fpos:
+        _, _, dist = back.find(p)
+        back_worst = max(back_worst, float(dist))
+        if dist > POSITION_GATE:
+            orphans += 1
+    if orphans:
         raise RuntimeError(
             f"{blend_name}: blend has {len(ours)} verts, FBX dump has {len(fpos)}, and "
-            f"{unclaimed} FBX vertex/vertices match no blend vertex — not the same mesh")
+            f"{orphans} FBX vertex/vertices have no blend vertex at their position (farthest "
+            f"{back_worst * 1000:.2f}mm) — not the same mesh")
+    worst = max(worst, back_worst)
     counts = (offsets[src + 1] - offsets[src]).astype(np.int64)
     new_offsets = np.zeros(len(ours) + 1, np.int64)
     np.cumsum(counts, out=new_offsets[1:])
@@ -240,9 +256,10 @@ def main():
         mesh.vertices.foreach_get("co", ours.ravel())
         mw = np.array(obj.matrix_world)
         ours = ours @ mw[:3, :3].T + mw[:3, 3]
-        if len(fpos) != len(mesh.vertices):
-            # Same surface, different duplication (see _match_by_position). Still a hard gate:
-            # it raises unless every vertex on both sides is accounted for within POSITION_GATE.
+        if len(fpos) != len(mesh.vertices) or np.abs(ours - fpos).max() > POSITION_GATE:
+            # Same surface, but the two exports disagree on how many vertices it has or on
+            # their order (see _match_by_position). Still a hard gate: it raises unless every
+            # vertex on both sides is accounted for within POSITION_GATE.
             fpos, offsets, indices, weights = _match_by_position(
                 ours, fpos, offsets, indices, weights, blend_name)
         delta = np.abs(ours - fpos).max()

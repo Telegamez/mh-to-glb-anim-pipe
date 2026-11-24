@@ -160,8 +160,9 @@ const SEAT_MORPHS = [
 // frame is its 1,185 joints, on the processor, and what it costs in video memory is mostly morph
 // targets. So the light model takes the seat model's cuts further (fewer channels, smaller embedded
 // textures) and folds the facial joints, which no clip moves because the face is driven by morph
-// targets. OFF by default: nothing routes a `light` variant yet (publish_to_cdn.ps1 sends only
-// room, compositor and seat), and a light model beside a published one is 4 MB nobody fetches.
+// targets. OFF by default: publish_to_cdn.ps1 sends a `light` variant when the build has one, and
+// the platform resolves it (light, then seat, then room), but nothing in production draws figures
+// at the light level yet, so a light model beside a published one is 4 MB nobody fetches.
 const light = flag('light', 'off') === 'on';
 const LIGHT_TEXTURE_PX = 256;
 // What lip sync and a readable face need at room distance: every viseme the lipsync drive writes,
@@ -543,7 +544,7 @@ fs.writeFileSync(path.join(out, 'compression_manifest.json'), JSON.stringify({
     room: path.basename(outGlb),
     compositor: path.basename(compositorGlb),
     ...(seat ? { seat: path.basename(seatGlb) } : {}),
-    // telegamez#5216. Recorded, but publish_to_cdn.ps1 does not send it yet: nothing loads it.
+    // telegamez#5216. publish_to_cdn.ps1 sends it as the avatar manifest's `variants.light`.
     ...(light ? { light: path.basename(lightGlb) } : {}),
   },
   light_model: light

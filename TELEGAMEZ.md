@@ -179,8 +179,9 @@ Two things that will bite:
 
 - **The fold pattern is `^FACIAL_` and must stay that narrow.** Folding the corrective and twist
   joints as well looked fine in a screenshot and moved clothing by up to 101 mm when measured.
-- **Nothing loads a light model yet.** `publish_to_cdn.ps1` routes room, compositor and seat. A
-  light file in a published folder is uploaded and never fetched.
+- **No production surface loads a light model yet.** `publish_to_cdn.ps1` sends `variants.light`
+  when the build has one and the platform resolves it (light, then seat, then room), but nothing
+  asks for the light level outside the `/dev/halloway` harness.
 
 ## Running on UE 5.8 and Blender 4.4
 

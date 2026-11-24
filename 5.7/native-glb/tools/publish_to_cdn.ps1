@@ -127,7 +127,7 @@ if (Test-Path $compressionManifest) {
     if ($cm.variants.room -ne $model) {
       throw "variants.room '$($cm.variants.room)' is not the model being published ('$model')"
     }
-    foreach ($kind in 'room', 'compositor', 'seat') {
+    foreach ($kind in 'room', 'compositor', 'seat', 'light') {
       $file = $cm.variants.$kind
       if ($file -and -not (Test-Path (Join-Path $Source $file))) {
         throw "variants.$kind names '$file', which is not in $Source"
@@ -139,6 +139,10 @@ if (Test-Path $compressionManifest) {
     # telegamez#4863: the seat-size model, when the build has one. A build without it publishes
     # exactly as before, and the browser loads the room model in its place.
     if ($cm.variants.seat) { $variants.seat = $cm.variants.seat }
+    # telegamez#5216: the light model, when the build was asked for one (-Light). The platform
+    # routes a figure seen across a walked place to it and falls back to the seat model, then the
+    # room model, so a build without it publishes exactly as before.
+    if ($cm.variants.light) { $variants.light = $cm.variants.light }
     $avatarManifest = @{ variants = $variants }
   }
 }

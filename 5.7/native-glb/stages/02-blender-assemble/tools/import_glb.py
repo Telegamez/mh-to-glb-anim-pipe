@@ -1401,17 +1401,34 @@ def _bake_arkit_from_lse_fbx(in_root, mh_manifest):
     for i, p in enumerate(src_basis_m):
         tree.insert(p - src_centroid, i)
     tree.balance()
-    glb_to_src = [0] * n_tgt
-    distances = [0.0] * n_tgt
-    max_d = 0.0
-    sum_d = 0.0
-    for i, p in enumerate(tgt_basis_m):
-        _, idx, d = tree.find(p - tgt_centroid)
-        glb_to_src[i] = idx
-        distances[i] = d
-        sum_d += d
-        if d > max_d:
-            max_d = d
+    # TELEGAMEZ (UE 5.9 bakes, 2026-11-24): match with NO relative centroid shift.
+    #
+    # The two meshes are the same face in the same frame, so their coordinates already agree. The
+    # shift only ever helped a mesh whose frame differed, and it hurts when the vertex SETS differ:
+    # on 5.9 the glTF export splits vertices at UV/material seams that the FBX export does not
+    # (Betty3: 34,661 against 33,845; every 5.8 bake had 34,657 on both sides), so the two
+    # centroids are about 0.3 mm apart. That is enough to match an inner-lip vertex to the OPPOSITE
+    # lip, whose surface lies within 0.3 mm of it, so it took the other lip's movement and the
+    # mouth interior stretched across an open mouth into thin bars (and the teeth looked broken).
+    # With identical sets (every 5.8 bake) the shift was zero, so this changes nothing there.
+    #
+    # If the unshifted match is poor the frames really do differ: fall back to the old shift, and
+    # say so, rather than ship a bad transfer silently.
+    def _match(shift):
+        g2s, dist_sum, dist_max = [0] * n_tgt, 0.0, 0.0
+        for i, p in enumerate(tgt_basis_m):
+            _, idx, d = tree.find(p - shift)
+            g2s[i] = idx
+            dist_sum += d
+            if d > dist_max:
+                dist_max = d
+        return g2s, dist_sum, dist_max
+
+    glb_to_src, sum_d, max_d = _match(src_centroid)
+    if max_d > 0.001:
+        _log(f"  arkit: unshifted match max={max_d*1000:.2f}mm (> 1 mm): the frames differ, "
+             f"falling back to the centroid-shifted match")
+        glb_to_src, sum_d, max_d = _match(tgt_centroid)
     avg_d = sum_d / n_tgt if n_tgt else 0.0
     _log(f"  arkit: kdtree match max={max_d*1000:.2f}mm avg={avg_d*1000:.2f}mm")
 

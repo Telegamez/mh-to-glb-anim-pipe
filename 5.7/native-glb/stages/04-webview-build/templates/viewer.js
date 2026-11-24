@@ -465,6 +465,9 @@ function applySpec(mat, spec, loadTex) {
     case 'cloth':
       applyCloth(mat, p, t, loadTex);
       break;
+    case 'clothing':
+      applyClothing(mat, p, t, loadTex);
+      break;
     case 'hair':
       applyHair(mat, p, t, loadTex);
       break;
@@ -491,6 +494,50 @@ function applySpec(mat, spec, loadTex) {
 // would collide — last one written wins).
 function uniqueCacheKey(mat) {
   mat.customProgramCacheKey = () => mat.uuid;
+}
+
+// ---------------- clothing (stage 02's `kind: "clothing"` records)
+
+// Mirrors the room renderer (`metaHumanMaterials.ts`, the `spec.kind === 'clothing'` branch),
+// so this preview shows a garment the way a room will. UE keeps outfit colour in a `Color1`
+// param and the glTF exporter drops it; a Fab garment can also lose its base-colour texture
+// (Betty3's cargo shorts reached the GLB with neither a texture nor a factor, so glTF's default
+// white showed). The sidecar carries both, and without this the viewer rendered such garments
+// white, and the garments that kept their texture without the sidecar's tint.
+//
+// Not `applyCloth` above: that is the older `kind: "cloth"` shader (mask + two colours + detail
+// and macro overlays), which stage 02 no longer writes.
+function applyClothing(mat, p, t, loadTex) {
+  // No sRGB conversion: UE stores Color1 as a LinearColor and setRGB writes into three's linear
+  // working space, so the values transfer directly (the room does the same).
+  if (Array.isArray(p.base_color) && p.base_color.length >= 3) {
+    mat.color.setRGB(Number(p.base_color[0]), Number(p.base_color[1]), Number(p.base_color[2]));
+  }
+  const bc = loadTex(t.base_color, { srgb: true });
+  if (bc) mat.map = bc;
+  const nm = loadTex(t.normal, { srgb: false });
+  if (nm) mat.normalMap = nm;
+  const orm = loadTex(t.orm, { srgb: false });
+  if (orm) {
+    // roughnessMap reads G and metalnessMap B, so one packed ORM serves both. aoMap is left
+    // unbound on purpose: three reads it from a second UV set these meshes do not carry. The
+    // scalars stay at 1 because the maps are multipliers against them.
+    mat.roughnessMap = orm;
+    mat.metalnessMap = orm;
+    mat.roughness = 1;
+    mat.metalness = 1;
+  } else {
+    if (typeof p.roughness === 'number') mat.roughness = p.roughness;
+    mat.metalness = 0;
+  }
+  // A masked two-sided card garment (an accessory baked as clothing): the sidecar says so
+  // explicitly instead of trusting the GLB material to have kept its flags.
+  if (p.alpha_clip) {
+    mat.transparent = false;
+    mat.depthWrite = true;
+    mat.alphaTest = 0.5;
+  }
+  if (p.double_sided) mat.side = THREE.DoubleSide;
 }
 
 // ---------------- cloth
